@@ -1,5 +1,4 @@
 import React from "react";
-import { DOMParser } from "linkedom";
 import { Document, Page, Text, View, Image, StyleSheet, Font } from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
@@ -76,22 +75,23 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
   function renderHtmlContent(html: string) {
     if (typeof window === "undefined") return null;
     try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
-      const body = doc.body;
+      // Use browser's DOMParser only on client to avoid bundling node polyfills
+      const parser: any = new (window as any).DOMParser();
+      const doc: any = parser.parseFromString(html, "text/html");
+      const body: any = doc.body;
       const elements: React.ReactNode[] = [];
 
-      function renderChildren(node: ChildNode, inheritedStyle: any = {}): React.ReactNode[] {
+      function renderChildren(node: any, inheritedStyle: any = {}): React.ReactNode[] {
         const out: React.ReactNode[] = [];
-        node.childNodes.forEach((child, idx) => {
+        node.childNodes.forEach((child: any, idx: number) => {
           if (child.nodeType === 3) {
             const text = child.textContent || "";
             if (text) out.push(<Text key={`t-${idx}`} style={inheritedStyle}>{text}</Text>);
             return;
           }
           if (child.nodeType === 1) {
-            const el = child as HTMLElement;
-            const tag = el.tagName.toLowerCase();
+            const el: any = child as any;
+            const tag = String(el.tagName || "").toLowerCase();
             const nextStyle = { ...inheritedStyle } as any;
             if (tag === "strong" || tag === "b") nextStyle.fontWeight = 700;
             if (tag === "em" || tag === "i") nextStyle.fontStyle = "italic";
@@ -112,8 +112,8 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
         return out;
       }
 
-      Array.from(body.children).forEach((el, i) => {
-        const tag = el.tagName.toLowerCase();
+      Array.from(body.children as any).forEach((el: any, i: number) => {
+        const tag = String(el.tagName || "").toLowerCase();
         if (tag === "p") {
           elements.push(
             <Text key={`p-${i}`} style={styles.content}>
@@ -123,8 +123,8 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
           );
         } else if (tag === "ul" || tag === "ol") {
           const isOl = tag === "ol";
-          const items = Array.from(el.children).filter((c) => c.tagName.toLowerCase() === "li");
-          items.forEach((li, idx) => {
+          const items = Array.from(el.children as any).filter((c: any) => String(c.tagName || "").toLowerCase() === "li");
+          items.forEach((li: any, idx: number) => {
             elements.push(
               <Text key={`li-${i}-${idx}`} style={styles.content}>
                 {isOl ? `${idx + 1}. ` : "• "}
