@@ -1,5 +1,4 @@
 import { AlignmentType, Document, Paragraph, Packer, TextRun, Table, TableRow, TableCell, WidthType, ImageRun, BorderStyle } from "docx";
-import { DOMParser } from "linkedom";
 
 export type DocxSettings = {
   headerLines?: string[];
@@ -20,6 +19,56 @@ export type DocxData = {
   continutHtml?: string;
   semnatar: { pentru: string; functia: string; grad: string; nume: string };
 };
+
+function parseHtmlToParagraphs(html: string): Paragraph[] {
+  const paragraphs: Paragraph[] = [];
+  try {
+    const normalized = html
+      .replace(/<br\s*\/?>(\r?\n)?/gi, "\n")
+      .replace(/\r\n|\r/g, "\n");
+
+    const blockRegex = /<(p|ul|ol)[^>]*>([\s\S]*?)<\/\1>/gi;
+    let match: RegExpExecArray | null;
+    const blocks: { tag: string; inner: string }[] = [];
+    while ((match = blockRegex.exec(normalized)) !== null) {
+      blocks.push({ tag: match[1].toLowerCase(), inner: match[2] });
+    }
+
+    const pushParagraph = (text: string, opts?: { bold?: boolean; italics?: boolean; underline?: boolean }) => {
+      const run = new TextRun({ text, size: 24, bold: opts?.bold, italics: opts?.italics, underline: opts?.underline ? ({} as any) : undefined });
+      paragraphs.push(new Paragraph({ children: [run] }));
+    };
+
+    if (blocks.length === 0) {
+      // Fallback: treat as plain text
+      const plain = normalized.replace(/<[^>]+>/g, "").trim();
+      if (plain) pushParagraph(plain);
+      return paragraphs;
+    }
+
+    for (const b of blocks) {
+      if (b.tag === "p") {
+        const hasBold = /<(b|strong)[^>]*>/i.test(b.inner);
+        const hasItalic = /<(i|em)[^>]*>/i.test(b.inner);
+        const hasUnderline = /<u[^>]*>/i.test(b.inner);
+        const text = b.inner.replace(/<[^>]+>/g, "").trim();
+        if (text) pushParagraph(text, { bold: hasBold, italics: hasItalic, underline: hasUnderline });
+      } else if (b.tag === "ul" || b.tag === "ol") {
+        const isOl = b.tag === "ol";
+        const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+        let m: RegExpExecArray | null;
+        let idx = 0;
+        while ((m = liRegex.exec(b.inner)) !== null) {
+          const liText = (m[1] || "").replace(/<[^>]+>/g, "").trim();
+          if (!liText) continue;
+          const prefix = isOl ? `${++idx}. ` : "• ";
+          pushParagraph(prefix + liText);
+        }
+      }
+    }
+  } catch {}
+  return paragraphs;
+}
 
 export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
   const headerLines = settings.headerLines && settings.headerLines.length ? settings.headerLines : [
@@ -149,35 +198,9 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
             children: [new TextRun({ text: data.titlu, bold: true, size: 30 })],
             spacing: { after: 200 }
           }),
-          // Conținut: dacă avem HTML, mapăm taguri de bază (p, strong, em, u, ul/ol/li)
+          // Conținut: dacă avem HTML, mapăm taguri de bază (p, strong, em, u, ul/ol/li) fără DOMParser
           ...(() => {
-            const out: Paragraph[] = [];
-            try {
-              if (data.continutHtml) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(data.continutHtml, "text/html");
-                const body = doc.body;
-                Array.from(body.children).forEach((el, i) => {
-                  const tag = el.tagName.toLowerCase();
-                  const text = el.textContent || "";
-                  if (tag === "p") {
-                    const bold = el.querySelector("b, strong") ? true : false;
-                    const italic = el.querySelector("i, em") ? true : false;
-                    const underline = el.querySelector("u") ? true : false;
-                    out.push(new Paragraph({ children: [new TextRun({ text, size: 24, bold, italics: italic, underline: underline ? {} as any : undefined })] }));
-                  } else if (tag === "ul" || tag === "ol") {
-                    const isOl = tag === "ol";
-                    const items = Array.from(el.children).filter((c) => c.tagName.toLowerCase() === "li");
-                    items.forEach((li, idx) => {
-                      const t = (li as HTMLElement).textContent || "";
-                      out.push(new Paragraph({ children: [new TextRun({ text: `${isOl ? `${idx + 1}. ` : "• "}${t}`, size: 24 })] }));
-                    });
-                  } else {
-                    out.push(new Paragraph({ children: [new TextRun({ text, size: 24 })] }));
-                  }
-                });
-              }
-            } catch {}
+            const out: Paragraph[] = data.continutHtml ? parseHtmlToParagraphs(data.continutHtml) : [];
             if (out.length === 0) {
               out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24 })] }));
             }
