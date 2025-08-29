@@ -33,6 +33,32 @@ export default function SetariStructuraPage() {
   const [purtatorIndex, setPurtatorIndex] = useState<number>(0);
   const [newPurtator, setNewPurtator] = useState("");
 
+  function getDefaultHeaderLines(structId: string): string[] {
+    const id = (structId || "").toUpperCase();
+    if (id.includes("DSU")) {
+      return [
+        "MINISTERUL AFACERILOR INTERNE",
+        "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
+      ];
+    }
+    if (id.includes("IGSU")) {
+      return [
+        "MINISTERUL AFACERILOR INTERNE",
+        "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
+        "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
+      ];
+    }
+    if (id.includes("ISU")) {
+      return [
+        "MINISTERUL AFACERILOR INTERNE",
+        "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
+        "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
+        "INSPECTORATUL PENTRU SITUAȚII DE URGENȚĂ",
+      ];
+    }
+    return ["MINISTERUL AFACERILOR INTERNE"]; 
+  }
+
   useEffect(() => {
     (async () => {
       const path = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
@@ -50,6 +76,13 @@ export default function SetariStructuraPage() {
         setPurtatori(Array.isArray(d.purtatori) ? d.purtatori : []);
         setPurtatorIndex(typeof d.purtatorIndex === "number" ? d.purtatorIndex : 0);
       }
+      // dacă nu există headerLines salvate, precompletăm automat în funcție de structuraId
+      setTimeout(() => {
+        if (!headerLines.trim()) {
+          const def = getDefaultHeaderLines(structuraId).join("\n");
+          setHeaderLines(def);
+        }
+      }, 0);
     })();
   }, [db, judetId, structuraId]);
 
@@ -203,7 +236,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                           logoUrl === src ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-lg' : 'border-gray-200'
                         }`}
                       >
-                        <div className="text-[10px] text-gray-600 font-medium mb-2 line-clamp-1" title={fileName}>{fileName}</div>
+                        <div className="text-[10px] text-gray-600 font-medium mb-2 line-clamp-1" title={fileName}>{fileName.replace(/\.(png|jpg|jpeg|svg|webp)$/i, '')}</div>
                         <img src={src} alt="sigla" className="h-20 w-full object-contain" />
                         {logoUrl === src && (
                           <div className="absolute top-1 right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">

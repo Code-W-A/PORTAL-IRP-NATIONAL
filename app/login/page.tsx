@@ -37,7 +37,7 @@ export default function LoginPage() {
           <h1 className="mt-3 text-2xl font-semibold text-gray-900">Autentificare</h1>
           <p className="text-sm text-gray-600">Accesează portalul intern pentru BI/CP</p>
         </div>
-        <form onSubmit={onSubmit} className="rounded-2xl bg-white/95 backdrop-blur-sm border border-white/50 shadow-2xl p-6">
+        <form onSubmit={onSubmit} className="rounded-2xl bg-white/95 backdrop-blur-sm border border-white/50 shadow-2xl p-8">
           {error && (
             <div className="mb-4 rounded-md border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-sm" role="alert">
               {error}
@@ -54,7 +54,7 @@ export default function LoginPage() {
             required
           />
           <label htmlFor="password" className="block mb-1 text-sm font-medium text-gray-800">Parolă</label>
-          <div className="relative mb-4">
+          <div className="relative mb-6">
             <input
               id="password"
               className="w-full border border-gray-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 rounded-lg px-3 py-2 pr-10 outline-none text-black placeholder:text-gray-400"
@@ -84,13 +84,15 @@ export default function LoginPage() {
           </div>
           <button
             disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition-colors text-white py-2.5 rounded-lg font-medium disabled:opacity-60"
+            className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 transition-colors text-white py-2.5 rounded-lg font-medium disabled:opacity-60 mb-6"
           >
             {loading ? "Se conectează…" : "Intră"}
           </button>
-          <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-            <Link href="/reset-password" className="text-blue-700 hover:underline">Ai uitat parola?</Link>
-            <div>
+          <div className="space-y-3 text-sm text-gray-600">
+            <div className="text-center">
+              <Link href="/reset-password" className="text-blue-700 hover:underline">Ai uitat parola?</Link>
+            </div>
+            <div className="text-center">
               <span>Nu ai cont? </span>
               <Link href="/register" className="text-blue-700 hover:underline">Creează cont</Link>
             </div>

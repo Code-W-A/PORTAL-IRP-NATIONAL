@@ -366,7 +366,7 @@ export default function CreateBicpPage() {
               </div>
               <h2 className="text-lg font-semibold text-gray-900">Semnături și Autorizări</h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Semnatar</label>
                 <select 
@@ -410,13 +410,13 @@ export default function CreateBicpPage() {
               </div>
               <h2 className="text-lg font-semibold text-gray-900">Conținut Document</h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Tip document</label>
                 <select 
                   value={selectedItem} 
                   onChange={(e) => setSelectedItem(e.target.value)} 
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                  className="w-full md:w-80 border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
                 >
                   <option value="">Selectează tip document</option>
                   {TIPURI.map((t) => (

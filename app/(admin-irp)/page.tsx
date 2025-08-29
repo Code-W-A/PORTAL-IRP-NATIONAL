@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
+
 export default function AdminIndex() {
-  return null;
+  redirect("/lista-BICP");
 }
 
 

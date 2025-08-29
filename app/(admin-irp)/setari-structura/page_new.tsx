@@ -211,7 +211,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                   value={headerLines} 
                   onChange={(e) => setHeaderLines(e.target.value)} 
                 />
-                <p className="text-sm text-gray-500 mt-1">Fiecare linie va apărea în partea de sus a documentelor.</p>
+                <p className="text-sm text-gray-500 mt-1">Fiecare linie va apărea în partea de sus a documentelor. În partea de jos a paginii puteți previzualiza documentul.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Footer lines (un rând pe linie)</label>

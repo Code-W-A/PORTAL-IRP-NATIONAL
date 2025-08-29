@@ -2,7 +2,7 @@ import React from "react";
 import { Document, Page, Text, View, Image, StyleSheet, Font } from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
-  page: { padding: 32 },
+  page: { padding: 32, paddingBottom: 100 },
   row: { flexDirection: "row", justifyContent: "space-between" },
   headerCol: { flex: 7, alignItems: "center", marginLeft: -50 },
   metaCol: { flex: 3, alignItems: "flex-end", paddingRight: 8 },
