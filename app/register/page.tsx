@@ -22,6 +22,26 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  function mapAuthError(e: any): string {
+    const code = e?.code || "";
+    switch (code) {
+      case "auth/email-already-in-use":
+        return "Există deja un cont cu acest email.";
+      case "auth/invalid-email":
+        return "Adresa de email nu este validă.";
+      case "auth/weak-password":
+        return "Parola este prea slabă (minim 6 caractere).";
+      case "auth/network-request-failed":
+        return "Conexiune indisponibilă. Verificați internetul și reîncercați.";
+      case "auth/too-many-requests":
+        return "Prea multe încercări. Vă rugăm reîncercați mai târziu.";
+      case "auth/operation-not-allowed":
+        return "Înregistrarea prin email/parolă nu este activată pentru acest proiect.";
+      default:
+        return e?.message ? `Înregistrare eșuată: ${e.message}` : "Înregistrare eșuată";
+    }
+  }
+
   async function ensureUniqueTenant(j: string, s: string) {
     // un singur cont per structură în acel județ: verificăm dacă există deja "owner"
     const ref = doc(db, `Judete/${j}/Structuri/${s}/Settings/owner`);
@@ -38,6 +58,10 @@ export default function RegisterPage() {
     }
     if (password !== confirmPassword) {
       setError("Parolele nu coincid.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Parola trebuie să conțină minim 6 caractere.");
       return;
     }
     setLoading(true);
@@ -62,7 +86,7 @@ export default function RegisterPage() {
       setTenantContext({ judetId, structuraId });
       router.replace("/setari-structura");
     } catch (e: any) {
-      setError("Înregistrare eșuată");
+      setError(mapAuthError(e));
     } finally {
       setLoading(false);
     }

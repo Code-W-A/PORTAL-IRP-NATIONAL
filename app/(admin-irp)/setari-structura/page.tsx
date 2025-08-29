@@ -170,8 +170,8 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
-      <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30 overflow-x-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         <div className="mb-8">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl flex items-center justify-center shadow-xl">
@@ -190,8 +190,8 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <section className="lg:col-span-1 bg-white rounded-2xl border border-gray-200/60 shadow-lg shadow-gray-100/50 p-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
+          <section className="lg:col-span-1 bg-white rounded-2xl border border-gray-200/60 shadow-lg shadow-gray-100/50 p-4 sm:p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-8 bg-blue-100 rounded-xl flex items-center justify-center">
                 <Image size={18} className="text-blue-600"/>
@@ -211,19 +211,19 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                 </div>
               )}
               <div>
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                   <label className="block text-sm font-medium text-gray-700">Galerie sigle disponibile</label>
-                  <div className="relative">
+                  <div className="relative w-full sm:w-auto">
                     <input
                       type="text"
                       value={logoQuery}
                       onChange={(e)=>setLogoQuery(e.target.value)}
                       placeholder="Caută după nume fișier..."
-                      className="w-56 border border-gray-300 rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                      className="w-full sm:w-56 border border-gray-300 rounded-lg px-3 py-2 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {gallery
                     .filter((src)=> decodeURIComponent((src.split("/").pop()||"")).toLowerCase().includes(logoQuery.toLowerCase()))
                     .map((src) => {
@@ -252,14 +252,14 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
             </div>
           </section>
 
-          <section className="lg:col-span-2 bg-white rounded-2xl border border-gray-200/60 shadow-lg shadow-gray-100/50 p-6">
+          <section className="lg:col-span-2 bg-white rounded-2xl border border-gray-200/60 shadow-lg shadow-gray-100/50 p-4 sm:p-6">
             <div className="flex items-center gap-3 mb-6">
               <div className="w-8 h-8 bg-purple-100 rounded-xl flex items-center justify-center">
                 <FileText size={18} className="text-purple-600"/>
               </div>
               <h2 className="text-lg font-semibold text-gray-900">Configurare Documente</h2>
             </div>
-            <div className="grid gap-6">
+            <div className="grid gap-6 w-full min-w-0">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Header lines (un rând pe linie)</label>
                 <textarea 
@@ -292,7 +292,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                   <option>DIRECȚIA INFORMARE ȘI RELAȚII PUBLICE</option>
                 </select>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Oraș</label>
                   <input 
@@ -318,9 +318,9 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                 <div className="space-y-4 min-w-0">
                   {semnatari.map((s, idx) => (
                     <div key={idx} className={`rounded-xl border p-4 transition-all duration-200 ${semnatarIndex===idx? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/50 shadow-lg' : 'border-gray-200 bg-white shadow-sm hover:border-gray-300 hover:shadow-md'}`}>
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                         <div className="text-sm font-semibold text-gray-900 truncate">{s.nume || "Nume semnatar"}</div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {semnatarIndex===idx ? (
                             <span className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 font-medium">
                               <Star size={12} className="fill-current" /> Implicit
@@ -403,10 +403,10 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                         />
                       </div>
                     </div>
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex flex-col sm:flex-row sm:justify-end gap-2">
                       <button 
                         type="button" 
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium" 
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm text-sm font-medium w-full sm:w-auto" 
                         onClick={()=>{ if(!newNume.trim()) return; setSemnatari([...semnatari,{functia:newFunctia.trim(), grad:newGrad.trim(), nume:newNume.trim()}]); setNewFunctia(""); setNewGrad(""); setNewNume(""); }}
                       >
                         <Star size={14} /> Adaugă semnatar
@@ -421,9 +421,9 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                 <div className="space-y-4 min-w-0">
                   {purtatori.map((p, idx) => (
                     <div key={idx} className={`rounded-xl border p-4 transition-all duration-200 ${purtatorIndex===idx? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/50 shadow-lg' : 'border-gray-200 bg-white shadow-sm hover:border-gray-300 hover:shadow-md'}`}>
-                      <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                         <div className="text-sm font-semibold text-gray-900 truncate">{p.nume || "Nume purtător"}</div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {purtatorIndex===idx ? (
                             <span className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 font-medium">
                               <Star size={12} className="fill-current" /> Implicit
@@ -484,11 +484,11 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
 
               {/* Save Button */}
               <div className="mt-8 pt-6 border-t border-gray-200">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="text-sm text-gray-600">
                     Toate modificările vor fi aplicate automat în documentele generate.
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
                     {message && (
                       <span className={`text-sm font-medium ${message === 'Salvat' ? 'text-green-600' : 'text-red-600'}`}>
                         {message}
@@ -497,7 +497,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                     <button 
                       onClick={onSave} 
                       disabled={saving} 
-                      className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                      className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 w-full sm:w-auto"
                     >
                       {saving ? (
                         <>

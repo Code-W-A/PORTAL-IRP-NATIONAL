@@ -168,6 +168,7 @@ export function BottomNavbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { auth } = initFirebase();
+  const [bicpOpen, setBicpOpen] = useState(false);
 
   async function handleLogout() {
     try {
@@ -195,16 +196,63 @@ export function BottomNavbar() {
   );
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 border-t bg-white h-16 md:hidden flex">
-      {item("/lista-BICP", "BICP", <FileText size={18} />)}
-      {item("/acreditari/lista", "Acreditări", <Users size={18} />)}
-      {item("/monitorizare/lista", "Monitorizare", <Newspaper size={18} />)}
+    <>
+    <nav className="fixed bottom-0 left-0 right-0 border-t bg-white h-16 md:hidden flex z-40">
+      <div className="relative flex-1">
+        <button
+          onClick={() => setBicpOpen((v) => !v)}
+          className={`flex flex-col items-center justify-center w-full py-2 ${
+            pathname.startsWith("/lista-BICP") || pathname.startsWith("/creaza-BICP") || pathname.startsWith("/statistici-BICP")
+              ? "text-blue-700"
+              : "text-gray-700"
+          }`}
+          aria-label="BICP"
+        >
+          <FileText size={18} />
+          <span className="text-xs mt-1">BICP</span>
+        </button>
+        {/* Modal handled outside of nav */}
+      </div>
+      {/* {item("/acreditari/lista", "Acreditări", <Users size={18} />)} */}
+      {/* {item("/monitorizare/lista", "Monitorizare", <Newspaper size={18} />)} */}
       {item("/setari-structura", "Setări", <Settings size={18} />)}
       <button aria-label="Logout" onClick={handleLogout} className="flex flex-col items-center justify-center flex-1 py-2 text-red-600">
         <LogOut size={18} />
         <span className="text-xs mt-1">Logout</span>
       </button>
     </nav>
+    {bicpOpen && (
+      <div className="fixed inset-0 z-50">
+        <div className="absolute inset-0 bg-black/40" onClick={() => setBicpOpen(false)} />
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-200 p-4">
+          <div className="text-center mb-2 font-semibold text-gray-900">BICP</div>
+          <div className="flex flex-col">
+            <button
+              onClick={() => { setBicpOpen(false); router.push("/creaza-BICP"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <Plus size={16} /> Crează BICP
+            </button>
+            <button
+              onClick={() => { setBicpOpen(false); router.push("/lista-BICP"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <List size={16} /> Lista BICP
+            </button>
+            <button
+              onClick={() => { setBicpOpen(false); router.push("/statistici-BICP"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <BarChart3 size={16} /> Statistici BICP
+            </button>
+          </div>
+          <div className="mt-2 text-center">
+            <button onClick={() => setBicpOpen(false)} className="text-sm text-gray-500 hover:text-gray-700">Închide</button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 

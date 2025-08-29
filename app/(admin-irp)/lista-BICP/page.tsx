@@ -4,7 +4,7 @@ import { useBicpData, type Bicp } from "@/app/(admin-irp)/lista-BICP/hooks/useBi
 import { deleteDoc, doc, collection } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
-import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X } from "lucide-react";
+import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil } from "lucide-react";
 import { FiltersDialog } from "./FiltersDialog";
 
 // Funcție pentru badge-uri colorate
@@ -83,7 +83,7 @@ export default function ListaBicpPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
       <div className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-8">
-          <div className="flex items-center justify-between gap-6 flex-wrap">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center shadow-xl">
                 <FileText size={24} className="text-white" />
@@ -99,7 +99,7 @@ export default function ListaBicpPage() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap w-full md:w-auto">
               <button 
                 onClick={reload} 
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-colors"
@@ -152,8 +152,8 @@ export default function ListaBicpPage() {
 
         {/* Search */}
         <div className="mb-8">
-          <div className="flex gap-4 items-center">
-            <div className="relative flex-1">
+          <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center">
+            <div className="relative flex-1 w-full">
               <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 placeholder="Caută în titlu, conținut sau nume afișare..."
@@ -164,7 +164,7 @@ export default function ListaBicpPage() {
             </div>
             <button 
               onClick={() => setShowFilters(true)}
-              className="inline-flex items-center gap-2 px-6 py-4 bg-white border border-gray-300 rounded-2xl text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-400 shadow-sm transition-colors whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-6 py-4 bg-white border border-gray-300 rounded-2xl text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-400 shadow-sm transition-colors whitespace-nowrap w-full md:w-auto justify-center"
             >
               <Filter size={18} /> Filtre avansate
             </button>
@@ -273,6 +273,13 @@ function CardView({ items, selectMode, selected, setSelected }: { items: Bicp[];
                 title="PDF fără semnături"
               >
                 <FileText size={14}/> PDF fără semnături
+              </a>
+              <a
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                href={`/editeaza-BICP/${x.id}`}
+                title="Editează document"
+              >
+                <Pencil size={14}/> Editează
               </a>
               <CopyButton label="Titlu" value={x.titlu} />
               <CopyButton label="Conținut" value={x.comunicat || ""} />
@@ -478,6 +485,13 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                         title="PDF fără semnături"
                       >
                         <FileText size={12}/> PDF public
+                      </a>
+                      <a 
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm" 
+                        href={`/editeaza-BICP/${x.id}`}
+                        title="Editează"
+                      >
+                        <Pencil size={12}/> Editează
                       </a>
                       <CopyButton label="Titlu" value={x.titlu} small />
                       <CopyButton label="Conținut" value={x.comunicat || ""} small />
