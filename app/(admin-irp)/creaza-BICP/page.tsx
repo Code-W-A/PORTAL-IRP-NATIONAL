@@ -434,7 +434,7 @@ export default function CreateBicpPage() {
                   onChange={(e) => setTitlu(e.target.value)} 
                 />
               </div>
-            </div>
+          </div>
             <div className="mt-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">Conținut Document</label>
               <textarea
