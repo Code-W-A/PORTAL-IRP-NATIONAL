@@ -6,7 +6,7 @@ import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { pdf } from "@react-pdf/renderer";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
-import { Star, Trash2, Settings, Building2, FileText, Image } from "lucide-react";
+import { Star, Trash2, Settings, Building2, FileText, Image, Download } from "lucide-react";
 
 export default function SetariStructuraPage() {
   const { db, app } = initFirebase();
@@ -32,6 +32,7 @@ export default function SetariStructuraPage() {
   const [purtatori, setPurtatori] = useState<{ nume: string }[]>([]);
   const [purtatorIndex, setPurtatorIndex] = useState<number>(0);
   const [newPurtator, setNewPurtator] = useState("");
+  const [canInstall, setCanInstall] = useState(false);
 
   function getDefaultHeaderLines(structId: string): string[] {
     const id = (structId || "").toUpperCase();
@@ -98,6 +99,28 @@ export default function SetariStructuraPage() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    const isStandalone = typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone);
+    const hasDeferred = typeof window !== "undefined" && !!(window as any).__pwaDeferredPrompt;
+    setCanInstall(!isStandalone && hasDeferred);
+    const onFocus = () => {
+      const againHas = !!(window as any).__pwaDeferredPrompt;
+      const againStandalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone;
+      setCanInstall(!againStandalone && againHas);
+    };
+    window.addEventListener("focus", onFocus, { capture: true } as any);
+    return () => window.removeEventListener("focus", onFocus, { capture: true } as any);
+  }, []);
+
+  async function triggerInstall() {
+    try {
+      const ev = (window as any).__pwaDeferredPrompt as any;
+      if (!ev) return;
+      await ev.prompt();
+      await ev.userChoice;
+    } catch {}
+  }
 
   useEffect(() => {
     let url: string | null = null;
@@ -199,6 +222,17 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
               <h2 className="text-lg font-semibold text-gray-900">Identitate Vizuală</h2>
             </div>
             <div className="space-y-6">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={triggerInstall}
+                  disabled={!canInstall}
+                  className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium border ${canInstall ? "bg-white text-gray-800 hover:bg-gray-50 border-gray-300" : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"}`}
+                  title="Instalează aplicația (PWA)"
+                >
+                  <Download size={14}/> {canInstall ? "Instalează aplicația" : "Instalare indisponibilă"}
+                </button>
+              </div>
               {logoUrl && (
                 <div className="text-center">
                   <div className="text-xs font-medium text-gray-700 mb-2">

@@ -119,7 +119,7 @@ export function TopNavbar() {
     <nav className="sticky top-0 z-30 w-full bg-white/90 backdrop-blur border-b border-gray-200">
       <div className="mx-auto max-w-7xl px-4 flex items-center">
         <Link href="/lista-BICP" className="mr-4 inline-flex items-center text-gray-900 font-semibold tracking-tight">
-          <span className="inline-flex items-center justify-center h-6 w-6 rounded-md bg-blue-600 text-white text-xs mr-2">IRP</span>
+          <img src="/logo-aplicatie/sigla-aplicatie-svg.svg" alt="IRP" className="h-6 w-6 mr-2" />
           Portal IRP
         </Link>
         
