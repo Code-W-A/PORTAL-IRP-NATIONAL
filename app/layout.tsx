@@ -2,9 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { initClientLogger } from "@/lib/client-logger";
-import dynamic from "next/dynamic";
-
-const PwaInstallPrompt = dynamic(() => import("@/app/components/PwaInstallPrompt"), { ssr: false });
+import PwaInstallPrompt from "@/app/components/PwaInstallPrompt";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

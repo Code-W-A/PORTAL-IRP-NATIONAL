@@ -32,6 +32,7 @@ export default function PwaInstallPrompt() {
   async function install() {
     try {
       setInstalling(true);
+      if (!deferred) return; // type guard
       await deferred.prompt();
       await deferred.userChoice;
     } catch {}
