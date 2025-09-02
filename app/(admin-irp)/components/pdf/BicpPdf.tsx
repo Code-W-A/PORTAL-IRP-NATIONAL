@@ -1,7 +1,7 @@
 import React from "react";
 import { Document, Page, Text, View, Image, StyleSheet, Font } from "@react-pdf/renderer";
 
-const styles = StyleSheet.create({
+export const styles = StyleSheet.create({
   page: { padding: 32, paddingBottom: 100 },
   row: { flexDirection: "row", justifyContent: "space-between" },
   headerCol: { flex: 7, alignItems: "center", marginLeft: -50 },
@@ -46,33 +46,25 @@ export type BicpPdfData = {
 
 export type BicpPdfVariant = "signed" | "public";
 
-export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
-  const enableNoto = true;
-  if (enableNoto) {
-    try {
-      const makeUrl = (path: string) => {
-        if (path.startsWith("http://") || path.startsWith("https://")) return path;
-        const base = settings?.assetBaseUrl || "";
-        return base ? new URL(path, base).toString() : path;
-      };
-      // Register Noto Serif (hosted in public/fonts)
-      const nserRegular = makeUrl("/fonts/NotoSerif-Regular.ttf");
-      const nserBold = makeUrl("/fonts/NotoSerif-Bold.ttf");
-      const nserItalic = makeUrl("/fonts/NotoSerif-Italic.ttf");
-      const nserBoldItalic = makeUrl("/fonts/NotoSerif-BoldItalic.ttf");
-      Font.register({ family: "NotoSerif", src: nserRegular });
-      Font.register({ family: "NotoSerif", src: nserBold, fontWeight: "bold" });
-      Font.register({ family: "NotoSerif", src: nserItalic, fontStyle: "italic" });
-      Font.register({ family: "NotoSerif", src: nserBoldItalic, fontStyle: "italic", fontWeight: "bold" });
-    } catch {}
-  }
+function registerNoto(assetBaseUrl?: string) {
+  try {
+    const makeUrl = (p: string) => {
+      if (p.startsWith("http://") || p.startsWith("https://")) return p;
+      const base = assetBaseUrl || "";
+      return base ? new URL(p, base).toString() : p;
+    };
+    const nserRegular = makeUrl("/fonts/NotoSerif-Regular.ttf");
+    const nserBold = makeUrl("/fonts/NotoSerif-Bold.ttf");
+    const nserItalic = makeUrl("/fonts/NotoSerif-Italic.ttf");
+    const nserBoldItalic = makeUrl("/fonts/NotoSerif-BoldItalic.ttf");
+    Font.register({ family: "NotoSerif", src: nserRegular });
+    Font.register({ family: "NotoSerif", src: nserBold, fontWeight: "bold" });
+    Font.register({ family: "NotoSerif", src: nserItalic, fontStyle: "italic" });
+    Font.register({ family: "NotoSerif", src: nserBoldItalic, fontStyle: "italic", fontWeight: "bold" });
+  } catch {}
+}
 
-  const s = settings || {};
-  const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
-    "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
-    "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
-  ];
-  function renderHtmlContent(html: string) {
+function renderHtmlContent(html: string) {
     if (typeof window === "undefined") return null;
     try {
       // Use browser's DOMParser only on client to avoid bundling node polyfills
@@ -149,69 +141,84 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
     }
   }
 
+export function createBicpPage({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
+  registerNoto(settings?.assetBaseUrl);
+  const s = settings || {};
+  const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
+    "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
+    "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
+  ];
   return (
-    <Document>
-      <Page size="A4" style={enableNoto ? [styles.page, { fontFamily: "NotoSerif" }] : styles.page}>
-        <View style={styles.row}>
-          <View style={styles.headerCol}>
-            {headerLines.map((l, idx) => (
-              <Text key={idx} style={styles.headerLine}>{l}</Text>
-            ))}
-            {s.logoUrlPublic ? <Image src={s.logoUrlPublic} style={styles.logo} /> : null}
-          </View>
-          <View style={styles.metaCol}>
-            {variant === "signed" && (
-              <>
-                <Text style={styles.secrecy}>{s.secrecyLabel || "NESECRET"}</Text>
-                <Text style={styles.meta}>Exemplar unic</Text>
-              </>
-            )}
-            <Text style={styles.meta}>Nr. {data.numar || "____"}</Text>
-            <Text style={styles.meta}>{(s.city ? s.city + ", " : "") + (data.dateLabel || "")}</Text>
-            <Text style={styles.meta}>{data.purtator || ""}</Text>
-            {variant === "signed" && (
-              <Text style={styles.meta}>{s.phone || ""}</Text>
-            )}
+    <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif" }]}> 
+      <View style={styles.row}>
+        <View style={styles.headerCol}>
+          {headerLines.map((l, idx) => (
+            <Text key={idx} style={styles.headerLine}>{l}</Text>
+          ))}
+          {s.logoUrlPublic ? <Image src={s.logoUrlPublic} style={styles.logo} /> : null}
+        </View>
+        <View style={styles.metaCol}>
+          {variant === "signed" && (
+            <>
+              <Text style={styles.secrecy}>{s.secrecyLabel || "NESECRET"}</Text>
+              <Text style={styles.meta}>Exemplar unic</Text>
+            </>
+          )}
+          <Text style={styles.meta}>Nr. {data.numar || "____"}</Text>
+          <Text style={styles.meta}>{(s.city ? s.city + ", " : "") + (data.dateLabel || "")}</Text>
+          <Text style={styles.meta}>{data.purtator || ""}</Text>
+          {variant === "signed" && (
+            <Text style={styles.meta}>{s.phone || ""}</Text>
+          )}
+        </View>
+      </View>
+
+      {variant === "signed" && (
+        <View style={styles.approveRow}>
+          <View style={styles.approveBox}>
+            <Text style={styles.approveTitle}>APROB</Text>
+            <Text style={styles.approveLine}>{data.semnatar.pentru}</Text>
+            <Text style={styles.approveLine}>{data.semnatar.functia}</Text>
+            <Text style={styles.approveLine}>{data.semnatar.grad}</Text>
+            <Text style={styles.approveLine}>{data.semnatar.nume}</Text>
           </View>
         </View>
+      )}
 
-        {/* APROB pe propriul rând, în partea dreaptă (doar pentru varianta cu semnături) */}
-        {variant === "signed" && (
-          <View style={styles.approveRow}>
-            <View style={styles.approveBox}>
-              <Text style={styles.approveTitle}>APROB</Text>
-              <Text style={styles.approveLine}>{data.semnatar.pentru}</Text>
-              <Text style={styles.approveLine}>{data.semnatar.functia}</Text>
-              <Text style={styles.approveLine}>{data.semnatar.grad}</Text>
-              <Text style={styles.approveLine}>{data.semnatar.nume}</Text>
-            </View>
-          </View>
-        )}
+      <Text style={styles.type}>{data.tipDocument}</Text>
+      <Text style={styles.title}>{data.titlu}</Text>
+      {data.continutHtml ? (
+        <View>{renderHtmlContent(data.continutHtml) || <Text style={styles.content}>{data.continut}</Text>}</View>
+      ) : (
+        <Text style={styles.content}>{data.continut}</Text>
+      )}
 
-        <Text style={styles.type}>{data.tipDocument}</Text>
-        <Text style={styles.title}>{data.titlu}</Text>
-        {data.continutHtml ? (
-          <View>{renderHtmlContent(data.continutHtml) || <Text style={styles.content}>{data.continut}</Text>}</View>
-        ) : (
-          <Text style={styles.content}>{data.continut}</Text>
-        )}
+      {s.unitLabel ? (
+        <Text style={[styles.unitInline]}>{s.unitLabel}</Text>
+      ) : null}
 
-        {/* semnatar mutat în colțul din dreapta-sus, conform cerinței */}
+      {s.footerLines && s.footerLines.length > 0 ? (
+        <View style={styles.footer} fixed>
+          {s.footerLines.map((l, i) => (
+            <Text key={i} style={styles.footerLine}>{l}</Text>
+          ))}
+        </View>
+      ) : null}
+    </Page>
+  );
+}
 
-        {/* Unitate jos stânga (cu spațiu față de conținut) */}
-        {s.unitLabel ? (
-          <Text style={[styles.unitInline]}>{s.unitLabel}</Text>
-        ) : null}
+export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
+  registerNoto(settings?.assetBaseUrl);
+  const s = settings || {};
+  const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
+    "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
+    "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
+  ];
 
-
-        {s.footerLines && s.footerLines.length > 0 ? (
-          <View style={styles.footer} fixed>
-            {s.footerLines.map((l, i) => (
-              <Text key={i} style={styles.footerLine}>{l}</Text>
-            ))}
-          </View>
-        ) : null}
-      </Page>
+  return (
+    <Document>
+      {createBicpPage({ data, settings, variant })}
     </Document>
   );
 }

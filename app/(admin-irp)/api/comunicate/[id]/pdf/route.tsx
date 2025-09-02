@@ -11,6 +11,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const url = new URL(_req.url);
   const variantParam = url.searchParams.get("variant");
   const variant = variantParam === "public" ? "public" : "signed";
+  const disposition = url.searchParams.get("disposition") === "inline" ? "inline" : "attachment";
   const { db } = initFirebase();
   // Try tenant-scoped first, fallback to root collection for older docs
   let snap = await (async () => {
@@ -76,7 +77,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   return new NextResponse(blob, {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${filenameBase}${suffix}.pdf"`,
+      "Content-Disposition": `${disposition}; filename="${filenameBase}${suffix}.pdf"`,
     },
   });
 }

@@ -4,7 +4,7 @@ import { useBicpData, type Bicp } from "@/app/(admin-irp)/lista-BICP/hooks/useBi
 import { deleteDoc, doc, collection } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
-import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil } from "lucide-react";
+import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2 } from "lucide-react";
 import { FiltersDialog } from "./FiltersDialog";
 
 // Funcție pentru badge-uri colorate
@@ -61,8 +61,168 @@ export default function ListaBicpPage() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [view, setView] = useState<string>(() => localStorage.getItem("bicpViewMode") || "card");
   const [showFilters, setShowFilters] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [printingId, setPrintingId] = useState<string | null>(null);
 
   const allSelectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
+
+  function openBulkPdfs(variant: "signed" | "public") {
+    if (!allSelectedIds.length) return;
+    // Deschide fiecare PDF într-un tab nou
+    allSelectedIds.forEach((id) => {
+      const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}`;
+      window.open(url, "_blank");
+    });
+  }
+
+  async function bulkPrintUrls(urls: string[]) {
+    if (!urls.length) return;
+    setIsPrinting(true);
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.opacity = "0";
+    iframe.style.pointerEvents = "none";
+    document.body.appendChild(iframe);
+
+    for (const rawUrl of urls) {
+      const url = rawUrl.includes("?") ? `${rawUrl}&disposition=inline` : `${rawUrl}?disposition=inline`;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise<void>((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          try { iframe.onload = null; } catch {}
+          resolve();
+        };
+        iframe.onload = () => {
+          try {
+            const win = iframe.contentWindow;
+            if (!win) return finish();
+            const onAfterPrint = () => {
+              try { win.removeEventListener("afterprint", onAfterPrint as any); } catch {}
+              finish();
+            };
+            try { win.addEventListener("afterprint", onAfterPrint as any); } catch {}
+            // Așteaptă o clipă ca PDF-ul să se așeze înainte de print
+            setTimeout(() => {
+              try { win.focus(); } catch {}
+              try { win.print(); } catch { onAfterPrint(); }
+              // Fallback dacă afterprint nu se declanșează
+              setTimeout(onAfterPrint, 4000);
+            }, 350);
+          } catch {
+            finish();
+          }
+        };
+        iframe.src = url;
+      });
+      // mică pauză între printuri
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    try { document.body.removeChild(iframe); } catch {}
+    setIsPrinting(false);
+  }
+
+  async function startBulkPrint(variant: "signed" | "public") {
+    if (!allSelectedIds.length || isPrinting) return;
+    setIsPrinting(true);
+    try {
+      const res = await fetch(`/api/comunicate/bulk-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: allSelectedIds, variant }),
+      });
+      if (!res.ok) throw new Error("bulk pdf failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.opacity = "0";
+      iframe.style.pointerEvents = "none";
+      document.body.appendChild(iframe);
+      await new Promise<void>((resolve) => {
+        iframe.onload = () => resolve();
+        iframe.src = url;
+      });
+      const win = iframe.contentWindow;
+      const cleanup = () => {
+        try { document.body.removeChild(iframe); } catch {}
+        try { URL.revokeObjectURL(url); } catch {}
+      };
+      const afterPrintPromise = new Promise<void>((resolve) => {
+        const handler = () => {
+          try { win?.removeEventListener("afterprint", handler as any); } catch {}
+          try { window.removeEventListener("focus", onFocus, { capture: true } as any); } catch {}
+          resolve();
+        };
+        const onFocus = () => {
+          // După închiderea dialogului de print, focus revine la fereastră
+          handler();
+        };
+        try { win?.addEventListener("afterprint", handler as any); } catch {}
+        try { window.addEventListener("focus", onFocus, { once: true, capture: true } as any); } catch {}
+        // Fallback maxim 20s
+        setTimeout(handler, 20000);
+      });
+      try { win?.focus(); } catch {}
+      try { win?.print(); } catch {}
+      await afterPrintPromise;
+      cleanup();
+    } catch (e) {
+      alert("Eroare la generarea PDF-ului combinat");
+    }
+    setIsPrinting(false);
+  }
+
+  async function printSingle(id: string, variant: "signed" | "public" = "signed") {
+    if (isPrinting) return;
+    setIsPrinting(true);
+    setPrintingId(id);
+    try {
+      const url = `/api/comunicate/${id}/pdf?variant=${variant}&disposition=inline`;
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.opacity = "0";
+      iframe.style.pointerEvents = "none";
+      document.body.appendChild(iframe);
+      await new Promise<void>((resolve) => { iframe.onload = () => resolve(); iframe.src = url; });
+      const win = iframe.contentWindow;
+      const afterPrintPromise = new Promise<void>((resolve) => {
+        const handler = () => {
+          try { win?.removeEventListener("afterprint", handler as any); } catch {}
+          try { window.removeEventListener("focus", onFocus, { capture: true } as any); } catch {}
+          resolve();
+        };
+        const onFocus = () => { handler(); };
+        try { win?.addEventListener("afterprint", handler as any); } catch {}
+        try { window.addEventListener("focus", onFocus, { once: true, capture: true } as any); } catch {}
+        setTimeout(handler, 20000);
+      });
+      try { win?.focus(); } catch {}
+      try { win?.print(); } catch {}
+      await afterPrintPromise;
+      try { document.body.removeChild(iframe); } catch {}
+    } catch (e) {
+      alert("Eroare la tipărirea documentului");
+    }
+    setIsPrinting(false);
+    setPrintingId(null);
+  }
 
   async function handleDeleteMany() {
     if (!allSelectedIds.length) return;
@@ -139,12 +299,44 @@ export default function ListaBicpPage() {
                 {selectMode ? "Selecție activă" : "Selectează"}
               </button>
               {selectMode && (
-                <button 
-                  onClick={handleDeleteMany} 
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 shadow-lg shadow-red-500/25 transition-colors"
-                >
-                  <Trash2 size={16} /> Șterge ({allSelectedIds.length})
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button 
+                    onClick={() => openBulkPdfs("signed")} 
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg transition-colors"
+                    title="Descarcă PDF cu semnături pentru selecție"
+                  >
+                    <FileDown size={16} /> PDF semnate ({allSelectedIds.length})
+                  </button>
+                  <button 
+                    onClick={() => openBulkPdfs("public")} 
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-lg transition-colors"
+                    title="Descarcă PDF fără semnături pentru selecție"
+                  >
+                    <FileText size={16} /> PDF fără semnături ({allSelectedIds.length})
+                  </button>
+                  <button 
+                    onClick={() => startBulkPrint("signed")} 
+                    disabled={!allSelectedIds.length || isPrinting}
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg transition-colors ${(!allSelectedIds.length || isPrinting) ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
+                    title="Printează PDF cu semnături pentru selecție"
+                  >
+                    <FileDown size={16} /> {isPrinting ? "Se tipărește..." : "Printează semnate"}
+                  </button>
+                  <button 
+                    onClick={() => startBulkPrint("public")} 
+                    disabled={!allSelectedIds.length || isPrinting}
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg transition-colors ${(!allSelectedIds.length || isPrinting) ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-teal-600 text-white hover:bg-teal-700"}`}
+                    title="Printează PDF fără semnături pentru selecție"
+                  >
+                    <FileText size={16} /> {isPrinting ? "Se tipărește..." : "Printează publice"}
+                  </button>
+                  <button 
+                    onClick={handleDeleteMany} 
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 shadow-lg shadow-red-500/25 transition-colors"
+                  >
+                    <Trash2 size={16} /> Șterge ({allSelectedIds.length})
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -191,9 +383,9 @@ export default function ListaBicpPage() {
 
         {!loading && (
           view === "card" ? (
-            <CardView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} />
+            <CardView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} />
           ) : (
-            <TableView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} filters={filters} setFilters={setFilters} />
+            <TableView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} filters={filters} setFilters={setFilters} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} />
           )
         )}
 
@@ -208,7 +400,7 @@ export default function ListaBicpPage() {
   );
 }
 
-function CardView({ items, selectMode, selected, setSelected }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void }) {
+function CardView({ items, selectMode, selected, setSelected, printSingle, isPrinting, printingId }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null }) {
   if (!items.length) return (
     <div className="text-center py-12">
       <FileText size={48} className="mx-auto text-gray-300 mb-3" />
@@ -274,6 +466,14 @@ function CardView({ items, selectMode, selected, setSelected }: { items: Bicp[];
               >
                 <FileText size={14}/> PDF fără semnături
               </a>
+              <button
+                onClick={() => printSingle(x.id, "signed")}
+                disabled={isPrinting}
+                className={`inline-flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors shadow-sm ${isPrinting ? "border-gray-200 text-gray-500 cursor-not-allowed bg-gray-50" : "border-gray-300 hover:bg-gray-50"}`}
+                title="Printează document"
+              >
+                {printingId === x.id ? <Loader2 className="animate-spin" size={14}/> : <Printer size={14}/>} {printingId === x.id ? "Se pregătește..." : "Printează"}
+              </button>
               <a
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
                 href={`/editeaza-BICP/${x.id}`}
@@ -369,7 +569,7 @@ function TableSkeletons() {
   );
 }
 
-function TableView({ items, selectMode, selected, setSelected, filters, setFilters }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; filters: any; setFilters: (f: any) => void }) {
+function TableView({ items, selectMode, selected, setSelected, filters, setFilters, printSingle, isPrinting, printingId }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; filters: any; setFilters: (f: any) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null }) {
   // if (!items.length) return (
   //   <div className="text-center py-12">
   //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
@@ -484,8 +684,16 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                         rel="noreferrer"
                         title="PDF fără semnături"
                       >
-                        <FileText size={12}/> PDF public
+                        <FileText size={12}/> PDF fără semnături
                       </a>
+                      <button 
+                        onClick={() => printSingle(x.id, "signed")} 
+                        disabled={isPrinting}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-lg transition-colors shadow-sm ${isPrinting ? "border-gray-200 text-gray-500 cursor-not-allowed bg-gray-50" : "border-gray-300 hover:bg-gray-50"}`} 
+                        title="Printează"
+                      >
+                        {printingId === x.id ? <Loader2 className="animate-spin" size={12}/> : <Printer size={12}/>} {printingId === x.id ? "Se pregătește..." : "Printează"}
+                      </button>
                       <a 
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm" 
                         href={`/editeaza-BICP/${x.id}`}
