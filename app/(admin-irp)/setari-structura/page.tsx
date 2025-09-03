@@ -7,11 +7,14 @@ import { getTenantContext } from "@/lib/tenant";
 import { pdf } from "@react-pdf/renderer";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
 import { Star, Trash2, Settings, Building2, FileText, Image, Download } from "lucide-react";
+import { onAuthStateChanged, sendPasswordResetEmail, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider, signOut, type User } from "firebase/auth";
+import { useRouter } from "next/navigation";
 
 export default function SetariStructuraPage() {
-  const { db, app } = initFirebase();
+  const { db, app, auth } = initFirebase();
   const storage = getStorage(app); // no longer used for logo upload
   const { judetId, structuraId } = getTenantContext();
+  const router = useRouter();
 
   const [headerLines, setHeaderLines] = useState<string>("");
   const [footerLines, setFooterLines] = useState<string>("");
@@ -33,6 +36,17 @@ export default function SetariStructuraPage() {
   const [purtatorIndex, setPurtatorIndex] = useState<number>(0);
   const [newPurtator, setNewPurtator] = useState("");
   const [canInstall, setCanInstall] = useState(false);
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [emailChange, setEmailChange] = useState("");
+  const [authMsg, setAuthMsg] = useState<string | null>(null);
+  const [authOk, setAuthOk] = useState<boolean | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [currentPass, setCurrentPass] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [passMsg, setPassMsg] = useState<string | null>(null);
+  const [passOk, setPassOk] = useState<boolean | null>(null);
+  const [passLoading, setPassLoading] = useState(false);
 
   function getDefaultHeaderLines(structId: string): string[] {
     const id = (structId || "").toUpperCase();
@@ -58,6 +72,93 @@ export default function SetariStructuraPage() {
       ];
     }
     return ["MINISTERUL AFACERILOR INTERNE"]; 
+  }
+
+  useEffect(() => {
+    if (!auth) return;
+    const unsub = onAuthStateChanged(auth, (u) => setAuthUser(u));
+    return () => unsub();
+  }, [auth]);
+
+  function mapAuthError(e: any): string {
+    const code = e?.code || "";
+    switch (code) {
+      case "auth/invalid-email":
+        return "Email invalid.";
+      case "auth/weak-password":
+        return "Parola este prea slabă (minim 6 caractere).";
+      case "auth/wrong-password":
+        return "Parola curentă este incorectă.";
+      case "auth/email-already-in-use":
+        return "Acest email este deja folosit.";
+      case "auth/requires-recent-login":
+        return "Sesiunea a expirat. Deconectați-vă și reconectați-vă pentru a schimba emailul.";
+      default:
+        return typeof e?.message === "string" ? e.message : "A apărut o eroare.";
+    }
+  }
+
+  async function handleSendReset() {
+    if (!authUser?.email) return;
+    setAuthLoading(true);
+    setAuthMsg(null);
+    try {
+      await sendPasswordResetEmail(auth, authUser.email);
+      setAuthOk(true);
+      setAuthMsg("Email de resetare parolă trimis.");
+    } catch (e: any) {
+      setAuthOk(false);
+      setAuthMsg(mapAuthError(e));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleChangeEmail() {
+    if (!emailChange.trim() || !auth?.currentUser) return;
+    setAuthLoading(true);
+    setAuthMsg(null);
+    try {
+      await updateEmail(auth.currentUser, emailChange.trim());
+      setAuthOk(true);
+      setAuthMsg("Email actualizat cu succes.");
+      setEmailChange("");
+    } catch (e: any) {
+      setAuthOk(false);
+      setAuthMsg(mapAuthError(e));
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      await signOut(auth);
+    } finally {
+      router.replace("/login");
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!auth?.currentUser || !authUser?.email) return;
+    if (!currentPass || !newPass || newPass !== confirmPass) return;
+    setPassLoading(true);
+    setPassMsg(null);
+    try {
+      const cred = EmailAuthProvider.credential(authUser.email, currentPass);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await updatePassword(auth.currentUser, newPass);
+      setPassOk(true);
+      setPassMsg("Parola a fost actualizată.");
+      setCurrentPass("");
+      setNewPass("");
+      setConfirmPass("");
+    } catch (e: any) {
+      setPassOk(false);
+      setPassMsg(mapAuthError(e));
+    } finally {
+      setPassLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -579,6 +680,112 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                 </div>
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Cont și securitate */}
+        <div className="mt-8 bg-white rounded-2xl border border-gray-200/60 shadow-lg shadow-gray-100/50 p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center">
+              <Settings size={18} className="text-emerald-600"/>
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Cont și securitate</h2>
+              <p className="text-sm text-gray-600">Gestionați adresa de email și parola contului conectat</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <div className="text-sm text-gray-600 mb-2">Cont conectat</div>
+              <div className="rounded-xl border border-gray-200 p-4 bg-gray-50/50">
+                <div className="text-sm text-gray-900 font-medium break-all">{authUser?.email || "-"}</div>
+                <div className="text-xs text-gray-500 mt-1">UID: <span className="break-all">{authUser?.uid || "-"}</span></div>
+              </div>
+
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={handleSendReset}
+                  disabled={!authUser?.email || authLoading}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border ${(!authUser?.email || authLoading) ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed" : "bg-white text-gray-800 hover:bg-gray-50 border-gray-300"}`}
+                >
+                  Trimite email de resetare parolă
+                </button>
+              </div>
+            </div>
+
+            <div className="md:col-span-1">
+              <div className="text-sm text-gray-600 mb-2">Schimbare email</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="email"
+                  value={emailChange}
+                  onChange={(e)=>setEmailChange(e.target.value)}
+                  placeholder="nou-email@exemplu.ro"
+                  className="sm:col-span-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button
+                  type="button"
+                  onClick={handleChangeEmail}
+                  disabled={!emailChange.trim() || authLoading}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Actualizează email
+                </button>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
+                >
+                  Deconectare
+                </button>
+                {authMsg && (
+                  <span className={`text-sm ${authOk ? "text-emerald-600" : "text-red-600"}`}>{authMsg}</span>
+                )}
+              </div>
+            </div>
+
+            {/* <div className="md:col-span-1">
+              <div className="text-sm text-gray-600 mb-2">Schimbare parolă</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="password"
+                  value={currentPass}
+                  onChange={(e)=>setCurrentPass(e.target.value)}
+                  placeholder="Parola curentă"
+                  className="sm:col-span-3 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+                <input
+                  type="password"
+                  value={newPass}
+                  onChange={(e)=>setNewPass(e.target.value)}
+                  placeholder="Parola nouă"
+                  className="sm:col-span-2 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+                <input
+                  type="password"
+                  value={confirmPass}
+                  onChange={(e)=>setConfirmPass(e.target.value)}
+                  placeholder="Confirmă parola"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                />
+                <button
+                  type="button"
+                  onClick={handleChangePassword}
+                  disabled={!currentPass || !newPass || newPass !== confirmPass || passLoading}
+                  className="sm:col-span-3 inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Actualizează parola
+                </button>
+              </div>
+              {passMsg && (
+                <div className={`mt-3 text-sm ${passOk ? "text-emerald-600" : "text-red-600"}`}>{passMsg}</div>
+              )}
+            </div> */}
           </div>
         </div>
       </div>

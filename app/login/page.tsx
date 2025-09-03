@@ -2,6 +2,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { initFirebase } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { setTenantContext } from "@/lib/tenant";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { AuthBackground } from "@/app/components/AuthBackground";
@@ -20,7 +22,16 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      try {
+        const { db } = initFirebase();
+        const profileRef = doc(db, `users/${cred.user.uid}`);
+        const profileSnap = await getDoc(profileRef);
+        const prof = profileSnap.exists() ? (profileSnap.data() as any) : null;
+        if (prof?.judetId && prof?.structuraId) {
+          setTenantContext({ judetId: prof.judetId, structuraId: prof.structuraId });
+        }
+      } catch {}
       router.replace("/lista-BICP");
     } catch (err: any) {
       setError("Email sau parolă incorecte.");
