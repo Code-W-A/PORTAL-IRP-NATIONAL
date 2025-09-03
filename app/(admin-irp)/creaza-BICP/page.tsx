@@ -374,13 +374,13 @@ export default function CreateBicpPage() {
                   onChange={(e) => setSemnatarKey(e.target.value)} 
                   className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
                 >
-                  <option value="">Selectează semnatar</option>
+                
                   {semnatariSettings.map((s, idx) => (
                     <option key={`settings:${idx}`} value={`settings:${idx}`}>{s.nume}</option>
                   ))}
-                  {SEMNATARI.map((s) => (
+                  {/* {SEMNATARI.map((s) => (
                     <option key={s.key} value={s.key}>{s.numeSemnatar}</option>
-                  ))}
+                  ))} */}
                 </select>
                 {semnatar && (
                   <div className="text-sm text-gray-600 mt-2 p-3 bg-gray-50 rounded-lg">
