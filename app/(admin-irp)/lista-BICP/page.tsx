@@ -69,8 +69,9 @@ export default function ListaBicpPage() {
   function openBulkPdfs(variant: "signed" | "public") {
     if (!allSelectedIds.length) return;
     // Deschide fiecare PDF într-un tab nou
+    const { judetId, structuraId } = getTenantContext();
     allSelectedIds.forEach((id) => {
-      const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}`;
+      const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
       window.open(url, "_blank");
     });
   }
@@ -190,7 +191,8 @@ export default function ListaBicpPage() {
     setIsPrinting(true);
     setPrintingId(id);
     try {
-      const url = `/api/comunicate/${id}/pdf?variant=${variant}&disposition=inline`;
+      const { judetId, structuraId } = getTenantContext();
+      const url = `/api/comunicate/${id}/pdf?variant=${variant}&disposition=inline&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
       const iframe = document.createElement("iframe");
       iframe.style.position = "fixed";
       iframe.style.right = "0";
@@ -450,7 +452,7 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
             <div className="flex flex-wrap gap-2">
               <a 
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm" 
-                href={`/api/comunicate/${x.id}/pdf?variant=signed`} 
+                href={`/api/comunicate/${x.id}/pdf?variant=signed&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
                 target="_blank" 
                 rel="noreferrer"
                 title="PDF cu semnături"
@@ -459,7 +461,7 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
               </a>
               <a 
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm" 
-                href={`/api/comunicate/${x.id}/pdf?variant=public`} 
+                href={`/api/comunicate/${x.id}/pdf?variant=public&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
                 target="_blank" 
                 rel="noreferrer"
                 title="PDF fără semnături"
@@ -670,7 +672,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                     <div className="flex flex-wrap gap-1.5">
                       <a 
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm" 
-                        href={`/api/comunicate/${x.id}/pdf?variant=signed`} 
+                        href={`/api/comunicate/${x.id}/pdf?variant=signed&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
                         target="_blank" 
                         rel="noreferrer"
                         title="PDF cu semnături"
@@ -679,7 +681,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                       </a>
                       <a 
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm" 
-                        href={`/api/comunicate/${x.id}/pdf?variant=public`} 
+                        href={`/api/comunicate/${x.id}/pdf?variant=public&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
                         target="_blank" 
                         rel="noreferrer"
                         title="PDF fără semnături"
