@@ -441,20 +441,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                 <p className="text-sm text-gray-500 mt-1">Aceste linii vor apărea în partea de jos a documentelor.</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Șablon PDF (din proiect)</label>
-                <select
-                  className="w-full border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-4 py-3 text-gray-900 transition-colors"
-                  value={pdfTemplateKey}
-                  onChange={(e)=>setPdfTemplateKey(e.target.value)}
-                >
-                  <option value="">Niciun șablon (layout implicit)</option>
-                  {templates.map((t)=> (
-                    <option key={t.key} value={t.key}>{t.key}</option>
-                  ))}
-                </select>
-                <p className="text-sm text-gray-500 mt-1">Fișiere PDF cu câmpuri AcroForm salvate în `public/templates/pdf`.</p>
-              </div>
+            
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Unitate (afișată jos stânga)</label>
