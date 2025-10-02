@@ -23,7 +23,10 @@ export default function SetariStructuraPage() {
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [gallery, setGallery] = useState<string[]>([]);
   const [logoQuery, setLogoQuery] = useState<string>("");
+  const [templates, setTemplates] = useState<{ key: string; url: string }[]>([]);
+  const [pdfTemplateKey, setPdfTemplateKey] = useState<string>("");
   const [unitLabel, setUnitLabel] = useState<string>("COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE");
+  
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -173,6 +176,8 @@ export default function SetariStructuraPage() {
         setPhone(d.phone || "");
         setLogoUrl(d.logoUrlPublic || "");
         setUnitLabel(d.unitLabel || "COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE");
+        setPdfTemplateKey(d.pdfTemplateKey || "");
+        
         setSemnatari(Array.isArray(d.semnatari) ? d.semnatari : []);
         setSemnatarIndex(typeof d.semnatarIndex === "number" ? d.semnatarIndex : 0);
         setPurtatori(Array.isArray(d.purtatori) ? d.purtatori : []);
@@ -202,6 +207,19 @@ export default function SetariStructuraPage() {
   }, []);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/assets/templates");
+        if (!res.ok) throw new Error("bad");
+        const list: { key: string; url: string }[] = await res.json();
+        setTemplates(list);
+      } catch {
+        setTemplates([]);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
     const isStandalone = typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone);
     const hasDeferred = typeof window !== "undefined" && !!(window as any).__pwaDeferredPrompt;
     setCanInstall(!isStandalone && hasDeferred);
@@ -224,6 +242,12 @@ export default function SetariStructuraPage() {
   }
 
   useEffect(() => {
+    // If a PDF template is selected, preview via server-filled template; else preview React-PDF layout
+    if (pdfTemplateKey) {
+      const src = `/api/templates/preview?key=${encodeURIComponent(pdfTemplateKey)}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&_=${Date.now()}`;
+      setPreviewUrl(src);
+      return;
+    }
     let url: string | null = null;
     const timeout = setTimeout(async () => {
       try {
@@ -263,9 +287,9 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
       } catch {
         setPreviewUrl(null);
       }
-    }, 200); // debounce
+    }, 200);
     return () => { clearTimeout(timeout); if (url) URL.revokeObjectURL(url); };
-  }, [headerLines, footerLines, logoUrl, city, phone, unitLabel, semnatarIndex, semnatari, purtatori, purtatorIndex]);
+  }, [pdfTemplateKey, headerLines, footerLines, logoUrl, city, phone, unitLabel, semnatarIndex, semnatari, purtatori, purtatorIndex, judetId, structuraId]);
 
   async function onSave() {
     setSaving(true);
@@ -279,6 +303,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
         phone: phone.trim(),
         logoUrlPublic: logoUrl,
         unitLabel,
+        pdfTemplateKey: pdfTemplateKey || null,
         semnatari,
         semnatarIndex,
         purtatori,
@@ -415,6 +440,22 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                 />
                 <p className="text-sm text-gray-500 mt-1">Aceste linii vor apărea în partea de jos a documentelor.</p>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Șablon PDF (din proiect)</label>
+                <select
+                  className="w-full border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-4 py-3 text-gray-900 transition-colors"
+                  value={pdfTemplateKey}
+                  onChange={(e)=>setPdfTemplateKey(e.target.value)}
+                >
+                  <option value="">Niciun șablon (layout implicit)</option>
+                  {templates.map((t)=> (
+                    <option key={t.key} value={t.key}>{t.key}</option>
+                  ))}
+                </select>
+                <p className="text-sm text-gray-500 mt-1">Fișiere PDF cu câmpuri AcroForm salvate în `public/templates/pdf`.</p>
+              </div>
+              
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Unitate (afișată jos stânga)</label>
                 <select 

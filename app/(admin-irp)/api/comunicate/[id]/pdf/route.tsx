@@ -5,6 +5,8 @@ import { collection, doc, getDoc, getDocs, collectionGroup, query, where, docume
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
+import { readFileSync } from "fs";
+import { join } from "path";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
@@ -110,6 +112,51 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       variant={variant as any}
     />
   );
+
+  // If a local PDF template is configured in settings, fill its fields
+  const templateKey = meta?.pdfTemplateKey as string | undefined; // e.g., "BICP-standard.pdf"
+  if (templateKey) {
+    try {
+      // @ts-ignore - module will be present at build time
+      const mod: any = await import("pdf-lib");
+      const PDFDocument = mod.PDFDocument as any;
+      const templatePath = join(process.cwd(), "public", "templates", "pdf", templateKey);
+      const existingPdfBytes = readFileSync(templatePath);
+      const pdfDoc = await PDFDocument.load(existingPdfBytes);
+      const form = pdfDoc.getForm();
+      const set = (name: string, val: string) => {
+        const field = form.getTextField(name);
+        if (field) field.setText(val ?? "");
+      };
+      set("numar", String(d?.numarComunicat ?? d?.numar ?? ""));
+      set("data", d?.data || "");
+      set("purtator", d?.["purtator-cuvant"] || "");
+      set("tip_document", d?.nume || d?.tip || "");
+      set("titlu", d?.titlu || "");
+      set("continut", content);
+      set("semnatar_pentru", d?.pentru || "");
+      set("semnatar_functia", d?.functia || "");
+      set("semnatar_grad", d?.grad || "");
+      set("semnatar_nume", d?.numeSemnatar || "");
+      set("secrecy", variant === "signed" ? (meta?.secrecyLabel || "NESECRET") : "");
+      set("unit_label", meta?.unitLabel || "");
+      // Header/footer lines joined for simple templates
+      set("header_lines", ((meta?.headerLines as string[]) || []).join("\n"));
+      set("footer_lines", ((meta?.footerLines as string[]) || []).join("\n"));
+      try { form.flatten(); } catch {}
+      const filled = await pdfDoc.save();
+      const filenameBase = slugifyFilename(String(title));
+      const suffix = variant === "public" ? "_public" : "";
+      return new NextResponse(Buffer.from(filled), {
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `${disposition}; filename="${filenameBase}${suffix}.pdf"`,
+        },
+      });
+    } catch (e) {
+      if (debug) console.warn("[PDF] template fill failed, fallback to renderer", e);
+    }
+  }
 
   const blob = await pdf(DocPdf).toBlob();
   function slugifyFilename(input: string): string {
