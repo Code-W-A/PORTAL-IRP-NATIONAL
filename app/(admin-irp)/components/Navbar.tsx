@@ -133,12 +133,12 @@ export function TopNavbar() {
           />
 
           {/* Dropdown pentru Acreditări */}
-          {/* <NavDropdown 
+          <NavDropdown 
             label="Acreditări" 
             icon={<Users size={18} />}
             items={acreditariItems}
             isActive={isAcreditariActive}
-          /> */}
+          />
 
           {/* Dropdown pentru Monitorizare */}
           {/* <NavDropdown 
@@ -213,7 +213,7 @@ export function BottomNavbar() {
         </button>
         {/* Modal handled outside of nav */}
       </div>
-      {/* {item("/acreditari/lista", "Acreditări", <Users size={18} />)} */}
+      {item("/acreditari/lista", "Acreditări", <Users size={18} />)}
       {/* {item("/monitorizare/lista", "Monitorizare", <Newspaper size={18} />)} */}
       {item("/setari-structura", "Setări", <Settings size={18} />)}
       <button aria-label="Logout" onClick={handleLogout} className="flex flex-col items-center justify-center flex-1 py-2 text-red-600">

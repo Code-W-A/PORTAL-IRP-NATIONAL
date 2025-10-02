@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Portal IRP",
-  description: "BICP & OZU",
+  description: "BICP",
   manifest: "/manifest.json",
 };
 

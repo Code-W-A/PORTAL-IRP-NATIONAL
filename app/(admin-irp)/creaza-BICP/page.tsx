@@ -32,6 +32,7 @@ const TIPURI = [
   "Anunț",
   "Eveniment de presă",
   "Drept la replică",
+  "Informare presă"
 ];
 
 const PURTATORI_FALLBACK = ["Locotenent Popescu Radu", "plt.adj. Oprea Ovidiu"] as const;
