@@ -1,13 +1,15 @@
 import React from "react";
 import { Document, Page, Text, View, Image, StyleSheet, Font } from "@react-pdf/renderer";
+import { getTenantContext } from "@/lib/tenant";
+import { JUDETE } from "@/lib/judete";
 
 export const styles = StyleSheet.create({
-  page: { padding: 32, paddingBottom: 100 },
+  page: { padding: 32, paddingTop: 210, paddingBottom: 110 },
   row: { flexDirection: "row", justifyContent: "space-between" },
-  headerCol: { flex: 7, alignItems: "center", marginLeft: -50 },
+  headerCol: { flex: 7, alignItems: "center" },
   metaCol: { flex: 3, alignItems: "flex-end", paddingRight: 8 },
-  headerLine: { fontSize: 9, marginVertical: 1, fontFamily: "NotoSerif" },
-  logo: { height: 84, marginVertical: 6 },
+  headerLine: { fontSize: 9, marginVertical: 1, fontFamily: "NotoSerif", textAlign: "center" },
+  logo: { height: 70, marginVertical: 8 },
   secrecy: { fontSize: 9, fontWeight: 700, fontFamily: "NotoSerif" },
   meta: { fontSize: 9, marginVertical: 1, textAlign: "right", fontFamily: "NotoSerif" },
   metaLeft: { fontSize: 9, marginVertical: 1, textAlign: "left", fontFamily: "NotoSerif" },
@@ -18,9 +20,27 @@ export const styles = StyleSheet.create({
   approveBox: { alignItems: "center", width: 160, marginRight: 88 },
   approveTitle: { fontSize: 10, fontWeight: 700, fontFamily: "NotoSerif" },
   approveLine: { fontSize: 10, marginTop: 2, textAlign: "center", fontFamily: "NotoSerif" },
-  footer: { position: "absolute", left: 32, right: 32, bottom: 24 },
+  footer: { position: "absolute", left: 32, right: 32, bottom: 16 },
   footerLine: { fontSize: 9, textAlign: "center", fontFamily: "NotoSerif" },
   unitInline: { fontSize: 14, fontWeight: 600, marginTop: 28, textAlign: "left" },
+  spokespersonBlock: { marginTop: 28 },
+  spLabel: { fontSize: 11, fontWeight: 700, fontFamily: "NotoSerif" },
+  spLine: { fontSize: 10, marginTop: 2, fontFamily: "NotoSerif" },
+  // Tricolor bars
+  tricolorFooter: { position: "absolute", left: 32, right: 32, bottom: 40, height: 6, flexDirection: "row" },
+  triBlue: { flex: 1, backgroundColor: "#002B7F" },
+  triYellow: { flex: 1, backgroundColor: "#FCD116" },
+  triRed: { flex: 1, backgroundColor: "#CE1126" },
+  headerAccent: { marginTop: 6, width: 140, height: 6, flexDirection: "row" },
+  headerTriFull: { marginTop: 6, width: "100%", height: 8, flexDirection: "row" },
+  headerTriTopFixed: { position: "absolute", left: 32, right: 32, top: 220, height: 8, flexDirection: "row" },
+  // Info strap under crest
+  strapRow: { marginTop: 8, width: "100%", flexDirection: "row", alignItems: "stretch" },
+  contactBlock: { marginTop: 6, width: "100%" },
+  strapLeftTitle: { fontSize: 11, fontWeight: 700, color: "#000000", fontFamily: "NotoSerif" },
+  strapLeftLine: { fontSize: 10, color: "#000000", marginTop: 2, fontFamily: "NotoSerif" },
+  strapRight: { flex: 1, flexDirection: "row", height: 8, alignSelf: "center" },
+  fixedHeaderContainer: { position: "absolute", left: 32, right: 32, top: 32 },
 });
 
 export type BicpPdfSettings = {
@@ -28,10 +48,16 @@ export type BicpPdfSettings = {
   logoUrlPublic?: string;
   secrecyLabel?: string;
   city?: string;
+  email?: string;
   phone?: string;
   footerLines?: string[];
   unitLabel?: string;
   assetBaseUrl?: string; // absolute origin for server-side font/logo fetching
+  showTricolorFooter?: boolean;
+  showHeaderTricolor?: boolean;
+  spokespersonGrade?: string; // ex: "Sergent-major"
+  showSpokespersonBlock?: boolean; // default true
+  structureDisplay?: string; // ex: "ISU Sibiu"
 };
 
 export type BicpPdfData = {
@@ -151,27 +177,41 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
   ];
   return (
     <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif" }]}> 
-      <View style={styles.row}>
-        <View style={styles.headerCol}>
-          {headerLines.map((l, idx) => (
-            <Text key={idx} style={styles.headerLine}>{l}</Text>
-          ))}
-          {s.logoUrlPublic ? <Image src={s.logoUrlPublic} style={styles.logo} /> : null}
+      {/* Fixed header block (repeats on all pages) */}
+      <View style={styles.fixedHeaderContainer} fixed>
+        <View style={styles.row}>
+          <View style={styles.headerCol}>
+            {headerLines.map((l, idx) => (
+              <Text key={idx} style={styles.headerLine}>{l}</Text>
+            ))}
+            {s.logoUrlPublic ? <Image src={s.logoUrlPublic} style={styles.logo} /> : null}
+          </View>
+          <View style={styles.metaCol}>
+            {variant === "signed" && (
+              <>
+                <Text style={styles.secrecy}>{s.secrecyLabel || "NESECRET"}</Text>
+                <Text style={styles.meta}>Exemplar unic</Text>
+              </>
+            )}
+            <Text style={styles.meta}>Nr. {data.numar || "____"}</Text>
+            <Text style={styles.meta}>{(s.city ? s.city + ", " : "") + (data.dateLabel || "")}</Text>
+          </View>
         </View>
-        <View style={styles.metaCol}>
-          {variant === "signed" && (
-            <>
-              <Text style={styles.secrecy}>{s.secrecyLabel || "NESECRET"}</Text>
-              <Text style={styles.meta}>Exemplar unic</Text>
-            </>
-          )}
-          <Text style={styles.meta}>Nr. {data.numar || "____"}</Text>
-          <Text style={styles.meta}>{(s.city ? s.city + ", " : "") + (data.dateLabel || "")}</Text>
-          <Text style={styles.meta}>{data.purtator || ""}</Text>
-          {variant === "signed" && (
-            <Text style={styles.meta}>{s.phone || ""}</Text>
-          )}
-        </View>
+        {(s.showHeaderTricolor !== false) && (
+          <View style={styles.headerTriFull}>
+            <View style={styles.triBlue} />
+            <View style={styles.triYellow} />
+            <View style={styles.triRed} />
+          </View>
+        )}
+      </View>
+
+      {/* Spacer removed; top padding on page ensures content never overlaps header on any page */}
+      {/* First-page only contact block placed in flow so it appears once at top of content */}
+      <View>
+        <Text style={styles.strapLeftTitle}>{s.unitLabel || "COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE"}</Text>
+        {!!s.phone && <Text style={styles.strapLeftLine}>Telefon: {s.phone}</Text>}
+        {!!s.email && <Text style={styles.strapLeftLine}>E-mail: {s.email}</Text>}
       </View>
 
       {variant === "signed" && (
@@ -194,9 +234,22 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
         <Text style={styles.content}>{data.continut}</Text>
       )}
 
-      {s.unitLabel ? (
-        <Text style={[styles.unitInline]}>{s.unitLabel}</Text>
-      ) : null}
+      {(s.showSpokespersonBlock !== false) && (
+        <View style={styles.spokespersonBlock}>
+          <Text style={styles.spLabel}>Purtător de cuvânt</Text>
+          <Text style={styles.spLine}>{s.structureDisplay || s.unitLabel || ""}</Text>
+          {!!data.purtator && <Text style={styles.spLine}>{data.purtator}</Text>}
+          {!!s.spokespersonGrade && <Text style={styles.spLine}>{s.spokespersonGrade}</Text>}
+        </View>
+      )}
+
+      {(s.showTricolorFooter !== false) && (
+        <View style={styles.tricolorFooter} fixed>
+          <View style={styles.triBlue} />
+          <View style={styles.triYellow} />
+          <View style={styles.triRed} />
+        </View>
+      )}
 
       {s.footerLines && s.footerLines.length > 0 ? (
         <View style={styles.footer} fixed>
@@ -212,6 +265,14 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
 export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
   registerNoto(settings?.assetBaseUrl);
   const s = settings || {};
+  // Derive structure display if not provided
+  let derivedStructureDisplay = s.structureDisplay;
+  try {
+    const { judetId, structuraId } = getTenantContext();
+    const judName = JUDETE.find((j) => j.id === judetId)?.name || judetId;
+    if (!derivedStructureDisplay) derivedStructureDisplay = `${structuraId} ${judName}`;
+  } catch {}
+  const s2: BicpPdfSettings = { ...s, structureDisplay: derivedStructureDisplay };
   const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
     "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
     "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
@@ -219,7 +280,9 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
 
   return (
     <Document>
-      {createBicpPage({ data, settings, variant })}
+      {createBicpPage({ data, settings: s2, variant })}
+      {/* Page template for subsequent pages (only full-width tricolor on top) could be handled by content spill; 
+          to enforce, consumers can split content. Keeping single page factory to avoid duplication. */}
     </Document>
   );
 }

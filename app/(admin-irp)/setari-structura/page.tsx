@@ -19,6 +19,7 @@ export default function SetariStructuraPage() {
   const [headerLines, setHeaderLines] = useState<string>("");
   const [footerLines, setFooterLines] = useState<string>("");
   const [city, setCity] = useState("");
+  const [emailDoc, setEmailDoc] = useState("");
   const [phone, setPhone] = useState("");
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [gallery, setGallery] = useState<string[]>([]);
@@ -173,6 +174,7 @@ export default function SetariStructuraPage() {
         setHeaderLines((d.headerLines || []).join("\n"));
         setFooterLines((d.footerLines || []).join("\n"));
         setCity(d.city || "");
+        setEmailDoc(d.email || (auth?.currentUser?.email || ""));
         setPhone(d.phone || "");
         setLogoUrl(d.logoUrlPublic || "");
         setUnitLabel(d.unitLabel || "COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE");
@@ -258,6 +260,7 @@ export default function SetariStructuraPage() {
               logoUrlPublic: logoUrl || undefined,
               secrecyLabel: "NESECRET",
               city: city || undefined,
+              email: emailDoc || undefined,
               phone: phone || undefined,
               footerLines: (footerLines || "").split("\n").map((s) => s.trim()).filter(Boolean),
               unitLabel,
@@ -300,6 +303,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
         headerLines: headerLines.split("\n").map((s) => s.trim()).filter(Boolean),
         footerLines: footerLines.split("\n").map((s) => s.trim()).filter(Boolean),
         city: city.trim(),
+        email: emailDoc.trim(),
         phone: phone.trim(),
         logoUrlPublic: logoUrl,
         unitLabel,
@@ -455,7 +459,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                   <option>DIRECȚIA INFORMARE ȘI RELAȚII PUBLICE</option>
                 </select>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Oraș</label>
                   <input 
@@ -463,6 +467,15 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                     placeholder="Orașul structurii"
                     value={city} 
                     onChange={(e) => setCity(e.target.value)} 
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email (afișat în document)</label>
+                  <input 
+                    className="w-full border border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 transition-colors" 
+                    placeholder="email@institutie.ro"
+                    value={emailDoc} 
+                    onChange={(e) => setEmailDoc(e.target.value)} 
                   />
                 </div>
                 <div>
