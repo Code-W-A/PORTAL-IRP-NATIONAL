@@ -80,7 +80,7 @@ export default function EditBicpPage() {
             }}
             data={{
               numar: numarComunicat || "__",
-              dateLabel: data ? data.split("-").reverse().join("/") : "__/__/____",
+              dateLabel: data ? data.split("-").reverse().join("-") : "__/__/____",
               purtator: purtatorCuvant || "",
               tipDocument: selectedItem || "",
               titlu: titlu || "",

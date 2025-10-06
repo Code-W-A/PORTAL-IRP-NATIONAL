@@ -35,6 +35,15 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const origin = req.headers.get('origin') || `http://localhost:${process.env.PORT || 3000}`;
 
+  function toDDMMYYYY(str?: string): string {
+    const s = String(str || "").trim();
+    if (!s) return "";
+    if (s.includes("/")) return s.split("/").map((x)=>x.trim()).join("-");
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    return s;
+  }
+
   const DocPdf = (
     <AcreditarePdfDoc
       settings={{
@@ -48,7 +57,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       }}
       data={{
         numar: String(d?.numar || ""),
-        dateLabel: d?.data || "",
+        dateLabel: toDDMMYYYY(d?.data),
         nume: d?.nume || "",
         legit: d?.legit || "",
         redactie: d?.redactie || "",

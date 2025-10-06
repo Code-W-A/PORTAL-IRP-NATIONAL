@@ -102,6 +102,17 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     ? String(d.numarRegistru).trim()
     : String(d?.numarComunicat ?? d?.numar ?? "");
 
+  function toDDMMYYYY(str?: string): string {
+    const s = String(str || "").trim();
+    if (!s) return "";
+    if (s.includes("/")) {
+      return s.split("/").map((x) => x.trim()).join("-");
+    }
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    return s;
+  }
+
   const DocPdf = (
     <BicpPdfDoc
       settings={{
@@ -117,7 +128,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       }}
       data={{
         numar: chosenNumar,
-        dateLabel: d?.data || "",
+        dateLabel: toDDMMYYYY(d?.data),
         purtator: d?.["purtator-cuvant"] || "",
         tipDocument: d?.nume || d?.tip || "",
         titlu: d?.titlu || "",
@@ -144,7 +155,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         if (field) field.setText(val ?? "");
       };
       set("numar", chosenNumar);
-      set("data", d?.data || "");
+      set("data", toDDMMYYYY(d?.data));
       set("purtator", d?.["purtator-cuvant"] || "");
       set("tip_document", d?.nume || d?.tip || "");
       set("titlu", d?.titlu || "");

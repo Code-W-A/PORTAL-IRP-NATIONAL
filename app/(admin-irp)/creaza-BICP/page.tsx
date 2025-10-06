@@ -239,7 +239,7 @@ export default function CreateBicpPage() {
             }}
             data={{
               numar: (numarRegistru && numarRegistru.trim()) ? numarRegistru.trim() : (numarComunicat || "__"),
-              dateLabel: data ? data.split("-").reverse().join("/") : "__/__/____",
+              dateLabel: data ? data.split("-").reverse().join("-") : "__/__/____",
               purtator: purtatorCuvant || "",
               tipDocument: selectedItem || "",
               titlu: titlu || "",

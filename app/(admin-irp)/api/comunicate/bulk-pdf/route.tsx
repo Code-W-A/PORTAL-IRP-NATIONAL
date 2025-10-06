@@ -62,6 +62,15 @@ export async function POST(req: Request) {
       }
       const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
       const structureDisplay = (effectiveStructuraId && judName) ? `${effectiveStructuraId} ${judName}` : undefined;
+      function toDDMMYYYY(str?: string): string {
+        const s = String(str || "").trim();
+        if (!s) return "";
+        if (s.includes("/")) return s.split("/").map((x)=>x.trim()).join("-");
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+        return s;
+      }
+
       pages.push(
         createBicpPage({
           settings: {
@@ -77,7 +86,7 @@ export async function POST(req: Request) {
           },
           data: {
             numar: chosenNumar,
-            dateLabel: d?.data || "",
+            dateLabel: toDDMMYYYY(d?.data),
             purtator: d?.["purtator-cuvant"] || "",
             tipDocument: d?.nume || d?.tip || "",
             titlu: d?.titlu || "",
