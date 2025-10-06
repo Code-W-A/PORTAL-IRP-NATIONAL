@@ -23,6 +23,7 @@ export default function EditBicpPage() {
   // fields
   const [numarComunicat, setNumarComunicat] = useState("");
   const [numarInregistrare, setNumarInregistrare] = useState("");
+  const [numarRegistru, setNumarRegistru] = useState("");
   const [data, setData] = useState("");
   const [selectedItem, setSelectedItem] = useState("");
   const [titlu, setTitlu] = useState("");
@@ -42,6 +43,7 @@ export default function EditBicpPage() {
         const d = snap.data() as any;
         setNumarComunicat(String(d.numarComunicat || d.numar || ""));
         setNumarInregistrare(String(d.numarInregistrare || ""));
+        setNumarRegistru(String(d.numarRegistru || ""));
         setData(d.dataTimestamp ? (d.dataTimestamp.toDate?.().toISOString?.().slice(0,10)) : "");
         setSelectedItem(String(d.nume || d.tip || ""));
         setTitlu(String(d.titlu || ""));
@@ -79,7 +81,7 @@ export default function EditBicpPage() {
               unitLabel: settings?.unitLabel,
             }}
             data={{
-              numar: numarComunicat || "__",
+              numar: (numarRegistru && numarRegistru.trim()) ? numarRegistru.trim() : (numarComunicat || "__"),
               dateLabel: data ? data.split("-").reverse().join("-") : "__/__/____",
               purtator: purtatorCuvant || "",
               tipDocument: selectedItem || "",
@@ -110,6 +112,7 @@ export default function EditBicpPage() {
         numar: Number(numarComunicat),
         numarComunicat: String(numarComunicat).trim(),
         numarInregistrare: String(numarInregistrare).trim(),
+        numarRegistru: numarRegistru.trim() ? String(numarRegistru).trim() : null,
         data,
         dataTimestamp: data ? Timestamp.fromDate(new Date(data)) : null,
         nume: selectedItem,
@@ -165,6 +168,17 @@ export default function EditBicpPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Data</label>
                   <input type="date" className="w-full border border-gray-300 rounded-xl px-4 py-3" value={data} onChange={(e)=>setData(e.target.value)} />
                 </div>
+                <div className="md:col-span-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Număr registru</label>
+                  <input
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3"
+                    placeholder="Număr registru"
+                    inputMode="numeric"
+                    value={numarRegistru}
+                    onChange={(e)=>setNumarRegistru(e.target.value)}
+                  />
+                  <p className="mt-2 text-sm text-gray-500">Acest număr se introduce dacă înregistrați cu număr din registru, va apărea doar pe PDF-ul cu semnături.</p>
+                </div>
               </div>
             </div>
 
@@ -176,6 +190,10 @@ export default function EditBicpPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Titlu</label>
                 <input className="w-full border border-gray-300 rounded-xl px-4 py-3" value={titlu} onChange={(e)=>setTitlu(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Purtător de cuvânt</label>
+                <input className="w-full md:w-80 border border-gray-300 rounded-xl px-4 py-3" value={purtatorCuvant} onChange={(e)=>setPurtatorCuvant(e.target.value)} />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Conținut Document</label>
