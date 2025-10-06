@@ -42,6 +42,10 @@ export async function POST(req: Request) {
       if (!snap.exists()) continue;
       const d = snap.data() as any;
       const content = String(d?.comunicat || "");
+      // For bulk, always render signed variant logic below; chosen number uses registry number when v === signed
+      const chosenNumar = (v === "signed" && String(d?.numarRegistru || "").trim())
+        ? String(d.numarRegistru).trim()
+        : String(d?.numarComunicat ?? d?.numar ?? "");
       // Build structure display per document
       let effectiveJudetId: string | undefined = d?.judetId;
       let effectiveStructuraId: string | undefined = d?.structuraId;
@@ -72,7 +76,7 @@ export async function POST(req: Request) {
             assetBaseUrl: origin,
           },
           data: {
-            numar: String(d?.numarComunicat ?? d?.numar ?? ""),
+            numar: chosenNumar,
             dateLabel: d?.data || "",
             purtator: d?.["purtator-cuvant"] || "",
             tipDocument: d?.nume || d?.tip || "",

@@ -97,6 +97,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
   const structureDisplay = effectiveStructuraId && judName ? `${effectiveStructuraId} ${judName}` : undefined;
 
+  // Choose displayed number: use registry number only for signed variant
+  const chosenNumar = (variant === "signed" && String(d?.numarRegistru || "").trim())
+    ? String(d.numarRegistru).trim()
+    : String(d?.numarComunicat ?? d?.numar ?? "");
+
   const DocPdf = (
     <BicpPdfDoc
       settings={{
@@ -111,7 +116,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         assetBaseUrl: new URL("/", _req.url).origin,
       }}
       data={{
-        numar: String(d?.numarComunicat ?? d?.numar ?? ""),
+        numar: chosenNumar,
         dateLabel: d?.data || "",
         purtator: d?.["purtator-cuvant"] || "",
         tipDocument: d?.nume || d?.tip || "",
@@ -138,7 +143,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         const field = form.getTextField(name);
         if (field) field.setText(val ?? "");
       };
-      set("numar", String(d?.numarComunicat ?? d?.numar ?? ""));
+      set("numar", chosenNumar);
       set("data", d?.data || "");
       set("purtator", d?.["purtator-cuvant"] || "");
       set("tip_document", d?.nume || d?.tip || "");

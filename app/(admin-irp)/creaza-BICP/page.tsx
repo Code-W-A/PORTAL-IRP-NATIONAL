@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, doc, getDoc, getDocs, serverTimestamp, Timestamp } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, getDocs, serverTimestamp, Timestamp, setDoc } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { initFirebase } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
 import { getTenantContext } from "@/lib/tenant";
@@ -61,6 +62,7 @@ export default function CreateBicpPage() {
   const router = useRouter();
   const [numarComunicat, setNumarComunicat] = useState("");
   const [numarInregistrare, setNumarInregistrare] = useState("");
+  const [numarRegistru, setNumarRegistru] = useState("");
   const [data, setData] = useState(todayYMD());
   const [selectedItem, setSelectedItem] = useState("");
   const [semnatarKey, setSemnatarKey] = useState<string>("");
@@ -114,6 +116,26 @@ export default function CreateBicpPage() {
       } catch {}
     })();
   }, [db]);
+
+  // Optionally load last used registry number for the user (to facilitate long numbers management)
+  useEffect(() => {
+    try {
+      const auth = getAuth(app);
+      const uid = auth?.currentUser?.uid;
+      if (!uid) return;
+      (async () => {
+        try {
+          const uref = doc(db, `users/${uid}`);
+          const us = await getDoc(uref);
+          // We intentionally do not prefill numarRegistru; user enters it only when needed.
+          if (us.exists()) {
+            const _last = Number((us.data() as any)?.lastNumarRegistru || 0);
+            // no prefill
+          }
+        } catch {}
+      })();
+    } catch {}
+  }, [db, app]);
 
   // Load struct settings for preview (header, logo, footer)
   useEffect(() => {
@@ -216,7 +238,7 @@ export default function CreateBicpPage() {
               unitLabel: settings?.unitLabel,
             }}
             data={{
-              numar: numarComunicat || "__",
+              numar: (numarRegistru && numarRegistru.trim()) ? numarRegistru.trim() : (numarComunicat || "__"),
               dateLabel: data ? data.split("-").reverse().join("/") : "__/__/____",
               purtator: purtatorCuvant || "",
               tipDocument: selectedItem || "",
@@ -255,6 +277,7 @@ export default function CreateBicpPage() {
         numar: Number(numarComunicat),
         numarComunicat: String(numarComunicat).trim(),
         numarInregistrare: String(numarInregistrare).trim(),
+        numarRegistru: numarRegistru.trim() ? String(numarRegistru).trim() : null,
         data: formatRO(data), // DD/MM/YYYY afișare
         dataTimestamp: Timestamp.fromDate(new Date(data)), // util pentru sortări
         nume: selectedItem,
@@ -279,6 +302,18 @@ export default function CreateBicpPage() {
         judetId,
         structuraId,
       });
+
+      // If a registry number was provided, remember it per user for future convenience
+      try {
+        if (numarRegistru.trim()) {
+          const auth = getAuth(app);
+          const uid = auth?.currentUser?.uid;
+          if (uid) {
+            const uref = doc(db, `users/${uid}`);
+            await setDoc(uref, { lastNumarRegistru: Number(numarRegistru) || 0 }, { merge: true });
+          }
+        }
+      } catch {}
 
       // Generare documente (opțional, fără salvare link în Storage în acest pas)
       // await fetch("/api/generate/pdf", { method: "POST", body: JSON.stringify({ title: payload.numeAfisare, content: payload.comunicat }), headers: { "Content-Type": "application/json" } });
@@ -337,16 +372,7 @@ export default function CreateBicpPage() {
                   onChange={(e) => setNumarComunicat(e.target.value)} 
                 />
               </div>
-              <div>
-                <label htmlFor="numarInregistrare" className="block text-sm font-medium text-gray-700 mb-2">Număr Înregistrare</label>
-                <input 
-                  id="numarInregistrare" 
-                  placeholder="Numărul de înregistrare" 
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors" 
-                  value={numarInregistrare} 
-                  onChange={(e) => setNumarInregistrare(e.target.value)} 
-                />
-              </div>
+            
               <div>
                 <label htmlFor="data" className="block text-sm font-medium text-gray-700 mb-2">Data</label>
                 <input 
@@ -357,6 +383,18 @@ export default function CreateBicpPage() {
                   onChange={(e) => setData(e.target.value)} 
                 />
               </div>
+            <div className="md:col-span-3">
+              <label htmlFor="numarRegistru" className="block text-sm font-medium text-gray-700 mb-2">Număr registru</label>
+              <input
+                id="numarRegistru"
+                placeholder="Număr registru"
+                inputMode="numeric"
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                value={numarRegistru}
+                onChange={(e)=> setNumarRegistru(e.target.value)}
+              />
+              <p className="mt-2 text-sm text-gray-500">Acest număr se introduce dacă înregistrați cu număr din registru, va apărea doar pe PDF-ul cu semnături.</p>
+            </div>
             </div>
           </div>
 

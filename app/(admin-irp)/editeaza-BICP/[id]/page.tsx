@@ -160,10 +160,7 @@ export default function EditBicpPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">Număr Comunicat</label>
                   <input className="w-full border border-gray-300 rounded-xl px-4 py-3" value={numarComunicat} onChange={(e)=>setNumarComunicat(e.target.value)} />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Număr Înregistrare</label>
-                  <input className="w-full border border-gray-300 rounded-xl px-4 py-3" value={numarInregistrare} onChange={(e)=>setNumarInregistrare(e.target.value)} />
-                </div>
+              
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Data</label>
                   <input type="date" className="w-full border border-gray-300 rounded-xl px-4 py-3" value={data} onChange={(e)=>setData(e.target.value)} />
