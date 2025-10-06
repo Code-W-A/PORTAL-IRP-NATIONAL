@@ -21,7 +21,7 @@ const DOCUMENT_TYPES = [
   "Anunț",
   "Eveniment de presă",
   "Drept la replică",
-  "Informare presă"
+  "Informare de presă"
 ] as const;
 
 type TabType = "lunar" | "tipuri" | "vizualizare";
@@ -90,7 +90,7 @@ export default function StatisticiBicpPage() {
     "Anunț": "anunțuri",
     "Eveniment de presă": "evenimente de presă",
     "Drept la replică": "drepturi la replică",
-    "Informare presă": "informări de presă",
+    "Informare de presă": "informări de presă",
     "Știre": "știri",
   };
   const singularMap: Record<string, string> = {
@@ -103,7 +103,7 @@ export default function StatisticiBicpPage() {
     "Anunț": "anunț",
     "Eveniment de presă": "eveniment de presă",
     "Drept la replică": "drept la replică",
-    "Informare presă": "informare de presă",
+    "Informare de presă": "informare de presă",
     "Știre": "știre",
   };
   function phraseFor(key: string, count: number): string {
