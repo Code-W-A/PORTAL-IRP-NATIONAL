@@ -4,6 +4,7 @@ import { pdf, Document } from "@react-pdf/renderer";
 import { doc, getDoc } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
+import { JUDETE } from "@/lib/judete";
 import { createBicpPage } from "@/app/(admin-irp)/components/pdf/BicpPdf";
 
 export async function POST(req: Request) {
@@ -41,6 +42,22 @@ export async function POST(req: Request) {
       if (!snap.exists()) continue;
       const d = snap.data() as any;
       const content = String(d?.comunicat || "");
+      // Build structure display per document
+      let effectiveJudetId: string | undefined = d?.judetId;
+      let effectiveStructuraId: string | undefined = d?.structuraId;
+      if (!(effectiveJudetId && effectiveStructuraId)) {
+        try {
+          const parts = (snap as any).ref?.path?.split("/") || [];
+          const jIdx = parts.indexOf("Judete");
+          const sIdx = parts.indexOf("Structuri");
+          if (jIdx >= 0 && sIdx >= 0 && parts[jIdx + 1] && parts[sIdx + 1]) {
+            effectiveJudetId = effectiveJudetId || parts[jIdx + 1];
+            effectiveStructuraId = effectiveStructuraId || parts[sIdx + 1];
+          }
+        } catch {}
+      }
+      const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
+      const structureDisplay = (effectiveStructuraId && judName) ? `${effectiveStructuraId} ${judName}` : undefined;
       pages.push(
         createBicpPage({
           settings: {
@@ -51,6 +68,7 @@ export async function POST(req: Request) {
             phone: meta?.phone,
             footerLines: (meta?.footerLines as string[]) || [],
             unitLabel: meta?.unitLabel || "",
+            structureDisplay,
             assetBaseUrl: origin,
           },
           data: {

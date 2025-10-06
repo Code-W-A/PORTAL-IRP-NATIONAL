@@ -4,6 +4,7 @@ import { pdf } from "@react-pdf/renderer";
 import { collection, doc, getDoc, getDocs, collectionGroup, query, where, documentId, limit } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
+import { JUDETE } from "@/lib/judete";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -61,6 +62,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   // Optionally read struct settings if meta is present (best effort)
   let meta: any = null;
+  let effectiveJudetId: string | undefined;
+  let effectiveStructuraId: string | undefined;
   try {
     // Prefer document-embedded tenant; else query params; else parse from ref path
     let judetId: string | undefined = d?.judetId || qpJudet;
@@ -77,6 +80,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       } catch {}
     }
     if (judetId && structuraId) {
+      effectiveJudetId = judetId;
+      effectiveStructuraId = structuraId;
       const path = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
       const ms = await getDoc(path);
       meta = ms.exists() ? ms.data() : null;
@@ -88,6 +93,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const origin = new URL(_req.url).origin;
   const logoAbs = meta?.logoUrlPublic ? new URL(String(meta.logoUrlPublic), origin).toString() : undefined;
 
+  // Compute structure display explicitly (avoid server default DB/ISU)
+  const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
+  const structureDisplay = effectiveStructuraId && judName ? `${effectiveStructuraId} ${judName}` : undefined;
+
   const DocPdf = (
     <BicpPdfDoc
       settings={{
@@ -98,6 +107,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         phone: meta?.phone,
         footerLines: (meta?.footerLines as string[]) || [],
         unitLabel: meta?.unitLabel || "",
+        structureDisplay,
         assetBaseUrl: new URL("/", _req.url).origin,
       }}
       data={{
