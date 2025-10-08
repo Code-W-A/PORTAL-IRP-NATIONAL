@@ -4,7 +4,7 @@ import { getTenantContext } from "@/lib/tenant";
 import { JUDETE } from "@/lib/judete";
 
 export const styles = StyleSheet.create({
-  page: { padding: 32, paddingTop: 210, paddingBottom: 110 },
+  page: { padding: 72, paddingTop: 210, paddingBottom: 110 },
   row: { flexDirection: "row", justifyContent: "space-between" },
   headerCol: { flex: 7, alignItems: "center" },
   metaCol: { flex: 3, alignItems: "flex-end", paddingRight: 8 },
@@ -20,27 +20,27 @@ export const styles = StyleSheet.create({
   approveBox: { alignItems: "center", width: 160, marginRight: 0 },
   approveTitle: { fontSize: 10, fontWeight: 700, fontFamily: "NotoSerif" },
   approveLine: { fontSize: 10, marginTop: 2, textAlign: "center", fontFamily: "NotoSerif" },
-  footer: { position: "absolute", left: 32, right: 32, bottom: 16 },
+  footer: { position: "absolute", left: 72, right: 72, bottom: 16 },
   footerLine: { fontSize: 9, textAlign: "center", fontFamily: "NotoSerif" },
   unitInline: { fontSize: 14, fontWeight: 600, marginTop: 28, textAlign: "left" },
   spokespersonBlock: { marginTop: 28 },
   spLabel: { fontSize: 11, fontWeight: 700, fontFamily: "NotoSerif" },
   spLine: { fontSize: 10, marginTop: 2, fontFamily: "NotoSerif", fontWeight: 700 },
   // Tricolor bars
-  tricolorFooter: { position: "absolute", left: 32, right: 32, bottom: 40, height: 6, flexDirection: "row" },
+  tricolorFooter: { position: "absolute", left: 72, right: 72, bottom: 40, height: 6, flexDirection: "row" },
   triBlue: { flex: 1, backgroundColor: "#002B7F" },
   triYellow: { flex: 1, backgroundColor: "#FCD116" },
   triRed: { flex: 1, backgroundColor: "#CE1126" },
   headerAccent: { marginTop: 6, width: 140, height: 6, flexDirection: "row" },
   headerTriFull: { marginTop: 6, width: "100%", height: 8, flexDirection: "row" },
-  headerTriTopFixed: { position: "absolute", left: 32, right: 32, top: 220, height: 8, flexDirection: "row" },
+  headerTriTopFixed: { position: "absolute", left: 72, right: 72, top: 220, height: 8, flexDirection: "row" },
   // Info strap under crest
   strapRow: { marginTop: 8, width: "100%", flexDirection: "row", alignItems: "stretch" },
   contactBlock: { marginTop: 6, width: "100%" },
   strapLeftTitle: { fontSize: 11, fontWeight: 700, color: "#000000", fontFamily: "NotoSerif" },
   strapLeftLine: { fontSize: 10, color: "#000000", marginTop: 2, fontFamily: "NotoSerif" },
   strapRight: { flex: 1, flexDirection: "row", height: 8, alignSelf: "center" },
-  fixedHeaderContainer: { position: "absolute", left: 32, right: 32, top: 32 },
+  fixedHeaderContainer: { position: "absolute", left: 72, right: 72, top: 32 },
 });
 
 export type BicpPdfSettings = {
