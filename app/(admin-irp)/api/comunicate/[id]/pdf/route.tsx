@@ -134,7 +134,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       }}
       data={{
         numar: chosenNumar,
-        dateLabel: toDDMMYYYY(d?.data),
+        dateLabel: ddmmyyyyWithDots(d?.data),
         purtator: d?.["purtator-cuvant"] || "",
         tipDocument: d?.nume || d?.tip || "",
         titlu: d?.titlu || "",
@@ -161,7 +161,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         if (field) field.setText(val ?? "");
       };
       set("numar", chosenNumar);
-      set("data", toDDMMYYYY(d?.data));
+      set("data", ddmmyyyyWithDots(d?.data));
       set("purtator", d?.["purtator-cuvant"] || "");
       set("tip_document", d?.nume || d?.tip || "");
       set("titlu", d?.titlu || "");

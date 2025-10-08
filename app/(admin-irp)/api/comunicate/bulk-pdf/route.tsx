@@ -62,13 +62,14 @@ export async function POST(req: Request) {
       }
       const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
       const structureDisplay = (effectiveStructuraId && judName) ? `${effectiveStructuraId} ${judName}` : undefined;
-      function toDDMMYYYY(str?: string): string {
+      function toDDMMYYYYDots(str?: string): string {
         const s = String(str || "").trim();
         if (!s) return "";
-        if (s.includes("/")) return s.split("/").map((x)=>x.trim()).join("-");
         const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-        return s;
+        if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+        const m2 = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+        if (m2) return `${m2[1]}.${m2[2]}.${m2[3]}`;
+        return s.replace(/-/g, ".").replace(/\//g, ".");
       }
 
       pages.push(
@@ -86,7 +87,7 @@ export async function POST(req: Request) {
           },
           data: {
             numar: chosenNumar,
-            dateLabel: toDDMMYYYY(d?.data),
+            dateLabel: toDDMMYYYYDots(d?.data),
             purtator: d?.["purtator-cuvant"] || "",
             tipDocument: d?.nume || d?.tip || "",
             titlu: d?.titlu || "",

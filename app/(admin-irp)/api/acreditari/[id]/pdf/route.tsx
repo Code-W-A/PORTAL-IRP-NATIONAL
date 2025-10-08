@@ -35,13 +35,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const origin = req.headers.get('origin') || `http://localhost:${process.env.PORT || 3000}`;
 
-  function toDDMMYYYY(str?: string): string {
+  function toDDMMYYYYDots(str?: string): string {
     const s = String(str || "").trim();
     if (!s) return "";
-    if (s.includes("/")) return s.split("/").map((x)=>x.trim()).join("-");
+    // Normalize YYYY-MM-DD to DD.MM.YYYY
     const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-    return s;
+    if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+    // Convert DD/MM/YYYY or DD-MM-YYYY to dots
+    const m2 = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+    if (m2) return `${m2[1]}.${m2[2]}.${m2[3]}`;
+    return s.replace(/-/g, ".").replace(/\//g, ".");
   }
 
   const DocPdf = (
@@ -57,7 +60,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       }}
       data={{
         numar: String(d?.numar || ""),
-        dateLabel: toDDMMYYYY(d?.data),
+        dateLabel: toDDMMYYYYDots(d?.data),
         nume: d?.nume || "",
         legit: d?.legit || "",
         redactie: d?.redactie || "",
