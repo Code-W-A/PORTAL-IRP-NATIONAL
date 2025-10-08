@@ -85,6 +85,47 @@ export default function CreateBicpPage() {
   const [settings, setSettings] = useState<any | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Mobile UX state
+  const [isMobile, setIsMobile] = useState(false);
+  const [showMobileEditor, setShowMobileEditor] = useState(false);
+  const [mobileEditorValue, setMobileEditorValue] = useState("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia("(max-width: 640px)");
+    const handle = (e: any) => {
+      const matches = typeof e.matches === "boolean" ? e.matches : mql.matches;
+      setIsMobile(!!matches);
+    };
+    setIsMobile(mql.matches);
+    try {
+      mql.addEventListener("change", handle);
+      return () => mql.removeEventListener("change", handle);
+    } catch {
+      // Safari fallback
+      // @ts-ignore
+      mql.addListener(handle);
+      return () => {
+        try {
+          // @ts-ignore
+          mql.removeListener(handle);
+        } catch {}
+      };
+    }
+  }, []);
+
+  function openMobileEditor() {
+    setMobileEditorValue(comunicat);
+    setShowMobileEditor(true);
+  }
+
+  function closeMobileEditor(save: boolean) {
+    if (save) {
+      setComunicat(mobileEditorValue);
+      setComunicatHtml("");
+    }
+    setShowMobileEditor(false);
+  }
 
   const [semnatariSettings, setSemnatariSettings] = useState<{ functia: string; grad: string; nume: string }[]>([]);
   const semnatar = useMemo(() => {
@@ -481,6 +522,21 @@ export default function CreateBicpPage() {
                 placeholder="Scrieți conținutul documentului aici..."
                 value={comunicat}
                 onChange={(e) => { setComunicat(e.target.value); setComunicatHtml(""); }}
+                readOnly={isMobile}
+                onFocus={(e) => {
+                  if (isMobile) {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLTextAreaElement).blur();
+                    openMobileEditor();
+                  }
+                }}
+                onClick={(e) => {
+                  if (isMobile) {
+                    e.preventDefault();
+                    (e.currentTarget as HTMLTextAreaElement).blur();
+                    openMobileEditor();
+                  }
+                }}
               />
               <p className="mt-2 text-sm text-gray-500">Textul va fi folosit pentru generarea PDF.</p>
             </div>
@@ -495,7 +551,7 @@ export default function CreateBicpPage() {
           )}
 
           <div className="sticky bottom-6 bg-white border border-gray-200/60 rounded-2xl p-6 shadow-xl shadow-gray-100/50">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="text-sm text-gray-600">
                 {canSubmit ? (
                   <span className="text-green-600 font-medium">✓ Documentul este gata pentru creare</span>
@@ -503,17 +559,17 @@ export default function CreateBicpPage() {
                   <span>Completează câmpurile obligatorii pentru a continua</span>
                 )}
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
                 <button 
                   type="button" 
                   onClick={() => history.back()} 
-                  className="px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors"
+                  className="px-6 py-3 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors w-full sm:w-auto"
                 >
                   Înapoi
                 </button>
                 <button 
                   disabled={loading || !canSubmit} 
-                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-xl shadow-lg shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 w-full sm:w-auto"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
@@ -564,6 +620,28 @@ export default function CreateBicpPage() {
         )}
       </div>
       </div>
+      {isMobile && showMobileEditor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50" onClick={() => closeMobileEditor(true)} />
+          <div className="relative bg-white w-[94vw] max-w-[640px] h-[80vh] rounded-2xl shadow-2xl flex flex-col">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <span className="text-base font-semibold text-gray-900">Editează conținut</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => closeMobileEditor(false)} className="px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 border border-gray-300 rounded-lg">Anulează</button>
+                <button onClick={() => closeMobileEditor(true)} className="px-3 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg">Gata</button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              <textarea
+                className="w-full h-full min-h-[60vh] border border-gray-200 rounded-xl p-4 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                placeholder="Scrieți conținutul documentului aici..."
+                value={mobileEditorValue}
+                onChange={(e) => setMobileEditorValue(e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -240,7 +240,7 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
       {(s.showSpokespersonBlock !== false) && (
         <View style={styles.spokespersonBlock}>
           {!!data.purtator && <Text style={styles.spLine}>{data.purtator}</Text>}
-          <Text style={styles.spLine}>Purtător de cuvânt al {s.structureDisplay || s.unitLabel || ""}</Text>
+          <Text style={styles.spLine}>Purtător de cuvânt {s.structureDisplay || s.unitLabel || ""}</Text>
         </View>
       )}
 
