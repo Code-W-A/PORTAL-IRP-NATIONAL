@@ -57,11 +57,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     }
     return [parts.numar, parts.tip, parts.titlu].filter(Boolean).join("-");
   }
+  function ddmmyyyyWithDots(s?: string): string {
+    const str = String(s || "");
+    const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+    if (/(\d{2})[-\/](\d{2})[-\/](\d{4})/.test(str)) return str.replace(/[-\/]/g, ".");
+    return str;
+  }
+
   const base = buildNameByFormat(filenameFormat, {
     numar: String(d?.numarComunicat ?? d?.numar ?? ""),
     tip: String(d?.nume || d?.tip || ""),
     titlu: String(d?.titlu || ""),
-    data: String(d?.data || ""),
+    data: ddmmyyyyWithDots(String(d?.data || "")),
   }) || "document";
 
   return new Response(uint8, {

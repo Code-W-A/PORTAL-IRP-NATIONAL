@@ -112,11 +112,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (m) return `${m[3]}-${m[2]}-${m[1]}`;
     return s;
   }
-  function ddmmyyyyWithDotYear(str?: string): string {
+  function ddmmyyyyWithDots(str?: string): string {
     const ddmmyyyy = toDDMMYYYY(str);
     const m = ddmmyyyy.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-    if (m) return `${m[1]}-${m[2]}.${m[3]}`;
-    return ddmmyyyy;
+    if (m) return `${m[1]}.${m[2]}.${m[3]}`;
+    return ddmmyyyy.replace(/-/g, ".");
   }
 
   const DocPdf = (
@@ -221,7 +221,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     numar: chosenNumar,
     tip: String(d?.nume || d?.tip || ""),
     titlu: String(d?.titlu || ""),
-    data: ddmmyyyyWithDotYear(d?.data),
+    data: ddmmyyyyWithDots(d?.data),
   });
   const filenameBase = slugifyFilename(orderedBase || String(title));
   const suffix = ""; // remove public suffix as requested

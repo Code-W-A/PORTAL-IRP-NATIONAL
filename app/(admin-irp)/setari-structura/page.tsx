@@ -511,7 +511,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                     aria-pressed={filenameFormat==='tip-data-titlu'}
                   >
                     <div className="text-sm font-semibold text-gray-900 mb-1">tip-data-titlu</div>
-                    <div className="text-sm text-gray-700 font-mono">Știre 23-09.2025 - Incendiu la depozit.pdf</div>
+                    <div className="text-sm text-gray-700 font-mono">Știre 23.09.2025 - Incendiu la depozit.pdf</div>
                   </button>
                 </div>
                 <p className="text-sm text-gray-500 mt-2">Se aplică la numele fișierelor generate (PDF/DOCX).</p>
