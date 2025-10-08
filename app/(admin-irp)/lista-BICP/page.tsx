@@ -403,12 +403,12 @@ export default function ListaBicpPage() {
 }
 
 function CardView({ items, selectMode, selected, setSelected, printSingle, isPrinting, printingId }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null }) {
-  if (!items.length) return (
-    <div className="text-center py-12">
-      <FileText size={48} className="mx-auto text-gray-300 mb-3" />
-      <p className="text-gray-500">Nu există documente care să corespundă criteriilor.</p>
-    </div>
-  );
+  // if (!items.length) return (
+  //   <div className="text-center py-12">
+  //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
+  //     <p className="text-gray-500">Nu există documente care să corespundă criteriilor.</p>
+  //   </div>
+  // );
   
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">

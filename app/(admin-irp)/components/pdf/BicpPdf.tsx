@@ -16,8 +16,8 @@ export const styles = StyleSheet.create({
   type: { marginTop: 28, fontSize: 16, fontStyle: "italic", fontWeight: 700, fontFamily: "NotoSerif", textAlign: "center" },
   title: { fontSize: 14, fontWeight: 600, marginTop: 4, fontFamily: "NotoSerif", textAlign: "center" },
   content: { fontSize: 12, lineHeight: 1.35, marginTop: 12, fontFamily: "NotoSerif", textAlign: "justify" },
-  approveRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 28 },
-  approveBox: { alignItems: "center", width: 160, marginRight: 88 },
+  approveRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8 },
+  approveBox: { alignItems: "center", width: 160, marginRight: 0 },
   approveTitle: { fontSize: 10, fontWeight: 700, fontFamily: "NotoSerif" },
   approveLine: { fontSize: 10, marginTop: 2, textAlign: "center", fontFamily: "NotoSerif" },
   footer: { position: "absolute", left: 32, right: 32, bottom: 16 },
@@ -171,6 +171,9 @@ function renderHtmlContent(html: string) {
 export function createBicpPage({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
   registerNoto(settings?.assetBaseUrl);
   const s = settings || {};
+  const footerLinesCount = Array.isArray(s.footerLines) ? s.footerLines.length : 0;
+  // Move tricolor higher when there are more footer lines to avoid overlap
+  const tricolorBottom = 40 + Math.max(0, footerLinesCount - 1) * 12; // base 40 + ~12pt per extra line
   const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
     "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
     "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
@@ -242,7 +245,7 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
       )}
 
       {(s.showTricolorFooter !== false) && (
-        <View style={styles.tricolorFooter} fixed>
+        <View style={[styles.tricolorFooter, { bottom: tricolorBottom }]} fixed>
           <View style={styles.triBlue} />
           <View style={styles.triYellow} />
           <View style={styles.triRed} />
