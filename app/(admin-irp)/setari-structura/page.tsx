@@ -27,6 +27,7 @@ export default function SetariStructuraPage() {
   const [templates, setTemplates] = useState<{ key: string; url: string }[]>([]);
   const [pdfTemplateKey, setPdfTemplateKey] = useState<string>("");
   const [unitLabel, setUnitLabel] = useState<string>("COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE");
+  const [filenameFormat, setFilenameFormat] = useState<string>("numar-tip-titlu");
   
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -179,6 +180,7 @@ export default function SetariStructuraPage() {
         setLogoUrl(d.logoUrlPublic || "");
         setUnitLabel(d.unitLabel || "COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE");
         setPdfTemplateKey(d.pdfTemplateKey || "");
+        setFilenameFormat(typeof d.filenameFormat === "string" && d.filenameFormat ? d.filenameFormat : "numar-tip-titlu");
         
         setSemnatari(Array.isArray(d.semnatari) ? d.semnatari : []);
         setSemnatarIndex(typeof d.semnatarIndex === "number" ? d.semnatarIndex : 0);
@@ -307,6 +309,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
         phone: phone.trim(),
         logoUrlPublic: logoUrl,
         unitLabel,
+        filenameFormat,
         pdfTemplateKey: pdfTemplateKey || null,
         semnatari,
         semnatarIndex,
@@ -487,6 +490,31 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                     onChange={(e) => setPhone(e.target.value)} 
                   />
                 </div>
+              </div>
+
+              <div className="mt-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Format nume fișier</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={()=>setFilenameFormat('numar-tip-titlu')}
+                    className={`text-left rounded-xl border px-4 py-3 transition-all ${filenameFormat==='numar-tip-titlu' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/40' : 'border-gray-300 hover:border-gray-400 bg-white'}`}
+                    aria-pressed={filenameFormat==='numar-tip-titlu'}
+                  >
+                    <div className="text-sm font-semibold text-gray-900 mb-1">numar-tip-titlu</div>
+                    <div className="text-sm text-gray-700 font-mono">123-Știre-Incendiu la depozit.pdf</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={()=>setFilenameFormat('tip-data-titlu')}
+                    className={`text-left rounded-xl border px-4 py-3 transition-all ${filenameFormat==='tip-data-titlu' ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/40' : 'border-gray-300 hover:border-gray-400 bg-white'}`}
+                    aria-pressed={filenameFormat==='tip-data-titlu'}
+                  >
+                    <div className="text-sm font-semibold text-gray-900 mb-1">tip-data-titlu</div>
+                    <div className="text-sm text-gray-700 font-mono">Știre 23-09.2025 - Incendiu la depozit.pdf</div>
+                  </button>
+                </div>
+                <p className="text-sm text-gray-500 mt-2">Se aplică la numele fișierelor generate (PDF/DOCX).</p>
               </div>
               
               <div className="mt-6">

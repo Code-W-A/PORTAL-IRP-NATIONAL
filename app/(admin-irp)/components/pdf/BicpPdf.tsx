@@ -25,7 +25,7 @@ export const styles = StyleSheet.create({
   unitInline: { fontSize: 14, fontWeight: 600, marginTop: 28, textAlign: "left" },
   spokespersonBlock: { marginTop: 28 },
   spLabel: { fontSize: 11, fontWeight: 700, fontFamily: "NotoSerif" },
-  spLine: { fontSize: 10, marginTop: 2, fontFamily: "NotoSerif" },
+  spLine: { fontSize: 10, marginTop: 2, fontFamily: "NotoSerif", fontWeight: 700 },
   // Tricolor bars
   tricolorFooter: { position: "absolute", left: 32, right: 32, bottom: 40, height: 6, flexDirection: "row" },
   triBlue: { flex: 1, backgroundColor: "#002B7F" },
@@ -236,10 +236,8 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
 
       {(s.showSpokespersonBlock !== false) && (
         <View style={styles.spokespersonBlock}>
-          <Text style={styles.spLabel}>Purtător de cuvânt</Text>
-          <Text style={styles.spLine}>{s.structureDisplay || s.unitLabel || ""}</Text>
           {!!data.purtator && <Text style={styles.spLine}>{data.purtator}</Text>}
-          {!!s.spokespersonGrade && <Text style={styles.spLine}>{s.spokespersonGrade}</Text>}
+          <Text style={styles.spLine}>Purtător de cuvânt al {s.structureDisplay || s.unitLabel || ""}</Text>
         </View>
       )}
 

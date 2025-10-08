@@ -112,6 +112,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (m) return `${m[3]}-${m[2]}-${m[1]}`;
     return s;
   }
+  function ddmmyyyyWithDotYear(str?: string): string {
+    const ddmmyyyy = toDDMMYYYY(str);
+    const m = ddmmyyyy.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m) return `${m[1]}-${m[2]}.${m[3]}`;
+    return ddmmyyyy;
+  }
 
   const DocPdf = (
     <BicpPdfDoc
@@ -197,13 +203,28 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     };
     const normalized = Array.from(input).map((ch) => map[ch] || ch).join("");
     return normalized
-      .replace(/[^a-zA-Z0-9._-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^[-_.]+|[-_.]+$/g, "")
+      .replace(/[^a-zA-Z0-9._\-\s]+/g, " ")
+      .replace(/\s{2,}/g, " ")
+      .trim()
       .slice(0, 150) || "Document";
   }
-  const filenameBase = slugifyFilename(String(title));
-  const suffix = variant === "public" ? "_public" : "";
+  // Build filename based on per-tenant settings order (default: numar-tip-titlu)
+  function buildNameByFormat(fmt: string | undefined, parts: { numar: string; tip: string; titlu: string; data: string }): string {
+    const f = fmt || "numar-tip-titlu";
+    if (f === "tip-data-titlu") {
+      const left = [parts.tip, parts.data].filter(Boolean).join(" ");
+      return [left, parts.titlu].filter(Boolean).join(" - ");
+    }
+    return [parts.numar, parts.tip, parts.titlu].filter(Boolean).join("-");
+  }
+  const orderedBase = buildNameByFormat(meta?.filenameFormat as string | undefined, {
+    numar: chosenNumar,
+    tip: String(d?.nume || d?.tip || ""),
+    titlu: String(d?.titlu || ""),
+    data: ddmmyyyyWithDotYear(d?.data),
+  });
+  const filenameBase = slugifyFilename(orderedBase || String(title));
+  const suffix = ""; // remove public suffix as requested
   return new NextResponse(blob, {
     headers: {
       "Content-Type": "application/pdf",
