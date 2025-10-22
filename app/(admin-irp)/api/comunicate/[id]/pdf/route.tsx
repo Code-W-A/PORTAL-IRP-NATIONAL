@@ -126,6 +126,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         logoUrlPublic: logoAbs,
         secrecyLabel: meta?.secrecyLabel || "NESECRET",
         city: meta?.city,
+          email: meta?.email,
         phone: meta?.phone,
         footerLines: (meta?.footerLines as string[]) || [],
         unitLabel: meta?.unitLabel || "",

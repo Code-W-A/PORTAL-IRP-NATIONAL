@@ -13,7 +13,7 @@ export const styles = StyleSheet.create({
   secrecy: { fontSize: 9, fontWeight: 700, fontFamily: "NotoSerif" },
   meta: { fontSize: 9, marginVertical: 1, textAlign: "right", fontFamily: "NotoSerif" },
   metaLeft: { fontSize: 9, marginVertical: 1, textAlign: "left", fontFamily: "NotoSerif" },
-  type: { marginTop: 28, fontSize: 16, fontStyle: "italic", fontWeight: 700, fontFamily: "NotoSerif", textAlign: "center" },
+  type: { marginTop: 28, fontSize: 16, fontWeight: 700, fontFamily: "NotoSerif", textAlign: "center", textTransform: "uppercase" },
   title: { fontSize: 14, fontWeight: 600, marginTop: 4, fontFamily: "NotoSerif", textAlign: "center" },
   content: { fontSize: 12, lineHeight: 1.35, marginTop: 12, fontFamily: "NotoSerif", textAlign: "justify" },
   approveRow: { flexDirection: "row", justifyContent: "flex-end", marginTop: 8 },

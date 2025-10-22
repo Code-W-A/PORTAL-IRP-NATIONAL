@@ -73,6 +73,7 @@ export default function SetariStructuraPage() {
               logoUrlPublic: logoUrl || undefined,
               secrecyLabel: "NESECRET",
               city: city || undefined,
+              email: undefined, // page_new does not manage email state
               phone: phone || undefined,
               footerLines: (footerLines || "").split("\n").map((s) => s.trim()).filter(Boolean),
               unitLabel,

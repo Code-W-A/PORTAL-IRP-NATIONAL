@@ -274,6 +274,7 @@ export default function CreateBicpPage() {
               logoUrlPublic: settings?.logoUrlPublic,
               secrecyLabel: settings?.secrecyLabel,
               city: settings?.city,
+              email: settings?.email,
               phone: settings?.phone,
               footerLines: settings?.footerLines || [],
               unitLabel: settings?.unitLabel,
