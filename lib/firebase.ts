@@ -20,6 +20,10 @@ export function initFirebase(): FirebaseServices {
 
   const app = getApps()[0] || initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  try {
+    // Localize Firebase Auth flows (emails, errors) to the device/browser language
+    auth.useDeviceLanguage();
+  } catch {}
   const db = getFirestore(app);
   return { app, auth, db };
 }

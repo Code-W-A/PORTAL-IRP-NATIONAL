@@ -16,10 +16,22 @@ export default function ResetPasswordPage() {
     setMsg(null);
     setLoading(true);
     try {
-      await sendPasswordResetEmail(auth, email.trim());
-      setMsg("Email de resetare trimis, verifică inbox-ul.");
+      const actionCodeSettings = {
+        // Redirect după resetare; ajustează dacă ai alt domeniu/route
+        url: typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+        handleCodeInApp: false,
+      } as any;
+      await sendPasswordResetEmail(auth, email.trim(), actionCodeSettings);
+      setMsg("Email de resetare trimis, verifică inbox-ul (inclusiv Spam).");
     } catch (e: any) {
-      setMsg("Nu am putut trimite emailul de resetare.");
+      const code = e?.code || "";
+      const map: Record<string, string> = {
+        "auth/invalid-email": "Adresa de email nu este validă.",
+        "auth/user-not-found": "Nu există cont pentru acest email.",
+        "auth/missing-email": "Introduceți adresa de email.",
+        "auth/too-many-requests": "Prea multe încercări. Încercați mai târziu.",
+      };
+      setMsg(map[code] || "Nu am putut trimite emailul de resetare. Verificați adresa și încercați din nou.");
     } finally {
       setLoading(false);
     }

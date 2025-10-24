@@ -4,7 +4,8 @@ import { useBicpData, type Bicp } from "@/app/(admin-irp)/lista-BICP/hooks/useBi
 import { deleteDoc, doc, collection } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
-import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2 } from "lucide-react";
+import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2 } from "lucide-react";
+import Link from "next/link";
 import { FiltersDialog } from "./FiltersDialog";
 
 // Funcție pentru badge-uri colorate
@@ -262,6 +263,12 @@ export default function ListaBicpPage() {
               </div>
             </div>
             <div className="flex items-center gap-3 flex-wrap w-full md:w-auto">
+              <Link 
+                href="/creaza-BICP"
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-200"
+              >
+                <FilePlus2 size={16} /> Creează BI/CP
+              </Link>
               <button 
                 onClick={reload} 
                 className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-colors"
@@ -397,6 +404,15 @@ export default function ListaBicpPage() {
         
         {/* Filters Dialog */}
         {showFilters && <FiltersDialog filters={filters} setFilters={setFilters} onClose={() => setShowFilters(false)} />}
+        
+        {/* FAB pentru mobil - Creează BI/CP */}
+        <Link
+          href="/creaza-BICP"
+          className="md:hidden fixed bottom-20 right-4 w-14 h-14 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-full shadow-2xl shadow-emerald-500/40 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 z-50"
+          title="Creează document BI/CP"
+        >
+          <FilePlus2 size={24} strokeWidth={2.5} />
+        </Link>
       </div>
     </div>
   );

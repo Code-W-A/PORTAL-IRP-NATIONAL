@@ -108,9 +108,13 @@ export default function SetariStructuraPage() {
     setAuthLoading(true);
     setAuthMsg(null);
     try {
-      await sendPasswordResetEmail(auth, authUser.email);
+      const actionCodeSettings = {
+        url: typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+        handleCodeInApp: false,
+      } as any;
+      await sendPasswordResetEmail(auth, authUser.email, actionCodeSettings);
       setAuthOk(true);
-      setAuthMsg("Email de resetare parolă trimis.");
+      setAuthMsg("Email de resetare parolă trimis (verificați și folderul Spam).");
     } catch (e: any) {
       setAuthOk(false);
       setAuthMsg(mapAuthError(e));
