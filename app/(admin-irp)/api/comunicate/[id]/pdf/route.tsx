@@ -95,7 +95,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   // Compute structure display explicitly (avoid server default DB/ISU)
   const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
-  const structureDisplay = effectiveStructuraId && judName ? `${effectiveStructuraId} ${judName}` : undefined;
+  let structureDisplay = effectiveStructuraId && judName ? `${effectiveStructuraId} ${judName}` : undefined;
+  try {
+    const isIgsu = String(effectiveStructuraId || "").toUpperCase().includes("IGSU");
+    if (isIgsu) structureDisplay = String(effectiveStructuraId || "");
+  } catch {}
 
   // Choose displayed number: use registry number only for signed variant
   const chosenNumar = (variant === "signed" && String(d?.numarRegistru || "").trim())

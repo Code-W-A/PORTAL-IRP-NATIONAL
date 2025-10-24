@@ -271,7 +271,10 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
   try {
     const { judetId, structuraId } = getTenantContext();
     const judName = JUDETE.find((j) => j.id === judetId)?.name || judetId;
-    if (!derivedStructureDisplay) derivedStructureDisplay = `${structuraId} ${judName}`;
+    if (!derivedStructureDisplay) {
+      const isIgsu = String(structuraId || "").toUpperCase().includes("IGSU");
+      derivedStructureDisplay = isIgsu ? String(structuraId || "") : `${structuraId} ${judName}`;
+    }
   } catch {}
   const s2: BicpPdfSettings = { ...s, structureDisplay: derivedStructureDisplay };
   const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
