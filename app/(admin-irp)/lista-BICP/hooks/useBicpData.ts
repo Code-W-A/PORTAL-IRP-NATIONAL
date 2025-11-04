@@ -34,6 +34,11 @@ export type Filters = {
   tip: string[]; // BI/CI/PC (fallback)
   tipDocument: string; // "Buletin Informativ" etc.
   semnatarCat: string; // categorii semnatar
+  numeSemnatar?: string;
+  grad?: string;
+  functia?: string;
+  pentru?: string;
+  purtatorCuvant?: string;
   numarMin?: number;
   numarMax?: number;
   dataStart?: string;
@@ -49,6 +54,11 @@ const defaultFilters: Filters = {
   tip: [],
   tipDocument: "",
   semnatarCat: "",
+  numeSemnatar: "",
+  grad: "",
+  functia: "",
+  pentru: "",
+  purtatorCuvant: "",
   sortBy: "numar",
   sortDir: "desc",
   page: 1,
@@ -92,7 +102,7 @@ export function useBicpData() {
 
   const filtered = useMemo(() => {
     let arr = [...items];
-    const { search, tip, tipDocument, semnatarCat, numarMin, numarMax, dataStart, dataEnd } = filters;
+    const { search, tip, tipDocument, semnatarCat, numeSemnatar, grad, functia, pentru, purtatorCuvant, numarMin, numarMax, dataStart, dataEnd } = filters;
     if (search) {
       const s = search.toLowerCase();
       arr = arr.filter((x) => {
@@ -114,6 +124,26 @@ export function useBicpData() {
     if (semnatarCat) {
       const key = semnatarCat.toLowerCase();
       arr = arr.filter((x) => [x.numeSemnatar, x.pentru, x.functia].filter(Boolean).map((y) => String(y).toLowerCase()).some((v) => v.includes(key)));
+    }
+    if (numeSemnatar) {
+      const key = numeSemnatar.toLowerCase();
+      arr = arr.filter((x) => String(x.numeSemnatar || "").toLowerCase().includes(key));
+    }
+    if (grad) {
+      const key = grad.toLowerCase();
+      arr = arr.filter((x) => String(x.grad || "").toLowerCase().includes(key));
+    }
+    if (functia) {
+      const key = functia.toLowerCase();
+      arr = arr.filter((x) => String(x.functia || "").toLowerCase().includes(key));
+    }
+    if (pentru) {
+      const key = pentru.toLowerCase();
+      arr = arr.filter((x) => String(x.pentru || "").toLowerCase().includes(key));
+    }
+    if (purtatorCuvant) {
+      const key = purtatorCuvant.toLowerCase();
+      arr = arr.filter((x) => String(x["purtator-cuvant"] || "").toLowerCase().includes(key));
     }
     if (numarMin != null) arr = arr.filter((x) => x.numar >= numarMin);
     if (numarMax != null) arr = arr.filter((x) => x.numar <= numarMax);
