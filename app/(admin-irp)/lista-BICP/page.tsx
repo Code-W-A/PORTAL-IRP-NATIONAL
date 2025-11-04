@@ -8,6 +8,45 @@ import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon
 import Link from "next/link";
 import { FiltersDialog } from "./FiltersDialog";
 
+// Helper function to format date consistently as DD/MM/YYYY
+function formatDate(doc: any): string {
+  // Check if there's a dataTimestamp (Firestore Timestamp)
+  if (doc.dataTimestamp?.toDate) {
+    const date = doc.dataTimestamp.toDate();
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+  
+  // Check if data is already a string
+  if (doc.data && typeof doc.data === "string") {
+    const str = doc.data.trim();
+    // Check if it's already in DD/MM/YYYY format
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
+      return str;
+    }
+    // Check if it's in YYYY-MM-DD format (ISO)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+      const [year, month, day] = str.split('-');
+      return `${day}/${month}/${year}`;
+    }
+    // Return as-is if it's some other format
+    return str;
+  }
+  
+  // Check if data is a Firestore Timestamp object directly
+  if (doc.data?.toDate) {
+    const date = doc.data.toDate();
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+  
+  return "—";
+}
+
 // Funcție pentru badge-uri colorate
 function getDocumentBadge(tipDocument: string) {
   const tip = tipDocument || "Document";
@@ -651,7 +690,7 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
               </div>
               <div className="flex items-center text-sm text-gray-600">
                 <span className="font-medium text-gray-700">Data:</span>
-                <span className="ml-1 text-gray-900">{typeof x.data === "string" ? x.data : "—"}</span>
+                <span className="ml-1 text-gray-900">{formatDate(x)}</span>
               </div>
             </div>
             
@@ -885,7 +924,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                       </div>
                     </div>
                   </td>
-                  <td className="p-4 w-28 text-gray-700">{typeof x.data === "string" ? x.data : "—"}</td>
+                  <td className="p-4 w-28 text-gray-700">{formatDate(x)}</td>
                   <td className="p-4 w-40">{getDocumentBadge(x.nume || x.tip || "")}</td>
                   <td className="p-4">
                     <div className="flex flex-wrap gap-1.5">
