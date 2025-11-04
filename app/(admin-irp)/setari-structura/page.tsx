@@ -462,6 +462,7 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                   onChange={(e) => setUnitLabel(e.target.value)}
                 >
                   <option>COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE</option>
+                  <option>COMPARTIMENT INFORMARE, RELAȚII PUBLICE ȘI CU PUBLICUL</option>
                   <option>SERVICIUL INFORMARE ȘI RELAȚII PUBLICE</option>
                   <option>DIRECȚIA INFORMARE ȘI RELAȚII PUBLICE</option>
                 </select>
