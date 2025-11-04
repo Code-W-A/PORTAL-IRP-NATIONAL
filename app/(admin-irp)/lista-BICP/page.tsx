@@ -107,6 +107,13 @@ export default function ListaBicpPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; ids: string[]; isBulk: boolean }>({ show: false, ids: [], isBulk: false });
 
   const allSelectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
+  const currentPageIds = useMemo(() => items.map((x) => x.id), [items]);
+  const allPageSelected = useMemo(() => currentPageIds.length > 0 && currentPageIds.every((id) => selected[id]), [currentPageIds, selected]);
+  const toggleSelectPage = (val: boolean) => {
+    const m = { ...selected } as Record<string, boolean>;
+    currentPageIds.forEach((id) => { m[id] = val; });
+    setSelected(m);
+  };
 
   async function downloadBulkPdfsAsZip(variant: "signed" | "public") {
     if (!allSelectedIds.length || downloadingZipType) return;
@@ -473,6 +480,29 @@ export default function ListaBicpPage() {
                 
                 {allSelectedIds.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Quick select/deselect for current page */}
+                    <button
+                      onClick={() => toggleSelectPage(!allPageSelected)}
+                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl font-medium transition-colors shadow-sm ${
+                        allPageSelected
+                          ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+                          : 'bg-white border border-blue-200 text-blue-700 hover:bg-blue-50'
+                      }`}
+                      title={allPageSelected ? 'Deselectează pagina curentă' : 'Selectează pagina curentă'}
+                    >
+                      {allPageSelected ? 'Deselectează pagina' : 'Selectează pagina'}
+                    </button>
+                    {/* Chip cu count + Clear */}
+                    <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-gray-200 text-gray-700">
+                      Selectate: <span className="font-semibold">{allSelectedIds.length}</span>
+                      <button
+                        onClick={() => setSelected({})}
+                        className="inline-flex items-center justify-center w-6 h-6 rounded-full hover:bg-gray-100 text-gray-500"
+                        title="Deselectează toate"
+                      >
+                        <X size={14} />
+                      </button>
+                    </span>
                     <button 
                       onClick={() => downloadBulkPdfsAsZip("signed")} 
                       disabled={downloadingZipType !== null}
@@ -545,6 +575,41 @@ export default function ListaBicpPage() {
               <Filter size={18} /> Filtre avansate
             </button>
           </div>
+          {/* Active filter chips */}
+          {(() => {
+            const chips: { key: string; label: string; onClear: () => void }[] = [];
+            if (filters.tipDocument) chips.push({ key: `tipDocument:${filters.tipDocument}`, label: `Tip: ${filters.tipDocument}`, onClear: () => setFilters({ ...filters, tipDocument: "", page: 1 }) });
+            if (filters.semnatarCat) chips.push({ key: `semnatar:${filters.semnatarCat}`, label: `Semnatar: ${filters.semnatarCat}`, onClear: () => setFilters({ ...filters, semnatarCat: "", page: 1 }) });
+            if (filters.numeSemnatar) chips.push({ key: `numeSemnatar:${filters.numeSemnatar}`, label: `Nume semnatar: ${filters.numeSemnatar}`, onClear: () => setFilters({ ...filters, numeSemnatar: "", page: 1 }) });
+            if (filters.grad) chips.push({ key: `grad:${filters.grad}`, label: `Grad: ${filters.grad}`, onClear: () => setFilters({ ...filters, grad: "", page: 1 }) });
+            if (filters.functia) chips.push({ key: `functia:${filters.functia}`, label: `Funcția: ${filters.functia}`, onClear: () => setFilters({ ...filters, functia: "", page: 1 }) });
+            if (filters.pentru) chips.push({ key: `pentru:${filters.pentru}`, label: `Pentru: ${filters.pentru}`, onClear: () => setFilters({ ...filters, pentru: "", page: 1 }) });
+            if (filters.purtatorCuvant) chips.push({ key: `purtator:${filters.purtatorCuvant}`, label: `Purtător: ${filters.purtatorCuvant}`, onClear: () => setFilters({ ...filters, purtatorCuvant: "", page: 1 }) });
+            if (filters.numarMin != null) chips.push({ key: `min:${filters.numarMin}`, label: `Nr ≥ ${filters.numarMin}`, onClear: () => setFilters({ ...filters, numarMin: undefined, page: 1 }) });
+            if (filters.numarMax != null) chips.push({ key: `max:${filters.numarMax}`, label: `Nr ≤ ${filters.numarMax}`, onClear: () => setFilters({ ...filters, numarMax: undefined, page: 1 }) });
+            if (filters.dataStart) chips.push({ key: `start:${filters.dataStart}`, label: `De la: ${filters.dataStart}`, onClear: () => setFilters({ ...filters, dataStart: undefined, page: 1 }) });
+            if (filters.dataEnd) chips.push({ key: `end:${filters.dataEnd}`, label: `Până la: ${filters.dataEnd}`, onClear: () => setFilters({ ...filters, dataEnd: undefined, page: 1 }) });
+            if (filters.search) chips.push({ key: `search:${filters.search}`, label: `Căutare: ${filters.search}`, onClear: () => setFilters({ ...filters, search: "", page: 1 }) });
+            return chips.length ? (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {chips.map((c) => (
+                  <span key={c.key} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                    {c.label}
+                    <button onClick={c.onClear} className="inline-flex items-center justify-center w-5 h-5 rounded-full hover:bg-blue-100">
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  onClick={() => setFilters({ ...filters, tipDocument: "", semnatarCat: "", numeSemnatar: "", grad: "", functia: "", pentru: "", purtatorCuvant: "", numarMin: undefined, numarMax: undefined, dataStart: undefined, dataEnd: undefined, search: "", page: 1 })}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
+                  title="Resetează toate filtrele"
+                >
+                  Curăță filtrele
+                </button>
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {error && (
@@ -574,7 +639,13 @@ export default function ListaBicpPage() {
         )}
 
         {!loading && (
-          <Pagination total={total} page={filters.page} pageSize={filters.pageSize} onChange={(p) => setFilters({ ...filters, page: p })} />
+          <Pagination 
+            total={total} 
+            page={filters.page} 
+            pageSize={filters.pageSize} 
+            onChange={(p) => setFilters({ ...filters, page: p })}
+            onChangePageSize={(s) => setFilters({ ...filters, pageSize: s, page: 1 })}
+          />
         )}
         
         {/* Filters Dialog */}
@@ -1049,7 +1120,7 @@ function DeleteButton({ id, small, onDelete }: { id: string; small?: boolean; on
   );
 }
 
-function Pagination({ total, page, pageSize, onChange }: { total: number; page: number; pageSize: number; onChange: (p: number) => void }) {
+function Pagination({ total, page, pageSize, onChange, onChangePageSize }: { total: number; page: number; pageSize: number; onChange: (p: number) => void; onChangePageSize: (s: number) => void }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   if (pages <= 1) return null;
   const btn = (p: number, label?: string) => (
@@ -1081,13 +1152,27 @@ function Pagination({ total, page, pageSize, onChange }: { total: number; page: 
     items.push(btn(pages));
   }
   return (
-    <div className="flex gap-2 items-center flex-wrap justify-center mt-6">
-      {page > 1 && btn(page - 1, "‹")}
-      {items}
-      {page < pages && btn(page + 1, "›")}
-      <span className="text-sm text-gray-600 ml-4 px-3 py-2 bg-gray-50 rounded-lg">
-        Pagina {page} din {pages} • {total} documente
-      </span>
+    <div className="flex items-center justify-between gap-3 mt-6 flex-wrap">
+      <div className="flex gap-2 items-center flex-wrap">
+        {page > 1 && btn(page - 1, "‹")}
+        {items}
+        {page < pages && btn(page + 1, "›")}
+        <span className="text-sm text-gray-600 ml-2 px-3 py-2 bg-gray-50 rounded-lg">
+          Pagina {page} din {pages} • {total} documente
+        </span>
+      </div>
+      <div className="flex items-center gap-2 ml-auto">
+        <span className="text-sm text-gray-600">Pe pagină</span>
+        <select
+          value={pageSize}
+          onChange={(e) => onChangePageSize(Number(e.target.value))}
+          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        >
+          {[10, 25, 50, 100].map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
