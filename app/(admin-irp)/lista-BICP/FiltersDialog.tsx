@@ -154,19 +154,7 @@ export function FiltersDialog({ filters, setFilters, onClose }: { filters: any; 
                 />
               </div>
               
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <User size={14} className="text-gray-500" />
-                  Pentru
-                </label>
-                <input 
-                  type="text"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all bg-white text-gray-900 shadow-sm hover:border-gray-400" 
-                  value={localFilters.pentru ?? ""} 
-                  onChange={(e) => setLocalFilters({ ...localFilters, pentru: e.target.value || undefined })}
-                  placeholder="Destinatar"
-                />
-              </div>
+            
               
               <div className="space-y-2 md:col-span-2">
                 <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
