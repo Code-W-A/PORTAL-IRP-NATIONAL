@@ -6,6 +6,20 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
 };
 
+function isMobileDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  
+  // Check user agent
+  const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+  const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile/i;
+  
+  // Check touch capability and screen size
+  const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const isSmallScreen = window.innerWidth <= 1024; // Consider tablets as mobile too
+  
+  return mobileRegex.test(userAgent.toLowerCase()) || (isTouchDevice && isSmallScreen);
+}
+
 export default function PwaInstallPrompt() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null);
   const [visible, setVisible] = useState(false);
@@ -14,15 +28,27 @@ export default function PwaInstallPrompt() {
   useEffect(() => {
     const onBeforeInstall = (e: Event) => {
       e.preventDefault?.();
+      
+      // Don't show prompt on desktop
+      if (!isMobileDevice()) {
+        try { (window as any).__pwaDeferredPrompt = null; } catch {}
+        return;
+      }
+      
       try { (window as any).__pwaDeferredPrompt = e as BeforeInstallPromptEvent; } catch {}
       setDeferred(e as BeforeInstallPromptEvent);
       setVisible(true);
     };
+    
     // Hide if already in standalone
     if (typeof window !== "undefined") {
       const isStandalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as any).standalone;
       if (isStandalone) return;
+      
+      // Don't even listen for the event on desktop
+      if (!isMobileDevice()) return;
     }
+    
     window.addEventListener("beforeinstallprompt", onBeforeInstall as any);
     return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall as any);
   }, []);

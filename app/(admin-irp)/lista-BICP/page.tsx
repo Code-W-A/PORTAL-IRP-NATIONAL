@@ -4,7 +4,7 @@ import { useBicpData, type Bicp } from "@/app/(admin-irp)/lista-BICP/hooks/useBi
 import { deleteDoc, doc, collection } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
-import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2 } from "lucide-react";
+import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, MoreVertical, Download, Clock } from "lucide-react";
 import Link from "next/link";
 import { FiltersDialog } from "./FiltersDialog";
 
@@ -64,17 +64,107 @@ export default function ListaBicpPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printingId, setPrintingId] = useState<string | null>(null);
+  const [downloadingZipType, setDownloadingZipType] = useState<"signed" | "public" | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; ids: string[]; isBulk: boolean }>({ show: false, ids: [], isBulk: false });
 
   const allSelectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
 
-  function openBulkPdfs(variant: "signed" | "public") {
-    if (!allSelectedIds.length) return;
-    // Deschide fiecare PDF într-un tab nou
-    const { judetId, structuraId } = getTenantContext();
-    allSelectedIds.forEach((id) => {
-      const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
-      window.open(url, "_blank");
-    });
+  async function downloadBulkPdfsAsZip(variant: "signed" | "public") {
+    if (!allSelectedIds.length || downloadingZipType) return;
+    
+    setDownloadingZipType(variant);
+    try {
+      // Dynamically import JSZip
+      const JSZip = (await import('jszip')).default;
+      const zip = new JSZip();
+      const { judetId, structuraId } = getTenantContext();
+      
+      // Get today's date for filename
+      const today = new Date();
+      const dateStr = `${today.getDate().toString().padStart(2, '0')}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getFullYear()}`;
+      
+      // Helper function to generate filename same as server
+      const slugifyFilename = (input: string): string => {
+        const map: Record<string, string> = {
+          "ă": "a", "â": "a", "î": "i", "ș": "s", "ş": "s", "ț": "t", "ţ": "t",
+          "Ă": "A", "Â": "A", "Î": "I", "Ș": "S", "Ş": "S", "Ț": "T", "Ţ": "T",
+        };
+        const normalized = Array.from(input).map((ch) => map[ch] || ch).join("");
+        return normalized
+          .replace(/[^a-zA-Z0-9._\-\s]+/g, " ")
+          .replace(/\s{2,}/g, " ")
+          .trim()
+          .slice(0, 150) || "Document";
+      };
+      
+      // Download all PDFs and add to zip
+      let successCount = 0;
+      for (const id of allSelectedIds) {
+        try {
+          const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Failed to fetch ${id}`);
+          
+          const blob = await response.blob();
+          
+          // Extract filename from Content-Disposition header (same as download)
+          const contentDisp = response.headers.get('Content-Disposition');
+          let filename = `document_${id}.pdf`;
+          
+          if (contentDisp) {
+            const filenameMatch = contentDisp.match(/filename="?([^"]+)"?/);
+            if (filenameMatch && filenameMatch[1]) {
+              filename = filenameMatch[1];
+            }
+          } else {
+            // Fallback: build filename like server does
+            const docInfo = items.find(item => item.id === id);
+            if (docInfo) {
+              const numar = String(docInfo.numarComunicat || docInfo.numar || "");
+              const tip = String(docInfo.nume || docInfo.tip || "");
+              const titlu = String(docInfo.titlu || "");
+              const baseFilename = slugifyFilename([numar, tip, titlu].filter(Boolean).join("-"));
+              filename = `${baseFilename}.pdf`;
+            }
+          }
+          
+          // If variant is public, add suffix to distinguish in ZIP
+          if (variant === "public") {
+            filename = filename.replace(/\.pdf$/i, "_fara_semnaturi.pdf");
+          }
+          
+          zip.file(filename, blob);
+          successCount++;
+        } catch (err) {
+          console.error(`Failed to download PDF ${id}:`, err);
+        }
+      }
+      
+      if (successCount === 0) {
+        alert("Nu s-a putut descărca niciun PDF");
+        return;
+      }
+      
+      // Generate zip file
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      
+      // Create download link
+      const downloadUrl = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = `Documente_${variant === 'signed' ? 'Semnate' : 'Fara_Semnaturi'}_${dateStr}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+      
+      alert(`Au fost descărcate ${successCount} din ${allSelectedIds.length} documente în arhiva ZIP`);
+    } catch (err) {
+      console.error("Error creating ZIP:", err);
+      alert("Eroare la crearea arhivei ZIP. Verificați consola pentru detalii.");
+    } finally {
+      setDownloadingZipType(null);
+    }
   }
 
   async function bulkPrintUrls(urls: string[]) {
@@ -227,14 +317,19 @@ export default function ListaBicpPage() {
     setPrintingId(null);
   }
 
-  async function handleDeleteMany() {
-    if (!allSelectedIds.length) return;
-    if (!confirm(`Sigur doriți să ștergeți ${allSelectedIds.length} document(e)?`)) return;
+  function showDeleteConfirmation(ids: string[], isBulk: boolean = false) {
+    setDeleteConfirm({ show: true, ids, isBulk });
+  }
+
+  async function executeDelete() {
+    const { ids, isBulk } = deleteConfirm;
+    setDeleteConfirm({ show: false, ids: [], isBulk: false });
+    
     try {
       const { judetId, structuraId } = getTenantContext();
       const collectionPath = collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate");
-      await Promise.all(allSelectedIds.map((id) => deleteDoc(doc(collectionPath, id))));
-      setSelected({});
+      await Promise.all(ids.map((id) => deleteDoc(doc(collectionPath, id))));
+      if (isBulk) setSelected({});
       reload();
     } catch (error) {
       console.error("Eroare la ștergerea documentelor:", error);
@@ -298,58 +393,99 @@ export default function ListaBicpPage() {
                 </button>
               </div>
               <button 
-                onClick={() => setSelectMode((s) => !s)} 
-                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors ${
+                onClick={() => {
+                  setSelectMode((s) => !s);
+                  if (selectMode) setSelected({});
+                }} 
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 ${
                   selectMode 
-                    ? "bg-blue-50 text-blue-700 border-blue-200 shadow-sm" 
+                    ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/25" 
                     : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm"
                 }`}
               >
-                {selectMode ? "Selecție activă" : "Selectează"}
+                <CheckSquare size={16} />
+                {selectMode ? "Anulează selecția" : "Selectează documente"}
               </button>
-              {selectMode && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button 
-                    onClick={() => openBulkPdfs("signed")} 
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg transition-colors"
-                    title="Descarcă PDF cu semnături pentru selecție"
-                  >
-                    <FileDown size={16} /> PDF semnate ({allSelectedIds.length})
-                  </button>
-                  <button 
-                    onClick={() => openBulkPdfs("public")} 
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 shadow-lg transition-colors"
-                    title="Descarcă PDF fără semnături pentru selecție"
-                  >
-                    <FileText size={16} /> PDF fără semnături ({allSelectedIds.length})
-                  </button>
-                  <button 
-                    onClick={() => startBulkPrint("signed")} 
-                    disabled={!allSelectedIds.length || isPrinting}
-                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg transition-colors ${(!allSelectedIds.length || isPrinting) ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-emerald-600 text-white hover:bg-emerald-700"}`}
-                    title="Printează PDF cu semnături pentru selecție"
-                  >
-                    <FileDown size={16} /> {isPrinting ? "Se tipărește..." : "Printează semnate"}
-                  </button>
-                  <button 
-                    onClick={() => startBulkPrint("public")} 
-                    disabled={!allSelectedIds.length || isPrinting}
-                    className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg transition-colors ${(!allSelectedIds.length || isPrinting) ? "bg-gray-200 text-gray-500 cursor-not-allowed" : "bg-teal-600 text-white hover:bg-teal-700"}`}
-                    title="Printează PDF fără semnături pentru selecție"
-                  >
-                    <FileText size={16} /> {isPrinting ? "Se tipărește..." : "Printează publice"}
-                  </button>
-                  <button 
-                    onClick={handleDeleteMany} 
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 shadow-lg shadow-red-500/25 transition-colors"
-                  >
-                    <Trash2 size={16} /> Șterge ({allSelectedIds.length})
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         </div>
+
+        {/* Selection Toolbar - appears when selectMode is active */}
+        {selectMode && (
+          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 shadow-lg">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                      <CheckSquare size={20} className="text-white" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        {allSelectedIds.length > 0 
+                          ? `${allSelectedIds.length} ${allSelectedIds.length === 1 ? 'document selectat' : 'documente selectate'}`
+                          : 'Nici un document selectat'
+                        }
+                      </p>
+                      <p className="text-xs text-gray-600">Bifează documentele pentru a efectua acțiuni în bloc</p>
+                    </div>
+                  </div>
+                </div>
+                
+                {allSelectedIds.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button 
+                      onClick={() => downloadBulkPdfsAsZip("signed")} 
+                      disabled={downloadingZipType !== null}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
+                        downloadingZipType !== null
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                          : "bg-white border border-blue-200 text-blue-700 hover:bg-blue-50"
+                      }`}
+                      title="Descarcă toate PDF-urile cu semnături într-o arhivă ZIP"
+                    >
+                      {downloadingZipType === "signed" ? <Loader2 className="animate-spin" size={16}/> : <Download size={16}/>}
+                      {downloadingZipType === "signed" ? "Se creează arhiva..." : "PDF semnate (ZIP)"}
+                    </button>
+                    <button 
+                      onClick={() => downloadBulkPdfsAsZip("public")} 
+                      disabled={downloadingZipType !== null}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
+                        downloadingZipType !== null
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                          : "bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                      }`}
+                      title="Descarcă toate PDF-urile fără semnături într-o arhivă ZIP"
+                    >
+                      {downloadingZipType === "public" ? <Loader2 className="animate-spin" size={16}/> : <Download size={16}/>}
+                      {downloadingZipType === "public" ? "Se creează arhiva..." : "PDF fara semnaturi (ZIP)"}
+                    </button>
+                    <button 
+                      onClick={() => startBulkPrint("signed")} 
+                      disabled={isPrinting}
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
+                        isPrinting 
+                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200" 
+                          : "bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                      }`}
+                      title="Printează toate documentele cu semnături"
+                    >
+                      {isPrinting ? <Loader2 className="animate-spin" size={16}/> : <Printer size={16}/>}
+                      {isPrinting ? "Se printează..." : "Printează"}
+                    </button>
+                    <button 
+                      onClick={() => showDeleteConfirmation(allSelectedIds, true)} 
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 font-medium transition-colors shadow-lg shadow-red-500/20"
+                      title="Șterge toate documentele selectate"
+                    >
+                      <Trash2 size={16} /> Șterge
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Search */}
         <div className="mb-8">
@@ -392,9 +528,9 @@ export default function ListaBicpPage() {
 
         {!loading && (
           view === "card" ? (
-            <CardView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} />
+            <CardView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} onDelete={(id) => showDeleteConfirmation([id], false)} />
           ) : (
-            <TableView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} filters={filters} setFilters={setFilters} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} />
+            <TableView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} filters={filters} setFilters={setFilters} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} onDelete={(id) => showDeleteConfirmation([id], false)} />
           )
         )}
 
@@ -404,6 +540,47 @@ export default function ListaBicpPage() {
         
         {/* Filters Dialog */}
         {showFilters && <FiltersDialog filters={filters} setFilters={setFilters} onClose={() => setShowFilters(false)} />}
+        
+        {/* Delete Confirmation Dialog */}
+        {deleteConfirm.show && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" onClick={() => setDeleteConfirm({ show: false, ids: [], isBulk: false })}>
+            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+              <div className="p-6">
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center flex-shrink-0">
+                    <Trash2 size={24} className="text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-gray-900">Confirmare ștergere</h3>
+                    <p className="text-sm text-gray-600">Această acțiune este permanentă</p>
+                  </div>
+                </div>
+                
+                <p className="text-gray-700 mb-6">
+                  {deleteConfirm.ids.length === 1 
+                    ? "Sigur doriți să ștergeți acest document? Acțiunea nu poate fi anulată."
+                    : `Sigur doriți să ștergeți ${deleteConfirm.ids.length} documente? Acțiunea nu poate fi anulată.`
+                  }
+                </p>
+                
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => setDeleteConfirm({ show: false, ids: [], isBulk: false })}
+                    className="px-5 py-2.5 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                  >
+                    Anulează
+                  </button>
+                  <button
+                    onClick={executeDelete}
+                    className="px-5 py-2.5 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors shadow-lg shadow-red-500/25"
+                  >
+                    Șterge {deleteConfirm.ids.length > 1 ? `(${deleteConfirm.ids.length})` : ''}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* FAB pentru mobil - Creează BI/CP */}
         <Link
@@ -418,7 +595,7 @@ export default function ListaBicpPage() {
   );
 }
 
-function CardView({ items, selectMode, selected, setSelected, printSingle, isPrinting, printingId }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null }) {
+function CardView({ items, selectMode, selected, setSelected, printSingle, isPrinting, printingId, onDelete }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null; onDelete: (id: string) => void }) {
   // if (!items.length) return (
   //   <div className="text-center py-12">
   //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
@@ -431,15 +608,28 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
       {items.map((x) => {
         const label = x.numeAfisare || `${x.numarComunicat ?? x.numar} - ${x.nume || x.tip} - ${x.titlu}`;
         const isSelected = !!selected[x.id];
+        
+        const toggleSelection = () => {
+          if (selectMode) {
+            setSelected({ ...selected, [x.id]: !isSelected });
+          }
+        };
+        
         return (
-          <div key={x.id} className={`group relative bg-white rounded-2xl border border-gray-200 p-6 hover:border-gray-300 hover:shadow-xl transition-all duration-200 ${isSelected ? "ring-2 ring-blue-500 border-blue-300 shadow-lg" : ""}`}>
+          <div 
+            key={x.id} 
+            className={`group relative bg-white rounded-2xl border border-gray-200 p-6 transition-all duration-200 ${
+              isSelected ? "ring-2 ring-blue-500 border-blue-300 shadow-lg bg-blue-50/30" : "hover:border-gray-300 hover:shadow-xl"
+            } ${selectMode ? "cursor-pointer" : ""}`}
+            onClick={toggleSelection}
+          >
             {selectMode && (
-              <div className="absolute top-4 right-4">
+              <div className="absolute top-4 right-4 pointer-events-none">
                 <input 
                   type="checkbox" 
                   checked={isSelected} 
-                  onChange={(e) => setSelected({ ...selected, [x.id]: e.target.checked })}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  onChange={() => {}} // Controlled by parent div click
+                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 pointer-events-none"
                 />
               </div>
             )}
@@ -465,7 +655,7 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
               </div>
             </div>
             
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
               <a 
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm" 
                 href={`/api/comunicate/${x.id}/pdf?variant=signed&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
@@ -494,14 +684,14 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
               </button>
               <a
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-                href={`/editeaza-BICP/${x.id}`}
+                href={`/creaza-BICP?id=${x.id}`}
                 title="Editează document"
               >
                 <Pencil size={14}/> Editează
               </a>
               <CopyButton label="Titlu" value={x.titlu} />
               <CopyButton label="Conținut" value={x.comunicat || ""} />
-              {!selectMode && (<DeleteButton id={x.id} />)}
+              {!selectMode && (<DeleteButton id={x.id} onDelete={onDelete} />)}
             </div>
           </div>
         );
@@ -587,7 +777,7 @@ function TableSkeletons() {
   );
 }
 
-function TableView({ items, selectMode, selected, setSelected, filters, setFilters, printSingle, isPrinting, printingId }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; filters: any; setFilters: (f: any) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null }) {
+function TableView({ items, selectMode, selected, setSelected, filters, setFilters, printSingle, isPrinting, printingId, onDelete }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; filters: any; setFilters: (f: any) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null; onDelete: (id: string) => void }) {
   // if (!items.length) return (
   //   <div className="text-center py-12">
   //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
@@ -654,9 +844,22 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
             {items.map((x, idx) => {
               const label = x.numeAfisare || `${x.numarComunicat ?? x.numar} - ${x.nume || x.tip} - ${x.titlu}`;
               const isSelected = !!selected[x.id];
+              
+              const toggleSelection = (e: React.MouseEvent) => {
+                // Only toggle if clicking on the row itself, not on buttons/links
+                const target = e.target as HTMLElement;
+                if (selectMode && !target.closest('a, button')) {
+                  setSelected({ ...selected, [x.id]: !isSelected });
+                }
+              };
+              
               return (
-                <tr key={x.id} className={`group hover:bg-blue-50/30 transition-colors ${isSelected ? "bg-blue-50" : idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"}`}>
-                  <td className="p-4 w-12">
+                <tr 
+                  key={x.id} 
+                  className={`group transition-colors ${isSelected ? "bg-blue-50" : idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} ${selectMode ? "cursor-pointer hover:bg-blue-50/30" : "hover:bg-blue-50/30"}`}
+                  onClick={toggleSelection}
+                >
+                  <td className="p-4 w-12" onClick={(e) => e.stopPropagation()}>
                     {selectMode && (
                       <input 
                         type="checkbox" 
@@ -714,14 +917,14 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                       </button>
                       <a 
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm" 
-                        href={`/editeaza-BICP/${x.id}`}
+                        href={`/creaza-BICP?id=${x.id}`}
                         title="Editează"
                       >
                         <Pencil size={12}/> Editează
                       </a>
                       <CopyButton label="Titlu" value={x.titlu} small />
                       <CopyButton label="Conținut" value={x.comunicat || ""} small />
-                      {!selectMode && <DeleteButton id={x.id} small />}
+                      {!selectMode && <DeleteButton id={x.id} small onDelete={onDelete} />}
                     </div>
                   </td>
                 </tr>
@@ -796,24 +999,10 @@ function CopyButton({ label, value, small }: { label: string; value: string; sma
   );
 }
 
-function DeleteButton({ id, small }: { id: string; small?: boolean }) {
-  const { db } = initFirebase();
-  async function del() {
-    if (!confirm("Sigur doriți să ștergeți acest document?")) return;
-    try {
-      const { judetId, structuraId } = getTenantContext();
-      const docRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${id}`);
-      await deleteDoc(docRef);
-      console.log(`Document ${id} șters cu succes din Firebase`);
-      location.reload();
-    } catch (error) {
-      console.error("Eroare la ștergerea documentului:", error);
-      alert("Eroare la ștergerea documentului. Verificați consola pentru detalii.");
-    }
-  }
+function DeleteButton({ id, small, onDelete }: { id: string; small?: boolean; onDelete: (id: string) => void }) {
   return (
     <button 
-      onClick={del} 
+      onClick={() => onDelete(id)} 
       className={`inline-flex items-center gap-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-colors ${small ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm"}`}
     >
       <Trash2 size={small ? 12 : 14} /> {small ? "Șterge" : "Șterge Document"}

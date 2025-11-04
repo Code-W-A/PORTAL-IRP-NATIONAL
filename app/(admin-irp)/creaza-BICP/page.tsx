@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDoc, collection, doc, getDoc, getDocs, serverTimestamp, Timestamp, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, getDocs, serverTimestamp, Timestamp, setDoc, updateDoc } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { initFirebase } from "@/lib/firebase";
 import { useRouter } from "next/navigation";
@@ -60,6 +60,12 @@ function tipToShort(tip: string): "BI" | "PC" | "CI" {
 export default function CreateBicpPage() {
   const { db, app } = initFirebase();
   const router = useRouter();
+  
+  // Detect edit mode from URL query param
+  const [editMode, setEditMode] = useState(false);
+  const [editDocId, setEditDocId] = useState<string | null>(null);
+  const [isLoadingDoc, setIsLoadingDoc] = useState(false);
+  
   const [numarComunicat, setNumarComunicat] = useState("");
   const [numarInregistrare, setNumarInregistrare] = useState("");
   const [numarRegistru, setNumarRegistru] = useState("");
@@ -137,8 +143,75 @@ export default function CreateBicpPage() {
     return SEMNATARI.find((s) => s.key === semnatarKey) || null;
   }, [semnatarKey, semnatariSettings]);
 
-  // Auto-populate numbers from Firestore (max + 1)
+  // Detect edit mode from URL (check for 'id' query param)
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const idParam = params.get("id");
+    if (idParam) {
+      setEditMode(true);
+      setEditDocId(idParam);
+    }
+  }, []);
+
+  // Load existing document when in edit mode
+  useEffect(() => {
+    if (!editMode || !editDocId) return;
+    (async () => {
+      setIsLoadingDoc(true);
+      try {
+        const { judetId, structuraId } = getTenantContext();
+        const docRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${editDocId}`);
+        const snap = await getDoc(docRef);
+        if (!snap.exists()) {
+          setError("Documentul nu a fost găsit");
+          return;
+        }
+        const d = snap.data() as any;
+        
+        // Populate all fields
+        setNumarComunicat(String(d.numarComunicat || d.numar || ""));
+        setNumarInregistrare(String(d.numarInregistrare || ""));
+        setNumarRegistru(String(d.numarRegistru || ""));
+        
+        // Convert date
+        if (d.dataTimestamp?.toDate) {
+          const dateObj = d.dataTimestamp.toDate();
+          const yyyy = dateObj.getFullYear();
+          const mm = String(dateObj.getMonth() + 1).padStart(2, "0");
+          const dd = String(dateObj.getDate()).padStart(2, "0");
+          setData(`${yyyy}-${mm}-${dd}`);
+        } else if (d.data && typeof d.data === "string") {
+          // Convert DD/MM/YYYY to YYYY-MM-DD
+          const [day, month, year] = d.data.split("/");
+          if (day && month && year) {
+            setData(`${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`);
+          }
+        }
+        
+        setSelectedItem(String(d.nume || d.tip || ""));
+        setTitlu(String(d.titlu || ""));
+        setComunicat(String(d.comunicat || ""));
+        setComunicatHtml(String(d.comunicatHtml || ""));
+        setPurtatorCuvant(String(d["purtator-cuvant"] || PURTATORI_FALLBACK[0]));
+        
+        // Try to match semnatar from settings
+        if (d.numeSemnatar) {
+          // Will be set after settings are loaded
+          // Store temporarily to match later
+          (window as any).__tempSemnatarNume = d.numeSemnatar;
+        }
+      } catch (err: any) {
+        setError(err.message || "Eroare la încărcarea documentului");
+      } finally {
+        setIsLoadingDoc(false);
+      }
+    })();
+  }, [editMode, editDocId, db]);
+
+  // Auto-populate numbers from Firestore (max + 1) - only in create mode
+  useEffect(() => {
+    if (editMode) return; // Skip in edit mode
     (async () => {
       try {
         const { judetId, structuraId } = getTenantContext();
@@ -156,7 +229,7 @@ export default function CreateBicpPage() {
         setNumarInregistrare(String(maxInreg + 1));
       } catch {}
     })();
-  }, [db]);
+  }, [db, editMode]);
 
   // Optionally load last used registry number for the user (to facilitate long numbers management)
   useEffect(() => {
@@ -189,19 +262,36 @@ export default function CreateBicpPage() {
           const d = snap.data() as any;
           setSettings(d);
           if (Array.isArray(d.semnatari)) setSemnatariSettings(d.semnatari);
-          if (!semnatarKey) {
+          
+          // In edit mode, try to match the semnatar from loaded document
+          if (editMode && (window as any).__tempSemnatarNume) {
+            const tempNume = (window as any).__tempSemnatarNume;
+            if (Array.isArray(d.semnatari)) {
+              const idx = d.semnatari.findIndex((s: any) => s.nume === tempNume);
+              if (idx >= 0) {
+                setSemnatarKey(`settings:${idx}`);
+              }
+            }
+            delete (window as any).__tempSemnatarNume;
+          } else if (!semnatarKey && !editMode) {
+            // Only set default in create mode
             if (Array.isArray(d.semnatari) && d.semnatari.length > 0) {
               setSemnatarKey(`settings:0`);
             } else if (SEMNATARI.length > 0) {
               setSemnatarKey(SEMNATARI[0].key);
             }
           }
+          
           if (Array.isArray(d.purtatori)) setPurtatoriSettings(d.purtatori.map((p:any)=>p.nume));
-          if (typeof d.purtatorIndex === 'number' && Array.isArray(d.purtatori) && d.purtatori[d.purtatorIndex]) setPurtatorCuvant(d.purtatori[d.purtatorIndex].nume);
+          
+          // Only set default purtator in create mode
+          if (!editMode && typeof d.purtatorIndex === 'number' && Array.isArray(d.purtatori) && d.purtatori[d.purtatorIndex]) {
+            setPurtatorCuvant(d.purtatori[d.purtatorIndex].nume);
+          }
         }
       } catch {}
     })();
-  }, [db]);
+  }, [db, editMode]);
 
   const canSubmit = useMemo(() => {
     const titleOk = titlu.trim().length > 0;
@@ -334,16 +424,29 @@ export default function CreateBicpPage() {
         ["purtator-cuvant"]: purtatorCuvant,
         // compat cu listă existentă
         tip: tipToShort(selectedItem),
-        createdAt: serverTimestamp(),
-        createdBy: app?.options.projectId || null,
       };
 
       const { judetId, structuraId } = getTenantContext();
-      await addDoc(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate"), {
-        ...payload,
-        judetId,
-        structuraId,
-      });
+      
+      if (editMode && editDocId) {
+        // UPDATE existing document
+        const docRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${editDocId}`);
+        await updateDoc(docRef, {
+          ...payload,
+          updatedAt: serverTimestamp(),
+        });
+        alert("Actualizat cu succes");
+      } else {
+        // CREATE new document
+        await addDoc(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate"), {
+          ...payload,
+          judetId,
+          structuraId,
+          createdAt: serverTimestamp(),
+          createdBy: app?.options.projectId || null,
+        });
+        alert("Creat cu succes");
+      }
 
       // If a registry number was provided, remember it per user for future convenience
       try {
@@ -357,11 +460,6 @@ export default function CreateBicpPage() {
         }
       } catch {}
 
-      // Generare documente (opțional, fără salvare link în Storage în acest pas)
-      // await fetch("/api/generate/pdf", { method: "POST", body: JSON.stringify({ title: payload.numeAfisare, content: payload.comunicat }), headers: { "Content-Type": "application/json" } });
-      // await fetch("/api/generate/docx", { method: "POST", body: JSON.stringify({ title: payload.numeAfisare, content: payload.comunicat }), headers: { "Content-Type": "application/json" } });
-
-      alert("Creat cu succes");
       router.replace("/lista-BICP");
     } catch (err) {
       setError("Eroare la salvare");
@@ -380,8 +478,12 @@ export default function CreateBicpPage() {
                 <FilePlus2 size={24} className="text-white" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Crează Document BI/CP</h1>
-                <p className="text-gray-600 text-lg mt-1">Completează informațiile pentru a genera un document oficial</p>
+                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
+                  {editMode ? "Editează Document BI/CP" : "Crează Document BI/CP"}
+                </h1>
+                <p className="text-gray-600 text-lg mt-1">
+                  {editMode ? "Modifică informațiile documentului" : "Completează informațiile pentru a genera un document oficial"}
+                </p>
               </div>
             </div>
             <button 
@@ -580,7 +682,7 @@ export default function CreateBicpPage() {
                   ) : (
                     <span className="flex items-center gap-2">
                       <FilePlus2 size={18} />
-                      Creează Document
+                      {editMode ? "Salvează Modificări" : "Creează Document"}
                     </span>
                   )}
                 </button>
