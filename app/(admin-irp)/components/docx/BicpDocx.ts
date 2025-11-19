@@ -76,8 +76,34 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
     "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
   ];
 
+  const headerChildren: Paragraph[] = [];
+  // Header lines first (like PDF)
+  headerChildren.push(
+    ...headerLines.map(
+      (l) =>
+        new Paragraph({
+          alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text: l, size: 18, font: "Noto Serif" })],
+        })
+    )
+  );
+  // Then logo under header lines (like PDF)
+  if (settings.logoArrayBuffer) {
+    headerChildren.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          new ImageRun({
+            data: settings.logoArrayBuffer,
+            transformation: { width: 140, height: 70 },
+          }),
+        ],
+      })
+    );
+  }
+
   const headerCol = new TableCell({
-    children: headerLines.map((l) => new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: l, size: 18 })] })),
+    children: headerChildren,
     width: { size: 70, type: WidthType.PERCENTAGE },
     margins: { left: 80 },
     borders: {
@@ -89,12 +115,12 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
   });
 
   const meta = [
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: settings.secrecyLabel || "NESECRET", bold: true, size: 18, font: "DejaVu Sans" })] }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Exemplar unic", size: 18, font: "DejaVu Sans" })] }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Nr. ${data.numar || "____"}`, size: 18, font: "DejaVu Sans" })] }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `${settings.city ? settings.city + ", " : ""}${data.dateLabel}`, size: 18, font: "DejaVu Sans" })] }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: data.purtator || "", size: 18, font: "DejaVu Sans" })] }),
-    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: settings.phone || "", size: 18, font: "DejaVu Sans" })] }),
+    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: settings.secrecyLabel || "NESECRET", bold: true, size: 18, font: "Noto Serif" })] }),
+    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: "Exemplar unic", size: 18, font: "Noto Serif" })] }),
+    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `Nr. ${data.numar || "____"}`, size: 18, font: "Noto Serif" })] }),
+    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `${settings.city ? settings.city + ", " : ""}${data.dateLabel}`, size: 18, font: "Noto Serif" })] }),
+    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: data.purtator || "", size: 18, font: "Noto Serif" })] }),
+    new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: settings.phone || "", size: 18, font: "Noto Serif" })] }),
   ];
 
   const metaCol = new TableCell({ 
@@ -126,7 +152,7 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
       default: {
         document: {
           run: {
-            font: "DejaVu Sans",
+            font: "Noto Serif",
           },
         },
       },
@@ -170,11 +196,11 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
                       right: { style: "none", size: 0, color: "ffffff" },
                     },
                     children: [
-                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "APROB", bold: true, size: 18, font: "DejaVu Sans" })] }),
-                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.pentru, size: 18, font: "DejaVu Sans" })] }),
-                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.functia, size: 18, font: "DejaVu Sans" })] }),
-                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.grad, size: 18, font: "DejaVu Sans" })] }),
-                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.nume, size: 18, font: "DejaVu Sans" })] }),
+                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "APROB", bold: true, size: 20, font: "Noto Serif" })] }),
+                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.pentru, size: 20, font: "Noto Serif" })] }),
+                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.functia, size: 20, font: "Noto Serif" })] }),
+                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.grad, size: 20, font: "Noto Serif" })] }),
+                      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: data.semnatar.nume, size: 20, font: "Noto Serif" })] }),
                     ],
                   }),
                 ],
@@ -186,23 +212,23 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
           ...(settings.unitLabel
             ? [
                 new Paragraph({
-                  children: [new TextRun({ text: settings.unitLabel, bold: true, size: 28 })],
+                  children: [new TextRun({ text: settings.unitLabel, bold: true, size: 28, font: "Noto Serif" })],
                 }),
               ]
             : []),
           new Paragraph({ 
-            children: [new TextRun({ text: data.tipDocument, italics: true, bold: true, size: 22 })],
+            children: [new TextRun({ text: (data.tipDocument || \"\").toUpperCase(), bold: true, size: 32, font: \"Noto Serif\" })],
             spacing: { before: 400, after: 100 }
           }),
           new Paragraph({ 
-            children: [new TextRun({ text: data.titlu, bold: true, size: 30 })],
+            children: [new TextRun({ text: data.titlu, bold: true, size: 28, font: \"Noto Serif\" })],
             spacing: { after: 200 }
           }),
           // Conținut: dacă avem HTML, mapăm taguri de bază (p, strong, em, u, ul/ol/li) fără DOMParser
           ...(() => {
             const out: Paragraph[] = data.continutHtml ? parseHtmlToParagraphs(data.continutHtml) : [];
             if (out.length === 0) {
-              out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24 })] }));
+              out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24, font: \"Noto Serif\" })] }));
             }
             return out;
           })(),

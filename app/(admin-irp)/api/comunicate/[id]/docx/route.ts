@@ -22,11 +22,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const d = snap.data() as any;
   // Try to read per-tenant settings for filename order
   let filenameFormat: string | undefined;
+  let metaSettings: any | null = null;
   try {
     const { judetId, structuraId } = getTenantContext();
     const sref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
     const ss = await getDoc(sref);
-    filenameFormat = (ss.exists() ? (ss.data() as any).filenameFormat : undefined) as string | undefined;
+    if (ss.exists()) {
+      metaSettings = ss.data();
+      filenameFormat = (metaSettings as any).filenameFormat as string | undefined;
+    }
   } catch {}
 
   // Helpers (align with PDF route)
@@ -64,14 +68,27 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     displayDate = ddmmyyyyWithDots(String(d?.data || ""));
   }
 
+  // Build absolute logo URL and fetch into ArrayBuffer
+  let logoArrayBuffer: ArrayBuffer | null = null;
+  try {
+    const origin = new URL(_req.url).origin;
+    const logoUrl = metaSettings?.logoUrlPublic ? new URL(String(metaSettings.logoUrlPublic), origin).toString() : undefined;
+    if (logoUrl) {
+      const res = await fetch(logoUrl);
+      if (res.ok) {
+        logoArrayBuffer = await res.arrayBuffer();
+      }
+    }
+  } catch {}
+
   const buffer = await buildBicpDocx(
     {
-      headerLines: d.headerLines || [],
-      // Încearcă să încarci logo-ul local sau din URL pentru a fi introdus în DOCX
-      logoArrayBuffer: null,
-      secrecyLabel: d.secrecyLabel || "NESECRET",
-      city: d.city,
-      phone: d.phone,
+      headerLines: (metaSettings?.headerLines as string[]) || d.headerLines || [],
+      logoArrayBuffer,
+      secrecyLabel: metaSettings?.secrecyLabel || d.secrecyLabel || "NESECRET",
+      city: metaSettings?.city || d.city,
+      phone: metaSettings?.phone || d.phone,
+      unitLabel: metaSettings?.unitLabel || undefined,
     },
     {
       numar: chosenNumar,
