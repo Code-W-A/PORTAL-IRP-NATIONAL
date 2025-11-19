@@ -784,6 +784,13 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
               >
                 <FileText size={14}/> PDF fără semnături
               </a>
+              <a 
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
+                href={`/api/comunicate/${x.id}/docx`}
+                title="Descarcă DOCX (Word)"
+              >
+                <FileText size={14}/> DOCX
+              </a>
               <button
                 onClick={() => printSingle(x.id, "signed")}
                 disabled={isPrinting}
@@ -1016,6 +1023,13 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                         title="PDF fără semnături"
                       >
                         <FileText size={12}/> PDF fără semnături
+                      </a>
+                      <a 
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
+                        href={`/api/comunicate/${x.id}/docx`} 
+                        title="Descarcă DOCX"
+                      >
+                        <FileText size={12}/> DOCX
                       </a>
                       <button 
                         onClick={() => printSingle(x.id, "signed")} 
