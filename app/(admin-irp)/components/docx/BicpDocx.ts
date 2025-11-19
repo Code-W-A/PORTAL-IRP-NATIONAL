@@ -221,18 +221,18 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
               ]
             : []),
           new Paragraph({ 
-            children: [new TextRun({ text: (data.tipDocument || \"\").toUpperCase(), bold: true, size: 32, font: \"Noto Serif\" })],
+            children: [new TextRun({ text: (data.tipDocument || "").toUpperCase(), bold: true, size: 32, font: "Noto Serif" })],
             spacing: { before: 400, after: 100 }
           }),
           new Paragraph({ 
-            children: [new TextRun({ text: data.titlu, bold: true, size: 28, font: \"Noto Serif\" })],
+            children: [new TextRun({ text: data.titlu, bold: true, size: 28, font: "Noto Serif" })],
             spacing: { after: 200 }
           }),
           // Conținut: dacă avem HTML, mapăm taguri de bază (p, strong, em, u, ul/ol/li) fără DOMParser
           ...(() => {
             const out: Paragraph[] = data.continutHtml ? parseHtmlToParagraphs(data.continutHtml) : [];
             if (out.length === 0) {
-              out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24, font: \"Noto Serif\" })] }));
+              out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24, font: "Noto Serif" })] }));
             }
             return out;
           })(),
@@ -241,11 +241,11 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
             if (settings.showSpokespersonBlock === false) return [];
             const lines: Paragraph[] = [];
             if (data.purtator) {
-              lines.push(new Paragraph({ children: [new TextRun({ text: data.purtator, size: 20, bold: true, font: \"Noto Serif\" })] }));
+              lines.push(new Paragraph({ children: [new TextRun({ text: data.purtator, size: 20, bold: true, font: "Noto Serif" })] }));
             }
-            const disp = settings.structureDisplay || settings.unitLabel || \"\";
+            const disp = settings.structureDisplay || settings.unitLabel || "";
             if (disp) {
-              lines.push(new Paragraph({ children: [new TextRun({ text: `Purtător de cuvânt ${disp}`, size: 20, bold: true, font: \"Noto Serif\" })] }));
+              lines.push(new Paragraph({ children: [new TextRun({ text: `Purtător de cuvânt ${disp}`, size: 20, bold: true, font: "Noto Serif" })] }));
             }
             return lines;
           })(),
@@ -253,7 +253,7 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
           ...(() => {
             const fl = settings.footerLines || [];
             if (!fl.length) return [];
-            return fl.map((l) => new Paragraph({ children: [new TextRun({ text: l, size: 18, font: \"Noto Serif\" })], alignment: AlignmentType.CENTER }));
+            return fl.map((l) => new Paragraph({ children: [new TextRun({ text: l, size: 18, font: "Noto Serif" })], alignment: AlignmentType.CENTER }));
           })(),
         ],
       },
