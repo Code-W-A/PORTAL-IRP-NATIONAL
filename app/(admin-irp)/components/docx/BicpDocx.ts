@@ -7,6 +7,10 @@ export type DocxSettings = {
   city?: string;
   phone?: string;
   unitLabel?: string;
+  email?: string;
+  footerLines?: string[];
+  structureDisplay?: string;
+  showSpokespersonBlock?: boolean;
 };
 
 export type DocxData = {
@@ -231,6 +235,25 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
               out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24, font: \"Noto Serif\" })] }));
             }
             return out;
+          })(),
+          // Bloc purtător de cuvânt (opțional) similar PDF
+          ...(() => {
+            if (settings.showSpokespersonBlock === false) return [];
+            const lines: Paragraph[] = [];
+            if (data.purtator) {
+              lines.push(new Paragraph({ children: [new TextRun({ text: data.purtator, size: 20, bold: true, font: \"Noto Serif\" })] }));
+            }
+            const disp = settings.structureDisplay || settings.unitLabel || \"\";
+            if (disp) {
+              lines.push(new Paragraph({ children: [new TextRun({ text: `Purtător de cuvânt ${disp}`, size: 20, bold: true, font: \"Noto Serif\" })] }));
+            }
+            return lines;
+          })(),
+          // Footer lines (opțional)
+          ...(() => {
+            const fl = settings.footerLines || [];
+            if (!fl.length) return [];
+            return fl.map((l) => new Paragraph({ children: [new TextRun({ text: l, size: 18, font: \"Noto Serif\" })], alignment: AlignmentType.CENTER }));
           })(),
         ],
       },
