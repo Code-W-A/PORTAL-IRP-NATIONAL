@@ -27,6 +27,7 @@ export type Bicp = {
   ["purtator-cuvant"]?: string;
   pdfLink?: string;
   wordLink?: string;
+  categorie?: string; // categoria incidentului/evenimentului
 };
 
 export type Filters = {

@@ -24,7 +24,24 @@ const DOCUMENT_TYPES = [
   "Informare de presă"
 ] as const;
 
-type TabType = "lunar" | "tipuri" | "vizualizare";
+const CATEGORII = [
+  "Incendii",
+  "Incendii de vegetație",
+  "Accident rutier",
+  "Asistență persoane",
+  "Deblocare ușă",
+  "Salvare animal",
+  "Pirotehnic",
+  "Inundații",
+  "Explozie",
+  "Alarmă falsă",
+  "Descarcerare",
+  "Exerciții",
+  "Informare",
+  "Alte SU"
+];
+
+type TabType = "lunar" | "tipuri" | "vizualizare" | "categorii";
 
 function normalizeTypeLabel(data: any): string {
   const rawDocType = (data?.tipDocument || data?.nume || data?.tip || "").toString();
@@ -45,6 +62,33 @@ function getMonthRange(year: number, monthIndex0: number) {
   return { start, end };
 }
 
+function getPresetDateRange(preset: string): { start: Date; end: Date } {
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  let start: Date;
+  
+  switch (preset) {
+    case "last7":
+      start = new Date(now);
+      start.setDate(start.getDate() - 7);
+      break;
+    case "last30":
+      start = new Date(now);
+      start.setDate(start.getDate() - 30);
+      break;
+    case "last365":
+      start = new Date(now);
+      start.setDate(start.getDate() - 365);
+      break;
+    default:
+      start = new Date(now);
+      start.setDate(start.getDate() - 30);
+  }
+  
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+}
+
 export default function StatisticiBicpPage() {
   const { db } = initFirebase();
   const now = new Date();
@@ -58,6 +102,14 @@ export default function StatisticiBicpPage() {
   const [activeTab, setActiveTab] = useState<TabType>("lunar");
   const [selectedMonth, setSelectedMonth] = useState<number | "all">(now.getMonth());
   const [copied, setCopied] = useState(false);
+  
+  // Category statistics state
+  const [categoryDatePreset, setCategoryDatePreset] = useState<string>("last30");
+  const [categoryDateStart, setCategoryDateStart] = useState<string>("");
+  const [categoryDateEnd, setCategoryDateEnd] = useState<string>("");
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+  const [categoryTotal, setCategoryTotal] = useState<number>(0);
+  const [categoryLoading, setCategoryLoading] = useState<boolean>(false);
 
   const selectedMonthCounts = useMemo(
     () => selectedMonth === "all" ? yearTypeCounts : (monthlyTypeCounts[selectedMonth] || {}),
@@ -172,6 +224,54 @@ export default function StatisticiBicpPage() {
     })();
   }, [db, year]);
 
+  // Fetch category statistics when tab is active and date range changes
+  useEffect(() => {
+    if (activeTab !== "categorii") return;
+    
+    (async () => {
+      setCategoryLoading(true);
+      try {
+        const { judetId, structuraId } = getTenantContext();
+        const base = collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate");
+        
+        let start: Date, end: Date;
+        
+        if (categoryDatePreset === "custom") {
+          if (!categoryDateStart || !categoryDateEnd) {
+            setCategoryLoading(false);
+            return;
+          }
+          start = new Date(categoryDateStart);
+          start.setHours(0, 0, 0, 0);
+          end = new Date(categoryDateEnd);
+          end.setHours(23, 59, 59, 999);
+        } else {
+          ({ start, end } = getPresetDateRange(categoryDatePreset));
+        }
+        
+        const q = query(base, where("dataTimestamp", ">=", start), where("dataTimestamp", "<=", end));
+        const docsSnap = await getDocs(q);
+        
+        const byCat: Record<string, number> = {};
+        let total = 0;
+        
+        docsSnap.docs.forEach((d) => {
+          const data: any = d.data();
+          const cat = data?.categorie || "Fără categorie";
+          byCat[cat] = (byCat[cat] || 0) + 1;
+          total += 1;
+        });
+        
+        setCategoryCounts(byCat);
+        setCategoryTotal(total);
+      } catch (e) {
+        console.error("Error fetching category statistics:", e);
+      } finally {
+        setCategoryLoading(false);
+      }
+    })();
+  }, [db, activeTab, categoryDatePreset, categoryDateStart, categoryDateEnd]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100/30 to-slate-50">
       <div className="max-w-[1920px] mx-auto px-6 py-8">
@@ -241,6 +341,18 @@ export default function StatisticiBicpPage() {
             >
               <Grid3x3 size={16} />
               Vizualizare Grafică
+            </button>
+
+            <button
+              onClick={() => setActiveTab("categorii")}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                activeTab === "categorii"
+                  ? "bg-slate-800 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+              }`}
+            >
+              <PieChart size={16} />
+              Statistici Categorii
             </button>
           </div>
         </div>
@@ -424,6 +536,170 @@ export default function StatisticiBicpPage() {
             </div>
 
          
+          </div>
+        )}
+
+        {/* Tab Content: Statistici Categorii */}
+        {activeTab === "categorii" && (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
+                  <PieChart size={18} className="text-slate-700"/>
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Statistici pe Categorii</h2>
+                  <p className="text-sm text-slate-600">Distribuția documentelor pe categorii de intervenție</p>
+                </div>
+              </div>
+              
+              {/* Date range selector */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <select 
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  value={categoryDatePreset}
+                  onChange={(e) => setCategoryDatePreset(e.target.value)}
+                >
+                  <option value="last7">Ultimele 7 zile</option>
+                  <option value="last30">Ultimele 30 zile</option>
+                  <option value="last365">Ultimul an</option>
+                  <option value="custom">Interval personalizat</option>
+                </select>
+                
+                {categoryDatePreset === "custom" && (
+                  <>
+                    <input
+                      type="date"
+                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      value={categoryDateStart}
+                      onChange={(e) => setCategoryDateStart(e.target.value)}
+                    />
+                    <span className="text-slate-600">—</span>
+                    <input
+                      type="date"
+                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-medium text-slate-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      value={categoryDateEnd}
+                      onChange={(e) => setCategoryDateEnd(e.target.value)}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+
+            {categoryLoading ? (
+              <div className="h-24 bg-slate-50 rounded-xl animate-pulse"/>
+            ) : (
+              <>
+                {/* Total summary */}
+                <div className="mb-6 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-sm font-medium text-slate-700">Total documente:</span>
+                  <span className="inline-flex items-center justify-center min-w-[2rem] h-7 px-2 bg-slate-200 rounded text-slate-900 font-bold">
+                    {categoryTotal}
+                  </span>
+                </div>
+
+                {/* Stacked bar */}
+                {categoryTotal > 0 && (
+                  <StackedBar counts={categoryCounts} total={categoryTotal} heightClass="h-6" />
+                )}
+
+                {/* Category cards grid */}
+                <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {Object.keys(categoryCounts)
+                    .sort((a, b) => (categoryCounts[b] || 0) - (categoryCounts[a] || 0))
+                    .map((cat) => {
+                      const count = categoryCounts[cat] || 0;
+                      const percentage = categoryTotal > 0 ? Math.round((count / categoryTotal) * 100) : 0;
+                      
+                      return (
+                        <div 
+                          key={cat} 
+                          className="rounded-lg border border-slate-200 p-4 bg-white hover:shadow-md hover:border-slate-300 transition-all"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span 
+                                className="inline-block w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: typeColor(cat) }} 
+                              />
+                            </div>
+                            <div className="text-2xl font-bold text-slate-900">{count}</div>
+                          </div>
+                          <div className="text-sm font-medium text-slate-900 mb-1">{cat}</div>
+                          <div className="text-xs text-slate-600">{percentage}% din total</div>
+                          
+                          {/* Visual bar */}
+                          <div className="mt-3 w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full rounded-full transition-all" 
+                              style={{ 
+                                width: `${percentage}%`, 
+                                backgroundColor: typeColor(cat) 
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+
+                {/* Table view */}
+                <div className="mt-8">
+                  <h3 className="text-base font-semibold text-slate-900 mb-4">Tabel detaliat</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Categorie</th>
+                          <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Număr</th>
+                          <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Procent</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.keys(categoryCounts)
+                          .sort((a, b) => (categoryCounts[b] || 0) - (categoryCounts[a] || 0))
+                          .map((cat, idx) => {
+                            const count = categoryCounts[cat] || 0;
+                            const percentage = categoryTotal > 0 ? ((count / categoryTotal) * 100).toFixed(1) : "0.0";
+                            
+                            return (
+                              <tr 
+                                key={cat} 
+                                className={`border-b border-slate-100 hover:bg-slate-50 transition-colors ${
+                                  idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/30'
+                                }`}
+                              >
+                                <td className="py-3 px-4 text-sm text-slate-900 font-medium">
+                                  <div className="flex items-center gap-2">
+                                    <span 
+                                      className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" 
+                                      style={{ backgroundColor: typeColor(cat) }} 
+                                    />
+                                    {cat}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-sm text-slate-900 text-right font-semibold">
+                                  {count}
+                                </td>
+                                <td className="py-3 px-4 text-sm text-slate-600 text-right">
+                                  {percentage}%
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        {Object.keys(categoryCounts).length === 0 && (
+                          <tr>
+                            <td colSpan={3} className="py-8 text-center text-slate-500 text-sm">
+                              Nu există date pentru intervalul selectat
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

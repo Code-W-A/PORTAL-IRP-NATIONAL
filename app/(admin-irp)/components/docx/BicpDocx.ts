@@ -98,8 +98,9 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
         alignment: AlignmentType.CENTER,
         children: [
           new ImageRun({
-            data: settings.logoArrayBuffer,
+            data: new Uint8Array(settings.logoArrayBuffer),
             transformation: { width: 140, height: 70 },
+            type: "png",
           }),
         ],
       })

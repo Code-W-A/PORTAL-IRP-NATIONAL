@@ -40,6 +40,23 @@ const TIPURI = [
 
 const PURTATORI_FALLBACK = ["Locotenent Popescu Radu", "plt.adj. Oprea Ovidiu"] as const;
 
+const CATEGORII = [
+  "Incendii",
+  "Incendii de vegetație",
+  "Accident rutier",
+  "Asistență persoane",
+  "Deblocare ușă",
+  "Salvare animal",
+  "Pirotehnic",
+  "Inundații",
+  "Explozie",
+  "Alarmă falsă",
+  "Descarcerare",
+  "Exerciții",
+  "Informare",
+  "Alte SU"
+];
+
 function todayYMD() {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -76,6 +93,9 @@ export default function CreateBicpPage() {
   const [semnatarKey, setSemnatarKey] = useState<string>("");
   const [purtatoriSettings, setPurtatoriSettings] = useState<string[]>([]);
   const [purtatorCuvant, setPurtatorCuvant] = useState<string>(PURTATORI_FALLBACK[0]);
+  const [categorie, setCategorie] = useState<string>("");
+  const [categorieSearchOpen, setCategorieSearchOpen] = useState<boolean>(false);
+  const [categorieSearchTerm, setCategorieSearchTerm] = useState<string>("");
   const [titlu, setTitlu] = useState("");
   const [comunicat, setComunicat] = useState("");
   const [comunicatHtml, setComunicatHtml] = useState("");
@@ -121,6 +141,22 @@ export default function CreateBicpPage() {
       };
     }
   }, []);
+
+  // Close category dropdown when clicking outside
+  useEffect(() => {
+    if (!categorieSearchOpen) return;
+    
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-category-dropdown]')) {
+        setCategorieSearchOpen(false);
+        setCategorieSearchTerm("");
+      }
+    };
+    
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [categorieSearchOpen]);
 
   function openMobileEditor() {
     setMobileEditorValue(comunicat);
@@ -196,6 +232,7 @@ export default function CreateBicpPage() {
         setComunicat(String(d.comunicat || ""));
         setComunicatHtml(String(d.comunicatHtml || ""));
         setPurtatorCuvant(String(d["purtator-cuvant"] || PURTATORI_FALLBACK[0]));
+        setCategorie(String(d.categorie || ""));
         
         // Try to match semnatar from settings
         if (d.numeSemnatar) {
@@ -424,6 +461,7 @@ export default function CreateBicpPage() {
         grad: semnatar?.grad || "",
         numeSemnatar: semnatar?.numeSemnatar || "",
         ["purtator-cuvant"]: purtatorCuvant,
+        categorie: categorie.trim() || null,
         // compat cu listă existentă
         tip: tipToShort(selectedItem),
       };
@@ -595,13 +633,13 @@ export default function CreateBicpPage() {
               </div>
               <h2 className="text-lg font-semibold text-gray-900">Conținut Document</h2>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Tip document</label>
                 <select 
                   value={selectedItem} 
                   onChange={(e) => setSelectedItem(e.target.value)} 
-                  className="w-full md:w-80 border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
                 >
                   <option value="">Selectează tip document</option>
                   {TIPURI.map((t) => (
@@ -610,6 +648,93 @@ export default function CreateBicpPage() {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Categorie (opțional)</label>
+                <div className="relative" data-category-dropdown>
+                  <button
+                    type="button"
+                    onClick={() => setCategorieSearchOpen(!categorieSearchOpen)}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-left text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors flex items-center justify-between"
+                  >
+                    <span className={categorie ? "text-gray-900" : "text-gray-400"}>
+                      {categorie || "Selectează categorie..."}
+                    </span>
+                    <svg 
+                      className={`w-5 h-5 text-gray-400 transition-transform ${categorieSearchOpen ? 'rotate-180' : ''}`} 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  
+                  {categorieSearchOpen && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-xl shadow-lg overflow-hidden">
+                      <div className="p-2 border-b border-gray-200">
+                        <input
+                          type="text"
+                          placeholder="Caută categorie..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                          value={categorieSearchTerm}
+                          onChange={(e) => setCategorieSearchTerm(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <div className="max-h-60 overflow-auto">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCategorie("");
+                            setCategorieSearchOpen(false);
+                            setCategorieSearchTerm("");
+                          }}
+                          className="w-full text-left px-4 py-2.5 hover:bg-gray-50 text-gray-500 text-sm transition-colors border-b border-gray-100"
+                        >
+                          <em>Nicio categorie</em>
+                        </button>
+                        {CATEGORII.filter(c => 
+                          c.toLowerCase().includes(categorieSearchTerm.toLowerCase())
+                        ).map((c) => (
+                          <button
+                            key={c}
+                            type="button"
+                            onClick={() => {
+                              setCategorie(c);
+                              setCategorieSearchOpen(false);
+                              setCategorieSearchTerm("");
+                            }}
+                            className={`w-full text-left px-4 py-2.5 hover:bg-blue-50 text-gray-900 text-sm transition-colors ${
+                              categorie === c ? 'bg-blue-50 font-medium' : ''
+                            }`}
+                          >
+                            {c}
+                          </button>
+                        ))}
+                        {CATEGORII.filter(c => 
+                          c.toLowerCase().includes(categorieSearchTerm.toLowerCase())
+                        ).length === 0 && (
+                          <div className="px-4 py-2.5 text-gray-500 text-sm text-center">
+                            Nicio categorie găsită
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {categorie && (
+                  <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 rounded-lg text-sm">
+                    <span>{categorie}</span>
+                    <button
+                      type="button"
+                      onClick={() => setCategorie("")}
+                      className="text-blue-700 hover:text-blue-900"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="md:col-span-2">
                 <label htmlFor="titlu" className="block text-sm font-medium text-gray-700 mb-2">Titlu</label>
                 <input 
                   id="titlu" 
