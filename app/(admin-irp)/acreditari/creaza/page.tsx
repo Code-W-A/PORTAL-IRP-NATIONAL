@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { pdf } from "@react-pdf/renderer";
 import { AcreditarePdfDoc } from "@/app/(admin-irp)/components/pdf/AcreditarePdf";
 import { FileText, Plus, Eye, EyeOff, Calendar, Hash, User, IdCard, Building2, Mail, Link2, Check, Copy, ExternalLink } from "lucide-react";
+import { CerereAcreditareForm } from "@/app/acreditare/components/CerereAcreditareForm";
 
 export default function CreeazaAcreditarePage() {
   const { db, app } = initFirebase();
@@ -24,6 +25,7 @@ export default function CreeazaAcreditarePage() {
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [activeMode, setActiveMode] = useState<"acreditare" | "cerere">("acreditare");
 
   // load settings
   useEffect(() => {
@@ -249,6 +251,42 @@ export default function CreeazaAcreditarePage() {
         </div>
       </div>
 
+      {/* Mode switch */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveMode("acreditare")}
+          className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+            activeMode === "acreditare"
+              ? "bg-white border-blue-300 text-blue-800 shadow-sm"
+              : "bg-white/60 border-gray-200 text-gray-700 hover:bg-white"
+          }`}
+        >
+          Acreditare (PDF)
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveMode("cerere")}
+          className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+            activeMode === "cerere"
+              ? "bg-white border-indigo-300 text-indigo-800 shadow-sm"
+              : "bg-white/60 border-gray-200 text-gray-700 hover:bg-white"
+          }`}
+        >
+          Cerere acreditare (ca jurnalist)
+        </button>
+      </div>
+
+      {activeMode === "cerere" ? (
+        <div className="space-y-6">
+          <CerereAcreditareForm
+            mode="admin_single_structura"
+            fixedStructuraKey={`${getTenantContext().judetId}_${getTenantContext().structuraId}`}
+            title="Cerere acreditare (completare în numele jurnalistului)"
+            description="Acest formular salvează o cerere în colecția unică CereriAcreditare, doar pentru structura curentă."
+          />
+        </div>
+      ) : (
       <div className={showPreview ? "grid grid-cols-1 lg:grid-cols-2 gap-6" : "space-y-6"}>
         <form onSubmit={onSubmit} className="space-y-6">
           {/* Document Info */}
@@ -392,6 +430,7 @@ export default function CreeazaAcreditarePage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

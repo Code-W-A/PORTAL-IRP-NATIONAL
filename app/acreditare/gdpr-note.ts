@@ -1,9 +1,4 @@
-export const GDPR_NOTE_TEXT = `NESECRET
-
-INSPECTORATUL PENTRU SITUAȚII DE URGENȚĂ
-„BASARAB I” AL JUDEȚULUI DÂMBOVIȚA
-
-NOTĂ DE INFORMARE
+export const GDPR_NOTE_TEXT = `NOTĂ DE INFORMARE
 
 Scopul acestei Note de informare este să vă explice ce date prelucrăm, de ce le prelucrăm și ce facem
 cu ele în calitatea dumneavoastră de jurnalist persoană fizică sau de reprezentant ori persoană de
@@ -18,15 +13,14 @@ măsuri pentru a facilita comunicarea dintre noi, operatorul de date și dumneav
 
 Identitate și date de contact
 
-Inspectoratul pentru Situații de Urgență \"Basarab I\" al județului Dâmbovița, cu sediul în Târgoviște,
-șoseaua Găești nr. 9, cod fiscal 4207069, este instituția publică responsabilă de prelucrarea datelor
-dumneavoastră cu caracter personal pe care le colectăm direct de la dumneavoastră sau din alte surse.
-Potrivit legislației, Inspectoratul pentru Situații de Urgență \"Basarab I\" al județului Dâmbovița, este
-operator de date cu caracter personal.
+Structura/structurile selectate în formularul de acreditare sunt instituțiile publice responsabile de
+prelucrarea datelor dumneavoastră cu caracter personal pe care le colectăm direct de la dumneavoastră
+sau din alte surse. Potrivit legislației, structura/structurile selectate sunt operatori de date cu caracter
+personal.
 
 Responsabilul nostru cu protecția datelor se asigură, în mod independent, că legislația care protejează
 datele cu caracter personal ale cetățenilor este aplicată corect de către Inspectorat și poate fi contactat
-la telefon/fax: 0245210472, email: pdcp@isudb.ro.
+la adresa de e-mail: portal-irp@gmail.com.
 
 Ce fel de date cu caracter personal colectăm?
 a) Numele și prenumele;
@@ -86,8 +80,7 @@ obiectul unei decizii bazate exclusiv pe prelucrarea automată, inclusiv crearea
 adresa justiției; de a depune o plângere în fața unei Autorități de Supraveghere.
 
 Dacă vreți să vă exercitați drepturile, o puteți face prin transmiterea unei cereri scrise, semnate și
-datate la adresa de corespondență: Târgoviște, șoseaua Găești nr. 9, județul Dâmbovița, cod poștal
-130087 sau la adresa de e-mail: pdcp@isudb.ro.
+datate la adresa de e-mail: portal-irp@gmail.com.
 
 Drepturile enumerate mai sus nu sunt absolute. Există excepții, de aceea fiecare cerere primită va fi
 analizată astfel încât să decidem dacă este întemeiată sau nu. În măsura în care cererea este întemeiată,

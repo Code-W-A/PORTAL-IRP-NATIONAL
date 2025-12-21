@@ -478,13 +478,13 @@ export default function CreateBicpPage() {
         alert("Actualizat cu succes");
       } else {
         // CREATE new document
-        await addDoc(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate"), {
-          ...payload,
-          judetId,
-          structuraId,
+      await addDoc(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate"), {
+        ...payload,
+        judetId,
+        structuraId,
           createdAt: serverTimestamp(),
           createdBy: app?.options.projectId || null,
-        });
+      });
         alert("Creat cu succes");
       }
 

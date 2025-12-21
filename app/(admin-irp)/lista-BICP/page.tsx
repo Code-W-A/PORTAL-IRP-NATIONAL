@@ -123,7 +123,7 @@ export default function ListaBicpPage() {
       // Dynamically import JSZip
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
-      const { judetId, structuraId } = getTenantContext();
+    const { judetId, structuraId } = getTenantContext();
       
       // Get today's date for filename
       const today = new Date();
@@ -147,7 +147,7 @@ export default function ListaBicpPage() {
       let successCount = 0;
       for (const id of allSelectedIds) {
         try {
-          const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
+      const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
           const response = await fetch(url);
           if (!response.ok) throw new Error(`Failed to fetch ${id}`);
           
@@ -457,7 +457,7 @@ export default function ListaBicpPage() {
         </div>
 
         {/* Selection Toolbar - appears when selectMode is active */}
-        {selectMode && (
+              {selectMode && (
           <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 shadow-lg">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -481,7 +481,7 @@ export default function ListaBicpPage() {
                 {allSelectedIds.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
                     {/* Quick select/deselect for current page */}
-                    <button
+                  <button 
                       onClick={() => toggleSelectPage(!allPageSelected)}
                       className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl font-medium transition-colors shadow-sm ${
                         allPageSelected
@@ -491,19 +491,19 @@ export default function ListaBicpPage() {
                       title={allPageSelected ? 'Deselectează pagina curentă' : 'Selectează pagina curentă'}
                     >
                       {allPageSelected ? 'Deselectează pagina' : 'Selectează pagina'}
-                    </button>
+                  </button>
                     {/* Chip cu count + Clear */}
                     <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-gray-200 text-gray-700">
                       Selectate: <span className="font-semibold">{allSelectedIds.length}</span>
-                      <button
+                  <button 
                         onClick={() => setSelected({})}
                         className="inline-flex items-center justify-center w-6 h-6 rounded-full hover:bg-gray-100 text-gray-500"
                         title="Deselectează toate"
-                      >
+                  >
                         <X size={14} />
-                      </button>
+                  </button>
                     </span>
-                    <button 
+                  <button 
                       onClick={() => downloadBulkPdfsAsZip("signed")} 
                       disabled={downloadingZipType !== null}
                       className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
@@ -515,8 +515,8 @@ export default function ListaBicpPage() {
                     >
                       {downloadingZipType === "signed" ? <Loader2 className="animate-spin" size={16}/> : <Download size={16}/>}
                       {downloadingZipType === "signed" ? "Se creează arhiva..." : "PDF semnate (ZIP)"}
-                    </button>
-                    <button 
+                  </button>
+                  <button 
                       onClick={() => downloadBulkPdfsAsZip("public")} 
                       disabled={downloadingZipType !== null}
                       className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
@@ -525,11 +525,11 @@ export default function ListaBicpPage() {
                           : "bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
                       }`}
                       title="Descarcă toate PDF-urile fără semnături într-o arhivă ZIP"
-                    >
+                  >
                       {downloadingZipType === "public" ? <Loader2 className="animate-spin" size={16}/> : <Download size={16}/>}
                       {downloadingZipType === "public" ? "Se creează arhiva..." : "PDF fara semnaturi (ZIP)"}
-                    </button>
-                    <button 
+                  </button>
+                  <button 
                       onClick={() => startBulkPrint("signed")} 
                       disabled={isPrinting}
                       className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
@@ -546,14 +546,14 @@ export default function ListaBicpPage() {
                       onClick={() => showDeleteConfirmation(allSelectedIds, true)} 
                       className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 font-medium transition-colors shadow-lg shadow-red-500/20"
                       title="Șterge toate documentele selectate"
-                    >
+                  >
                       <Trash2 size={16} /> Șterge
-                    </button>
-                  </div>
-                )}
-              </div>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+        </div>
         )}
 
         {/* Search */}
@@ -1168,12 +1168,12 @@ function Pagination({ total, page, pageSize, onChange, onChangePageSize }: { tot
   return (
     <div className="flex items-center justify-between gap-3 mt-6 flex-wrap">
       <div className="flex gap-2 items-center flex-wrap">
-        {page > 1 && btn(page - 1, "‹")}
-        {items}
-        {page < pages && btn(page + 1, "›")}
+      {page > 1 && btn(page - 1, "‹")}
+      {items}
+      {page < pages && btn(page + 1, "›")}
         <span className="text-sm text-gray-600 ml-2 px-3 py-2 bg-gray-50 rounded-lg">
-          Pagina {page} din {pages} • {total} documente
-        </span>
+        Pagina {page} din {pages} • {total} documente
+      </span>
       </div>
       <div className="flex items-center gap-2 ml-auto">
         <span className="text-sm text-gray-600">Pe pagină</span>
