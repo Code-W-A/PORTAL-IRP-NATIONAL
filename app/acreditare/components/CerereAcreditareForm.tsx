@@ -145,7 +145,6 @@ export function CerereAcreditareForm({
   const [signatureBlob, setSignatureBlob] = useState<Blob | null>(null);
 
   // Consimțăminte
-  const [consimtamantNorme, setConsimtamantNorme] = useState(false);
   const [gdprAccepted, setGdprAccepted] = useState(false);
   const [showGdpr, setShowGdpr] = useState(false);
 
@@ -281,10 +280,9 @@ export function CerereAcreditareForm({
     if (!nrLegitimatie.trim()) return false;
     if (!legitimatieFile) return false;
     if (!signatureBlob) return false;
-    if (!consimtamantNorme) return false;
     if (!gdprAccepted) return false;
     return true;
-  }, [submitting, selectedStructKeys, institutieDenumire, numePrenume, nrLegitimatie, legitimatieFile, signatureBlob, consimtamantNorme, gdprAccepted]);
+  }, [submitting, selectedStructKeys, institutieDenumire, numePrenume, nrLegitimatie, legitimatieFile, signatureBlob, gdprAccepted]);
 
   const onPickLegitimatie = (f: File | null) => {
     setSubmitError(null);
@@ -362,7 +360,6 @@ export function CerereAcreditareForm({
           telefon: { fix: jurnalistTelefonFix.trim(), fax: jurnalistTelefonFax.trim(), mobil: jurnalistTelefonMobil.trim() },
         },
         consimtamant: {
-          norme: consimtamantNorme,
           gdpr: gdprAccepted,
           gdprVersion: "v1",
           gdprAcceptedAt: serverTimestamp(),
@@ -691,11 +688,6 @@ export function CerereAcreditareForm({
           </div>
           <div className="p-6 space-y-4">
             <label className="flex items-start gap-3 cursor-pointer">
-              <input type="checkbox" checked={consimtamantNorme} onChange={(e) => setConsimtamantNorme(e.target.checked)} className="mt-1 w-4 h-4" />
-              <span className="text-sm text-gray-800">Consimt să respect normele privind accesul și conduita pe timpul prezenței la activitățile organizate de structură.</span>
-            </label>
-
-            <label className="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" checked={gdprAccepted} onChange={(e) => setGdprAccepted(e.target.checked)} className="mt-1 w-4 h-4" />
               <span className="text-sm text-gray-800">
                 Am citit și am înțeles{" "}
@@ -711,7 +703,7 @@ export function CerereAcreditareForm({
         {submitError && <div className="rounded-2xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">{submitError}</div>}
 
         <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <div className="text-sm text-gray-600">Câmpuri obligatorii: Structuri, Denumire instituție, Nume, Nr. legitimație, Upload legitimație, Semnătură, Consimțăminte.</div>
+          <div className="text-sm text-gray-600">Câmpuri obligatorii: Structuri, Denumire instituție, Nume, Nr. legitimație, Upload legitimație, Semnătură, GDPR.</div>
           <button type="submit" disabled={!canSubmit} className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold shadow-lg transition-colors ${canSubmit ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}>
             {submitting ? (
               <>
@@ -734,7 +726,6 @@ export function CerereAcreditareForm({
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-gray-900">Notă de informare GDPR</div>
-                  <div className="text-xs text-gray-600">Text integral</div>
                 </div>
                 <button type="button" onClick={() => setShowGdpr(false)} className="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm">
                   Închide

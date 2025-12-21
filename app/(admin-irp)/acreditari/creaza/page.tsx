@@ -218,52 +218,10 @@ export default function CreeazaAcreditarePage() {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
-            <Link2 size={18} className="text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-gray-900">Cereri acreditare (formular pentru jurnaliști)</div>
-            <div className="text-sm text-gray-700 mt-1">
-              Pentru a introduce o cerere în numele unui jurnalist (cu selecție de structuri, upload legitimație, semnătură și GDPR),
-              folosește formularul public de la <span className="font-mono">/acreditare</span>.
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={copyCereriLink}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 text-sm font-medium"
-              >
-                {copiedLink ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
-                Copiază link
-              </button>
-              <button
-                type="button"
-                onClick={openCereriForm}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium"
-              >
-                <ExternalLink size={16} />
-                Deschide formular
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Mode switch */}
       <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => setActiveMode("acreditare")}
-          className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
-            activeMode === "acreditare"
-              ? "bg-white border-blue-300 text-blue-800 shadow-sm"
-              : "bg-white/60 border-gray-200 text-gray-700 hover:bg-white"
-          }`}
-        >
-          Acreditare (PDF)
-        </button>
+    
         <button
           type="button"
           onClick={() => setActiveMode("cerere")}
@@ -273,7 +231,7 @@ export default function CreeazaAcreditarePage() {
               : "bg-white/60 border-gray-200 text-gray-700 hover:bg-white"
           }`}
         >
-          Cerere acreditare (ca jurnalist)
+          Cerere acreditare 
         </button>
       </div>
 
