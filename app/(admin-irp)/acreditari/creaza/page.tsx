@@ -6,7 +6,7 @@ import { getTenantContext } from "@/lib/tenant";
 import { useRouter, useSearchParams } from "next/navigation";
 import { pdf } from "@react-pdf/renderer";
 import { AcreditarePdfDoc } from "@/app/(admin-irp)/components/pdf/AcreditarePdf";
-import { FileText, Plus, Eye, EyeOff, Calendar, Hash, User, IdCard, Building2, Mail } from "lucide-react";
+import { FileText, Plus, Eye, EyeOff, Calendar, Hash, User, IdCard, Building2, Mail, Link2, Check, Copy, ExternalLink } from "lucide-react";
 
 export default function CreeazaAcreditarePage() {
   const { db, app } = initFirebase();
@@ -23,6 +23,7 @@ export default function CreeazaAcreditarePage() {
   const [loading, setLoading] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // load settings
   useEffect(() => {
@@ -133,6 +134,44 @@ export default function CreeazaAcreditarePage() {
     }
   }
 
+  async function copyCereriLink() {
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      const origin = window.location.origin;
+      const url = `${origin}/acreditare?structuri=${encodeURIComponent(`${judetId}:${structuraId}`)}`;
+      try {
+        await navigator.clipboard.writeText(url);
+      } catch {
+        // Fallback
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 1500);
+    } catch {
+      alert("Nu am putut copia link-ul. Încercați din nou.");
+    }
+  }
+
+  function buildCereriLink(): string {
+    const { judetId, structuraId } = getTenantContext();
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}/acreditare?structuri=${encodeURIComponent(`${judetId}:${structuraId}`)}`;
+  }
+
+  function openCereriForm() {
+    try {
+      const url = buildCereriLink();
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {}
+  }
+
   return (
     <div className="space-y-6">
       {/* Header modern */}
@@ -146,13 +185,68 @@ export default function CreeazaAcreditarePage() {
           </div>
           <div className="text-sm text-gray-600 mt-1">Creează un document de acreditare pentru jurnaliști</div>
         </div>
-        <button 
-          onClick={() => setShowPreview((v) => !v)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
-        >
-          {showPreview ? <EyeOff size={16} /> : <Eye size={16} />}
-          {showPreview ? "Ascunde previzualizare" : "Arată previzualizare"}
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={copyCereriLink}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
+            title="Copiază link-ul public pentru cereri de acreditare (cu structura curentă preselectată)"
+          >
+            {copiedLink ? <Check size={16} className="text-emerald-600" /> : <Link2 size={16} />}
+            {copiedLink ? "Link copiat" : "Link cereri acreditare"}
+            {!copiedLink && <Copy size={14} className="opacity-70" />}
+          </button>
+          <button
+            type="button"
+            onClick={openCereriForm}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
+            title="Deschide formularul public de cerere (în tab nou) pentru completare"
+          >
+            <ExternalLink size={16} />
+            Deschide formular cerere
+          </button>
+          <button 
+            type="button"
+            onClick={() => setShowPreview((v) => !v)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
+          >
+            {showPreview ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showPreview ? "Ascunde previzualizare" : "Arată previzualizare"}
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center">
+            <Link2 size={18} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-gray-900">Cereri acreditare (formular pentru jurnaliști)</div>
+            <div className="text-sm text-gray-700 mt-1">
+              Pentru a introduce o cerere în numele unui jurnalist (cu selecție de structuri, upload legitimație, semnătură și GDPR),
+              folosește formularul public de la <span className="font-mono">/acreditare</span>.
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={copyCereriLink}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 text-sm font-medium"
+              >
+                {copiedLink ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                Copiază link
+              </button>
+              <button
+                type="button"
+                onClick={openCereriForm}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 text-sm font-medium"
+              >
+                <ExternalLink size={16} />
+                Deschide formular
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className={showPreview ? "grid grid-cols-1 lg:grid-cols-2 gap-6" : "space-y-6"}>
