@@ -240,8 +240,8 @@ export default function CreeazaAcreditarePage() {
           <CerereAcreditareForm
             mode="admin_single_structura"
             fixedStructuraKey={`${getTenantContext().judetId}_${getTenantContext().structuraId}`}
-            title="Cerere acreditare (completare în numele jurnalistului)"
-            description="Acest formular salvează o cerere în colecția unică CereriAcreditare, doar pentru structura curentă."
+            title="Formular acreditare"
+            description=""
           />
         </div>
       ) : (
