@@ -117,7 +117,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           smtpPass,
           to,
           subject: `Acreditare acceptată ${structLabel}`,
-          text: `Acreditarea dvs a fost acceptată la ${structLabel}`,
+          text: `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}`,
           replyTo,
         });
       }
