@@ -10,6 +10,7 @@ import { SignaturePad } from "./SignaturePad";
 import { StructuraOption, StructuriMultiSelect } from "./StructuriMultiSelect";
 
 const MAX_UPLOAD_MB = 15;
+const MAX_LEGIT_FILES = 2;
 
 type MediaTypeKey = "presaScrisa" | "tv" | "radio" | "agentie" | "online" | "altceva";
 type FunctionKey = "redactor" | "reporter" | "fotoreporter" | "cameraman" | "tehnician" | "altceva";
@@ -141,7 +142,7 @@ export function CerereAcreditareForm({
   const [jurnalistTelefonMobil, setJurnalistTelefonMobil] = useState("");
 
   // Upload + semnătură
-  const [legitimatieFile, setLegitimatieFile] = useState<File | null>(null);
+  const [legitimatieFiles, setLegitimatieFiles] = useState<File[]>([]);
   const [signatureBlob, setSignatureBlob] = useState<Blob | null>(null);
 
   // Consimțăminte
@@ -159,6 +160,13 @@ export function CerereAcreditareForm({
     if (!fixedStructuraKey) return;
     setSelectedStructKeys([fixedStructuraKey.toUpperCase().replace(":", "_")]);
   }, [isAdminSingle, fixedStructuraKey]);
+
+  // Admin: GDPR consent is handled by the institution (no user-facing consent UI here)
+  useEffect(() => {
+    if (!isAdminSingle) return;
+    setGdprAccepted(true);
+    setShowGdpr(false);
+  }, [isAdminSingle]);
 
   // Load available structuri that have an owner doc (public only)
   useEffect(() => {
@@ -278,31 +286,39 @@ export function CerereAcreditareForm({
     if (!institutieDenumire.trim()) return false;
     if (!numePrenume.trim()) return false;
     if (!nrLegitimatie.trim()) return false;
-    if (!legitimatieFile) return false;
-    if (!signatureBlob) return false;
-    if (!gdprAccepted) return false;
+    if (legitimatieFiles.length === 0) return false;
+    if (!isAdminSingle && !signatureBlob) return false;
+    if (!isAdminSingle && !gdprAccepted) return false;
     return true;
-  }, [submitting, selectedStructKeys, institutieDenumire, numePrenume, nrLegitimatie, legitimatieFile, signatureBlob, gdprAccepted]);
+  }, [submitting, selectedStructKeys, institutieDenumire, numePrenume, nrLegitimatie, legitimatieFiles, signatureBlob, gdprAccepted, isAdminSingle]);
 
-  const onPickLegitimatie = (f: File | null) => {
+  const onPickLegitimatie = (files: FileList | null) => {
     setSubmitError(null);
-    if (!f) {
-      setLegitimatieFile(null);
+    if (!files || files.length === 0) {
+      setLegitimatieFiles([]);
+      return;
+    }
+    const arr = Array.from(files);
+    if (arr.length > MAX_LEGIT_FILES) {
+      setLegitimatieFiles([]);
+      setSubmitError(`Poți încărca maxim ${MAX_LEGIT_FILES} imagini (JPG/PNG) pentru legitimație.`);
       return;
     }
     const maxBytes = MAX_UPLOAD_MB * 1024 * 1024;
-    if (f.size > maxBytes) {
-      setLegitimatieFile(null);
-      setSubmitError(`Fișierul este prea mare (${bytesToMb(f.size)} MB). Maxim ${MAX_UPLOAD_MB} MB.`);
-      return;
+    const okTypes = ["image/png", "image/jpeg", "image/jpg"];
+    for (const f of arr) {
+      if (f.size > maxBytes) {
+        setLegitimatieFiles([]);
+        setSubmitError(`Fișierul "${f.name}" este prea mare (${bytesToMb(f.size)} MB). Maxim ${MAX_UPLOAD_MB} MB per imagine.`);
+        return;
+      }
+      if (!okTypes.includes(f.type)) {
+        setLegitimatieFiles([]);
+        setSubmitError('Tip fișier neacceptat. Acceptăm doar imagini JPG / PNG (maxim 2).');
+        return;
+      }
     }
-    const okTypes = ["application/pdf", "image/png", "image/jpeg", "image/jpg"];
-    if (!okTypes.includes(f.type)) {
-      setLegitimatieFile(null);
-      setSubmitError("Tip fișier neacceptat. Acceptăm PDF / PNG / JPG.");
-      return;
-    }
-    setLegitimatieFile(f);
+    setLegitimatieFiles(arr);
   };
 
   const toggleMedia = (k: MediaTypeKey) => setMediaTypes((m) => ({ ...m, [k]: !m[k] }));
@@ -360,7 +376,7 @@ export function CerereAcreditareForm({
           telefon: { fix: jurnalistTelefonFix.trim(), fax: jurnalistTelefonFax.trim(), mobil: jurnalistTelefonMobil.trim() },
         },
         consimtamant: {
-          gdpr: gdprAccepted,
+          gdpr: isAdminSingle ? true : gdprAccepted,
           gdprVersion: "v1",
           gdprAcceptedAt: serverTimestamp(),
         },
@@ -371,27 +387,36 @@ export function CerereAcreditareForm({
       const created = await addDoc(cereriRef, payload);
 
       const cerereId = created.id;
-      const legit = legitimatieFile!;
-      const legitExt = (legit.name.split(".").pop() || "").toLowerCase();
-      const legitPath = `cereri-acreditare/${cerereId}/legitimatie.${legitExt || "bin"}`;
-      const sigPath = `cereri-acreditare/${cerereId}/semnatura.png`;
+      const legitItems: { path: string; name: string; contentType: string; size: number }[] = [];
+      for (let i = 0; i < legitimatieFiles.length; i++) {
+        const legit = legitimatieFiles[i]!;
+        const legitExt = (legit.name.split(".").pop() || "").toLowerCase();
+        const ext = legitExt || (legit.type === "image/png" ? "png" : "jpg");
+        const legitPath = `cereri-acreditare/${cerereId}/legitimatie_${i + 1}.${ext}`;
+        const legitRef = storageRef(storage, legitPath);
+        await uploadBytes(legitRef, legit, { contentType: legit.type || undefined });
+        legitItems.push({ path: legitPath, name: legit.name, contentType: legit.type, size: legit.size });
+        try {
+          await getDownloadURL(legitRef);
+        } catch {}
+      }
 
-      const legitRef = storageRef(storage, legitPath);
-      await uploadBytes(legitRef, legit, { contentType: legit.type || undefined });
+      const attachmentsUpdate: any = {
+        legitimatie: legitItems,
+      };
 
-      const sigRef = storageRef(storage, sigPath);
-      await uploadBytes(sigRef, signatureBlob!, { contentType: "image/png" });
-
-      try {
-        await getDownloadURL(legitRef);
-        await getDownloadURL(sigRef);
-      } catch {}
+      if (!isAdminSingle) {
+        const sigPath = `cereri-acreditare/${cerereId}/semnatura.png`;
+        const sigRef = storageRef(storage, sigPath);
+        await uploadBytes(sigRef, signatureBlob!, { contentType: "image/png" });
+        try {
+          await getDownloadURL(sigRef);
+        } catch {}
+        attachmentsUpdate.semnatura = { path: sigPath, contentType: "image/png" };
+      }
 
       await updateDoc(doc(db, "CereriAcreditare", cerereId), {
-        attachments: {
-          legitimatie: { path: legitPath, name: legit.name, contentType: legit.type, size: legit.size },
-          semnatura: { path: sigPath, contentType: "image/png" },
-        },
+        attachments: attachmentsUpdate,
         attachmentsUploadedAt: serverTimestamp(),
       });
 
@@ -659,51 +684,85 @@ export function CerereAcreditareForm({
             <div className="text-sm font-semibold text-gray-900">
               Legitimație de presă <span className="text-red-600">*</span>
             </div>
-            <div className="text-xs text-gray-600">Încarcă fotografia/scanarea legitimației (PDF/JPG/PNG).</div>
+            <div className="text-xs text-gray-600">
+              Încarcă fotografia/scanarea legitimației. Acceptăm <span className="font-semibold">maxim {MAX_LEGIT_FILES} imagini</span> (JPG/PNG).
+            </div>
           </div>
           <div className="p-6 space-y-3">
-            <input type="file" accept=".pdf,image/png,image/jpeg" onChange={(e) => onPickLegitimatie(e.target.files?.[0] || null)} className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
-            {legitimatieFile && (
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-gray-900 truncate">{legitimatieFile.name}</div>
-                  <div className="text-xs text-gray-600 mt-1">{bytesToMb(legitimatieFile.size)} MB</div>
+            <input
+              type="file"
+              multiple
+              accept="image/png,image/jpeg"
+              onChange={(e) => onPickLegitimatie(e.target.files)}
+              className="block w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            {legitimatieFiles.length > 0 && (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-3">
+                <div className="text-sm font-semibold text-gray-900">Fișiere selectate ({legitimatieFiles.length}/{MAX_LEGIT_FILES})</div>
+                <div className="space-y-2">
+                  {legitimatieFiles.map((f, idx) => (
+                    <div key={`${f.name}_${idx}`} className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm text-gray-900 truncate">{f.name}</div>
+                        <div className="text-xs text-gray-600 mt-0.5">{bytesToMb(f.size)} MB</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setLegitimatieFiles((prev) => prev.filter((_, i) => i !== idx))}
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-white text-sm"
+                      >
+                        Elimină
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <button type="button" onClick={() => setLegitimatieFile(null)} className="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-white text-sm">
-                  Elimină
-                </button>
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setLegitimatieFiles([])}
+                    className="px-3 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-white text-sm"
+                  >
+                    Elimină toate
+                  </button>
+                </div>
               </div>
             )}
-            <div className="text-xs text-gray-500">Maxim {MAX_UPLOAD_MB} MB.</div>
+            <div className="text-xs text-gray-500">Maxim {MAX_LEGIT_FILES} imagini. Maxim {MAX_UPLOAD_MB} MB per imagine.</div>
           </div>
         </div>
 
-        <SignaturePad valuePngBlob={signatureBlob} onChange={setSignatureBlob} />
+        {!isAdminSingle && <SignaturePad valuePngBlob={signatureBlob} onChange={setSignatureBlob} />}
 
         {/* Consimțăminte */}
-        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-100">
-            <div className="text-sm font-semibold text-gray-900">Declarații și informare</div>
-            <div className="text-xs text-gray-600">Bifează pentru a continua.</div>
+        {!isAdminSingle && (
+          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <div className="text-sm font-semibold text-gray-900">Declarații și informare</div>
+              <div className="text-xs text-gray-600">Bifează pentru a continua.</div>
+            </div>
+            <div className="p-6 space-y-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" checked={gdprAccepted} onChange={(e) => setGdprAccepted(e.target.checked)} className="mt-1 w-4 h-4" />
+                <span className="text-sm text-gray-800">
+                  Am citit și am înțeles{" "}
+                  <button type="button" className="text-blue-700 hover:underline" onClick={() => setShowGdpr(true)}>
+                    Nota de informare GDPR
+                  </button>
+                  .
+                </span>
+              </label>
+            </div>
           </div>
-          <div className="p-6 space-y-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input type="checkbox" checked={gdprAccepted} onChange={(e) => setGdprAccepted(e.target.checked)} className="mt-1 w-4 h-4" />
-              <span className="text-sm text-gray-800">
-                Am citit și am înțeles{" "}
-                <button type="button" className="text-blue-700 hover:underline" onClick={() => setShowGdpr(true)}>
-                  Nota de informare GDPR
-                </button>
-                .
-              </span>
-            </label>
-          </div>
-        </div>
+        )}
 
         {submitError && <div className="rounded-2xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">{submitError}</div>}
 
         <div className="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
-          <div className="text-sm text-gray-600">Câmpuri obligatorii: Structuri, Denumire instituție, Nume, Nr. legitimație, Upload legitimație, Semnătură, GDPR.</div>
+          <div className="text-sm text-gray-600">
+            Câmpuri obligatorii: Structuri, Denumire instituție, Nume, Nr. legitimație, Upload legitimație
+            {!isAdminSingle ? ", Semnătură" : ""}
+            {!isAdminSingle ? ", GDPR" : ""}.
+          </div>
           <button type="submit" disabled={!canSubmit} className={`inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold shadow-lg transition-colors ${canSubmit ? "bg-blue-600 text-white hover:bg-blue-700" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}>
             {submitting ? (
               <>
@@ -718,7 +777,7 @@ export function CerereAcreditareForm({
       </form>
 
       {/* GDPR Modal */}
-      {showGdpr && (
+      {!isAdminSingle && showGdpr && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowGdpr(false)} />
           <div className="absolute inset-0 flex items-center justify-center p-4">

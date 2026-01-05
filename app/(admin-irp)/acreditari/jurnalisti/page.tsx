@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { collection, doc, getDocs } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import Link from "next/link";
-import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw } from "lucide-react";
+import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X } from "lucide-react";
 
 type Journalist = { id: string; nume: string; email?: string; legit?: string; redactie?: string; lastAcreditareYear?: number };
 
@@ -15,19 +15,68 @@ export default function JurnalistiPage() {
   const currentYear = new Date().getFullYear();
   const [search, setSearch] = useState("");
   const [onlyCurrent, setOnlyCurrent] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<Pick<Journalist, "nume" | "email" | "legit" | "redactie">>({
+    nume: "",
+    email: "",
+    legit: "",
+    redactie: "",
+  });
+
+  async function load() {
+    try {
+      setLoading(true);
+      const { judetId, structuraId } = getTenantContext();
+      const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Jurnalisti"));
+      setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Journalist[]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const { judetId, structuraId } = getTenantContext();
-        const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Jurnalisti"));
-        setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Journalist[]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    load();
   }, [db]);
+
+  function startEdit(x: Journalist) {
+    setEditingId(x.id);
+    setEditDraft({
+      nume: x.nume || "",
+      email: x.email || "",
+      legit: x.legit || "",
+      redactie: x.redactie || "",
+    });
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditDraft({ nume: "", email: "", legit: "", redactie: "" });
+  }
+
+  async function saveEdit(id: string) {
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`);
+      await setDoc(ref, { ...editDraft, updatedAt: serverTimestamp() }, { merge: true });
+      setItems((prev) => prev.map((j) => (j.id === id ? { ...j, ...editDraft } : j)));
+      cancelEdit();
+    } catch {
+      alert("Nu am putut salva modificările. Încearcă din nou.");
+    }
+  }
+
+  async function onDelete(id: string) {
+    const ok = confirm("Sigur vrei să ștergi acest jurnalist? Acțiunea este ireversibilă.");
+    if (!ok) return;
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`));
+      setItems((prev) => prev.filter((x) => x.id !== id));
+      if (editingId === id) cancelEdit();
+    } catch {
+      alert("Nu am putut șterge jurnalistul. Încearcă din nou.");
+    }
+  }
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
@@ -119,6 +168,7 @@ export default function JurnalistiPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map((x) => {
             const isCurrent = x.lastAcreditareYear === currentYear;
+            const isEditing = editingId === x.id;
             return (
               <div key={x.id} className={`group rounded-2xl border shadow-sm p-6 hover:shadow-xl transition-all duration-200 ${
                 isCurrent 
@@ -148,26 +198,65 @@ export default function JurnalistiPage() {
                   </div>
                 </div>
                 
-                <div className="space-y-2 mb-4">
-                  {x.email && (
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Mail size={14} className="text-gray-400" />
-                      <span className="truncate">{x.email}</span>
+                {!isEditing ? (
+                  <div className="space-y-2 mb-4">
+                    {x.email && (
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <Mail size={14} className="text-gray-400" />
+                        <span className="truncate">{x.email}</span>
+                      </div>
+                    )}
+                    {x.legit && (
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <IdCard size={14} className="text-gray-400" />
+                        <span>Legitimație: {x.legit}</span>
+                      </div>
+                    )}
+                    {x.redactie && (
+                      <div className="flex items-center gap-2 text-sm text-gray-700">
+                        <Building2 size={14} className="text-gray-400" />
+                        <span className="truncate">{x.redactie}</span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3 mb-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Nume</label>
+                      <input
+                        value={editDraft.nume}
+                        onChange={(e) => setEditDraft((p) => ({ ...p, nume: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                      />
                     </div>
-                  )}
-                  {x.legit && (
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <IdCard size={14} className="text-gray-400" />
-                      <span>Legitimație: {x.legit}</span>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+                        <input
+                          value={editDraft.email || ""}
+                          onChange={(e) => setEditDraft((p) => ({ ...p, email: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Legitimație</label>
+                        <input
+                          value={editDraft.legit || ""}
+                          onChange={(e) => setEditDraft((p) => ({ ...p, legit: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                        />
+                      </div>
                     </div>
-                  )}
-                  {x.redactie && (
-                    <div className="flex items-center gap-2 text-sm text-gray-700">
-                      <Building2 size={14} className="text-gray-400" />
-                      <span className="truncate">{x.redactie}</span>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-1">Redacție</label>
+                      <input
+                        value={editDraft.redactie || ""}
+                        onChange={(e) => setEditDraft((p) => ({ ...p, redactie: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                      />
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
                 
                 <div className="flex gap-2">
                   <Link 
@@ -177,6 +266,46 @@ export default function JurnalistiPage() {
                     <RotateCcw size={14} />
                     Reacreditează
                   </Link>
+                  {!isEditing ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(x)}
+                        className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
+                        title="Editează"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(x.id)}
+                        className="inline-flex items-center justify-center px-3 py-2 border border-red-200 text-red-700 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
+                        title="Șterge"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => saveEdit(x.id)}
+                        disabled={!editDraft.nume?.trim()}
+                        className="inline-flex items-center justify-center px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Salvează"
+                      >
+                        <Save size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
+                        title="Renunță"
+                      >
+                        <X size={14} />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             );

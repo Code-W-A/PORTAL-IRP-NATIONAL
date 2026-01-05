@@ -98,8 +98,9 @@ export function TopNavbar() {
   ];
 
   const acreditariItems = [
-    { href: "/acreditari/creaza", label: "Generează acreditare", icon: <Plus size={16} /> },
-    { href: "/acreditari/lista", label: "Lista acreditări", icon: <FileText size={16} /> },
+    { href: "/acreditari/creaza", label: "Cerere acreditare", icon: <Plus size={16} /> },
+    { href: "/acreditari/cereri", label: "Cereri acreditare", icon: <FileText size={16} /> },
+    { href: "/acreditari/lista", label: "Lista acreditări", icon: <List size={16} /> },
     { href: "/acreditari/jurnalisti", label: "Jurnaliști acreditați", icon: <Users size={16} /> },
   ];
 

@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { collection, doc, getDocs } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDocs } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import Link from "next/link";
-import { FileText, Plus, Calendar, IdCard, Building2, Download } from "lucide-react";
+import { FileText, Plus, Calendar, IdCard, Building2, Download, Pencil, Trash2, Loader2 } from "lucide-react";
 
 type Acr = { id: string; numar: string; data: string; nume: string; legit: string; redactie: string };
 
@@ -12,18 +12,65 @@ export default function ListaAcreditariPage() {
   const { db } = initFirebase();
   const [items, setItems] = useState<Acr[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      setLoading(true);
+      const { judetId, structuraId } = getTenantContext();
+      const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Acreditari"));
+      setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Acr[]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    (async () => {
-      try {
-        setLoading(true);
-        const { judetId, structuraId } = getTenantContext();
-        const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Acreditari"));
-        setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Acr[]);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    load();
   }, [db]);
+
+  async function onDelete(id: string) {
+    const ok = confirm("Sigur vrei să ștergi această acreditare? Acțiunea este ireversibilă.");
+    if (!ok) return;
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Acreditari/${id}`));
+      setItems((prev) => prev.filter((x) => x.id !== id));
+    } catch {
+      alert("Nu am putut șterge acreditarea. Încearcă din nou.");
+    }
+  }
+
+  function safeFileName(name: string): string {
+    return String(name || "acreditare")
+      .trim()
+      .replace(/\s+/g, "_")
+      .replace(/[^\w.-]+/g, "_")
+      .slice(0, 80);
+  }
+
+  async function downloadPdf(x: Acr) {
+    if (downloadingId) return;
+    setDownloadingId(x.id);
+    try {
+      const res = await fetch(`/api/acreditari/${encodeURIComponent(x.id)}/pdf`, { method: "GET" });
+      if (!res.ok) throw new Error("download_failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeFileName(`acreditare_${x.nume || ""}`)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Avoid revoking too early (can cancel downloads in some browsers)
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+    } catch {
+      alert("Nu am putut descărca PDF-ul. Încearcă din nou.");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -116,15 +163,30 @@ export default function ListaAcreditariPage() {
               </div>
               
               <div className="flex gap-2">
-                <a 
-                  className="inline-flex items-center gap-2 flex-1 justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm" 
-                  target="_blank" 
-                  href={`/api/acreditari/${x.id}/pdf`}
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => downloadPdf(x)}
+                  disabled={downloadingId === x.id}
+                  className="inline-flex items-center gap-2 flex-1 justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  <Download size={14} />
-                  Descarcă PDF
-                </a>
+                  {downloadingId === x.id ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                  {downloadingId === x.id ? "Se descarcă..." : "Descarcă PDF"}
+                </button>
+                <Link
+                  href={`/acreditari/creaza?edit=${encodeURIComponent(x.id)}`}
+                  className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
+                  title="Editează"
+                >
+                  <Pencil size={14} />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => onDelete(x.id)}
+                  className="inline-flex items-center justify-center px-3 py-2 border border-red-200 text-red-700 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
+                  title="Șterge"
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
           ))}

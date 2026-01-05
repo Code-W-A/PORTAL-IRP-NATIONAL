@@ -1,138 +1,160 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, getDoc, serverTimestamp, Timestamp, setDoc } from "firebase/firestore";
-import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
-import { useRouter, useSearchParams } from "next/navigation";
-import { pdf } from "@react-pdf/renderer";
-import { AcreditarePdfDoc } from "@/app/(admin-irp)/components/pdf/AcreditarePdf";
-import { FileText, Plus, Eye, EyeOff, Calendar, Hash, User, IdCard, Building2, Mail, Link2, Check, Copy, ExternalLink } from "lucide-react";
-import { CerereAcreditareForm } from "@/app/acreditare/components/CerereAcreditareForm";
+import { FileText, Link2, Check, Copy, ExternalLink, Search, Loader2, X, ScanText, Wand2 } from "lucide-react";
+import { CerereAcreditareForm, type CerereAcreditarePrefill } from "@/app/acreditare/components/CerereAcreditareForm";
+import { initFirebase } from "@/lib/firebase";
+import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
+import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 
 export default function CreeazaAcreditarePage() {
-  const { db, app } = initFirebase();
-  const router = useRouter();
-  const params = useSearchParams();
-  const fromId = params?.get("from") || null;
-  const [numar, setNumar] = useState("");
-  const [data, setData] = useState(() => new Date().toISOString().slice(0,10));
-  const [nume, setNume] = useState("");
-  const [legit, setLegit] = useState("");
-  const [redactie, setRedactie] = useState("");
-  const [email, setEmail] = useState("");
-  const [settings, setSettings] = useState<any | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { db, auth } = initFirebase();
+  const { user } = useAuth();
   const [copiedLink, setCopiedLink] = useState(false);
-  const [activeMode, setActiveMode] = useState<"acreditare" | "cerere">("acreditare");
 
-  // load settings
-  useEffect(() => {
-    (async () => {
-      try {
-        const { judetId, structuraId } = getTenantContext();
-        const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
-        const snap = await getDoc(ref);
-        if (snap.exists()) setSettings(snap.data());
-      } catch {}
-    })();
-  }, [db]);
+  const [cereriLoading, setCereriLoading] = useState(false);
+  const [cereriError, setCereriError] = useState<string | null>(null);
+  const [cereri, setCereri] = useState<any[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedPrefill, setSelectedPrefill] = useState<CerereAcreditarePrefill | null>(null);
+  const [prefillKey, setPrefillKey] = useState(0);
 
-  // preload from journalist (reacreditare)
+  const canUseOcr = String(user?.email || "").toLowerCase() === "irp.isudb@gmail.com";
+  const [ocrFiles, setOcrFiles] = useState<File[]>([]);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrError, setOcrError] = useState<string | null>(null);
+
+  const currentKey = useMemo(() => {
+    const { judetId, structuraId } = getTenantContext();
+    return `${judetId}_${structuraId}`.toUpperCase();
+  }, []);
+
   useEffect(() => {
-    if (!fromId) return;
+    let alive = true;
     (async () => {
+      setCereriLoading(true);
+      setCereriError(null);
       try {
-        const { judetId, structuraId } = getTenantContext();
-        const jref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${fromId}`);
-        const s = await getDoc(jref);
-        if (s.exists()) {
-          const d = s.data() as any;
-          setNume(d.nume || "");
-          setEmail(d.email || "");
-          setLegit(d.legit || "");
-          setRedactie(d.redactie || "");
+        const base = collection(db, "CereriAcreditare");
+        try {
+          const q = query(base, where("structuraKeys", "array-contains", currentKey), orderBy("submittedAt", "desc"));
+          const snap = await getDocs(q);
+          const list = snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+          if (!alive) return;
+          setCereri(list);
+        } catch {
+          // Fallback if index/orderBy isn't available yet
+          const q2 = query(base, where("structuraKeys", "array-contains", currentKey));
+          const snap2 = await getDocs(q2);
+          const list2 = snap2.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+          if (!alive) return;
+          setCereri(list2);
         }
-      } catch {}
-    })();
-  }, [db, fromId]);
-
-  const dateLabel = useMemo(() => {
-    if (!data) return "";
-    const [y,m,d] = data.split("-");
-    return `${d}/${m}/${y}`;
-  }, [data]);
-
-  useEffect(() => {
-    if (!showPreview) return;
-    let url: string | null = null;
-    const t = setTimeout(async () => {
-      try {
-        const origin = window.location.origin;
-        const blob = await pdf(
-          <AcreditarePdfDoc
-            settings={{
-              headerLines: settings?.headerLines,
-              logoUrlPublic: settings?.logoUrlPublic,
-              unitLabel: settings?.unitLabel,
-              city: settings?.city,
-              phone: settings?.phone,
-              footerLines: settings?.footerLines,
-              assetBaseUrl: origin,
-            }}
-            data={{
-              numar: numar || "—",
-              dateLabel,
-              nume: nume || "—",
-              legit: legit || "—",
-              redactie: redactie || "—",
-            }}
-          />
-        ).toBlob();
-        url = URL.createObjectURL(blob);
-        setPreviewUrl(url);
       } catch {
-        setPreviewUrl(null);
+        if (!alive) return;
+        setCereriError("Nu am putut încărca cererile pentru prefill.");
+        setCereri([]);
+      } finally {
+        if (!alive) return;
+        setCereriLoading(false);
       }
-    }, 200);
-    return () => { clearTimeout(t); if (url) URL.revokeObjectURL(url); };
-  }, [showPreview, settings, numar, dateLabel, nume, legit, redactie]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [db, currentKey]);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
+  const filtered = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return [];
+    return cereri
+      .map((c) => {
+        const nume = String(c?.jurnalist?.numePrenume || "");
+        const nrLegit = String(c?.jurnalist?.legitimatie?.numar || "");
+        const inst = String(c?.media?.denumire || "");
+        const submittedAt = String(c?.submittedAt || c?.createdAt || "");
+        const hay = `${c.id} ${nume} ${nrLegit} ${inst} ${submittedAt}`.toLowerCase();
+        return { c, nume, nrLegit, inst, hay };
+      })
+      .filter((x) => x.hay.includes(q))
+      .slice(0, 15);
+  }, [cereri, searchTerm]);
+
+  function makePrefillFromCerere(c: any): CerereAcreditarePrefill {
+    const m = c?.media || {};
+    const j = c?.jurnalist || {};
+    const telM = m?.telefon || {};
+    const telJ = j?.telefon || {};
+    const docId = j?.documentIdentitate || {};
+    const legit = j?.legitimatie || {};
+    const functie = j?.functie || {};
+    return {
+      mediaTypes: m?.tip || undefined,
+      mediaAltceva: m?.tipAltceva || "",
+      institutieDenumire: m?.denumire || "",
+      institutieCui: m?.cui || "",
+      institutieAdresa: m?.adresa || "",
+      institutieEmail: m?.email || "",
+      institutieTelefonFix: telM?.fix || "",
+      institutieTelefonFax: telM?.fax || "",
+      institutieTelefonMobil: telM?.mobil || "",
+      institutieWebsite: m?.website || "",
+      numePrenume: j?.numePrenume || "",
+      dataNasterii: j?.dataNasterii || "",
+      locNastere: j?.locNastere || "",
+      cetatenie: j?.cetatenie || "",
+      tipDocIdentitate: docId?.tip || "",
+      serieNumarDoc: docId?.serieNumar || "",
+      adresaOptional: j?.adresa || "",
+      nrLegitimatie: legit?.numar || "",
+      dataExpirareLegit: legit?.dataExpirare || "",
+      functii: typeof functie === "object" ? { ...functie } : undefined,
+      functieAltceva: String(functie?.altcevaText || ""),
+      jurnalistEmail: j?.email || "",
+      jurnalistTelefonFix: telJ?.fix || "",
+      jurnalistTelefonFax: telJ?.fax || "",
+      jurnalistTelefonMobil: telJ?.mobil || "",
+    };
+  }
+
+  async function runOcr() {
+    if (!canUseOcr) return;
+    if (ocrLoading) return;
+    if (!ocrFiles.length) {
+      setOcrError("Încarcă 1–2 imagini pentru scanare.");
+      return;
+    }
+    setOcrLoading(true);
+    setOcrError(null);
     try {
-      const { judetId, structuraId } = getTenantContext();
-      const payload: any = {
-        numar,
-        data: dateLabel,
-        dataTimestamp: Timestamp.fromDate(new Date(data)),
-        nume, legit, redactie, email,
-        createdAt: serverTimestamp(),
-        createdBy: app?.options.projectId || null,
-        judetId, structuraId,
-      };
-      await addDoc(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Acreditari"), payload);
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Trebuie să fii autentificat.");
+      const fd = new FormData();
+      for (const f of ocrFiles.slice(0, 2)) fd.append("images", f);
+      const res = await fetch("/api/acreditari/ocr", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "OCR failed");
 
-      // upsert jurnalist
-      const jBase = collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Jurnalisti");
-      const jref = fromId ? doc(jBase, fromId) : doc(jBase);
-      await setDoc(jref, {
-        nume,
-        email,
-        legit,
-        redactie,
-        lastAcreditareYear: new Date(data).getFullYear(),
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      }, { merge: true });
-      alert("Acreditare salvată");
-      router.replace("/acreditari/lista");
-    } catch {
-      alert("Eroare la salvare");
+      const fields = data?.fields || {};
+      const pf: CerereAcreditarePrefill = {
+        institutieDenumire: String(fields.institutieDenumire || ""),
+        institutieEmail: String(fields.institutieEmail || ""),
+        institutieTelefonMobil: String(fields.institutieTelefonMobil || ""),
+        numePrenume: String(fields.numePrenume || ""),
+        nrLegitimatie: String(fields.nrLegitimatie || ""),
+        jurnalistEmail: String(fields.jurnalistEmail || ""),
+        jurnalistTelefonMobil: String(fields.jurnalistTelefonMobil || ""),
+      };
+      setSelectedPrefill((prev) => ({ ...(prev || {}), ...pf }));
+      setPrefillKey((k) => k + 1);
+    } catch (e: any) {
+      setOcrError(typeof e?.message === "string" ? e.message : "OCR eșuat.");
     } finally {
-      setLoading(false);
+      setOcrLoading(false);
     }
   }
 
@@ -183,9 +205,9 @@ export default function CreeazaAcreditarePage() {
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
               <FileText size={18} className="text-white" />
             </div>
-            Generează Acreditare
+            Cerere acreditare
           </div>
-          <div className="text-sm text-gray-600 mt-1">Creează un document de acreditare pentru jurnaliști</div>
+          <div className="text-sm text-gray-600 mt-1">Completează o cerere de acreditare (ca jurnalist) pentru structura curentă</div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -195,200 +217,137 @@ export default function CreeazaAcreditarePage() {
             title="Copiază link-ul public pentru cereri de acreditare (cu structura curentă preselectată)"
           >
             {copiedLink ? <Check size={16} className="text-emerald-600" /> : <Link2 size={16} />}
-            {copiedLink ? "Link copiat" : "Link cereri acreditare"}
+            {copiedLink ? "Link copiat" : "Link cerere acreditare jurnalist"}
             {!copiedLink && <Copy size={14} className="opacity-70" />}
           </button>
           <button
             type="button"
             onClick={openCereriForm}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
-            title="Deschide formularul public de cerere (în tab nou) pentru completare"
+            title="Deschide formular jurnalist"
           >
             <ExternalLink size={16} />
             Deschide formular cerere
           </button>
-          <button 
-            type="button"
-            onClick={() => setShowPreview((v) => !v)}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
-          >
-            {showPreview ? <EyeOff size={16} /> : <Eye size={16} />}
-            {showPreview ? "Ascunde previzualizare" : "Arată previzualizare"}
-          </button>
         </div>
       </div>
 
-
-      {/* Mode switch */}
-      <div className="flex flex-wrap gap-2">
-    
-        <button
-          type="button"
-          onClick={() => setActiveMode("cerere")}
-          className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
-            activeMode === "cerere"
-              ? "bg-white border-indigo-300 text-indigo-800 shadow-sm"
-              : "bg-white/60 border-gray-200 text-gray-700 hover:bg-white"
-          }`}
-        >
-          Cerere acreditare 
-        </button>
-      </div>
-
-      {activeMode === "cerere" ? (
-        <div className="space-y-6">
-          <CerereAcreditareForm
-            mode="admin_single_structura"
-            fixedStructuraKey={`${getTenantContext().judetId}_${getTenantContext().structuraId}`}
-            title="Formular acreditare"
-            description=""
-          />
-        </div>
-      ) : (
-      <div className={showPreview ? "grid grid-cols-1 lg:grid-cols-2 gap-6" : "space-y-6"}>
-        <form onSubmit={onSubmit} className="space-y-6">
-          {/* Document Info */}
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <Hash size={16} className="text-blue-600" />
-                <h3 className="font-medium text-gray-900">Informații document</h3>
-              </div>
+      <div className="space-y-6">
+        {/* Prefill */}
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Caută și precompletează din cereri existente</div>
+              <div className="text-xs text-gray-600 mt-1">Se caută în cererile din `CereriAcreditare` pentru structura curentă.</div>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Număr acreditare</label>
-                  <div className="relative">
-                    <Hash size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input 
-                      value={numar} 
-                      onChange={(e)=>setNumar(e.target.value)} 
-                      className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none" 
-                      placeholder="ex. 2560586" 
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Data emiterii</label>
-                  <div className="relative">
-                    <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input 
-                      type="date" 
-                      value={data} 
-                      onChange={(e)=>setData(e.target.value)} 
-                      className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none" 
-                    />
-                  </div>
-                </div>
-              </div>
+            <div className="text-xs text-gray-500">
+              {cereriLoading ? "Se încarcă..." : `${cereri.length} cereri`}
             </div>
           </div>
 
-          {/* Journalist Info */}
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <User size={16} className="text-blue-600" />
-                <h3 className="font-medium text-gray-900">Informații jurnalist</h3>
+          {canUseOcr && (
+            <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-sm font-semibold text-indigo-900 inline-flex items-center gap-2">
+                    <ScanText size={16} /> Scanare (OCR)
+                  </div>
+                  <div className="text-xs text-indigo-800/80 mt-1">Disponibil doar pentru contul `irp.isudb@gmail.com`.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={runOcr}
+                  disabled={ocrLoading || ocrFiles.length === 0}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {ocrLoading ? <Loader2 className="animate-spin" size={14} /> : <Wand2 size={14} />}
+                  {ocrLoading ? "Se scanează..." : "Scanează și aplică"}
+                </button>
+              </div>
+              <div className="mt-3">
+                <input
+                  type="file"
+                  multiple
+                  accept="image/png,image/jpeg"
+                  onChange={(e) => setOcrFiles(Array.from(e.target.files || []).slice(0, 2))}
+                  className="block w-full text-sm text-indigo-900 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-100 file:text-indigo-900 hover:file:bg-indigo-200"
+                />
+                <div className="text-xs text-indigo-800/80 mt-2">Maxim 2 imagini (JPG/PNG). Recomandat: poză clară pe legitimație.</div>
+                {ocrError && <div className="text-xs text-red-700 mt-2">{ocrError}</div>}
               </div>
             </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Nume complet</label>
-                <div className="relative">
-                  <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input 
-                    value={nume} 
-                    onChange={(e)=>setNume(e.target.value)} 
-                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none" 
-                    placeholder="ex. Constantin Ionuț-Silviu" 
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Legitimație presă</label>
-                  <div className="relative">
-                    <IdCard size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input 
-                      value={legit} 
-                      onChange={(e)=>setLegit(e.target.value)} 
-                      className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none" 
-                      placeholder="ex. AZ 594301" 
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Redacție</label>
-                  <div className="relative">
-                    <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <input 
-                      value={redactie} 
-                      onChange={(e)=>setRedactie(e.target.value)} 
-                      className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none" 
-                      placeholder="ex. REDACȚIA Argeș Știri" 
-                    />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email (opțional)</label>
-                <div className="relative">
-                  <Mail size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input 
-                    type="email"
-                    value={email} 
-                    onChange={(e)=>setEmail(e.target.value)} 
-                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none" 
-                    placeholder="ex. jurnalist@example.com" 
-                  />
-                </div>
-              </div>
+          )}
+
+          <div className="mt-3">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Caută după nume / nr legitimație / instituție / ID"
+                className="w-full pl-9 pr-10 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none"
+              />
+              {cereriLoading && <Loader2 size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />}
             </div>
+            {cereriError && <div className="mt-2 text-sm text-red-700">{cereriError}</div>}
           </div>
 
-          {/* Actions */}
-          <div className="flex gap-3">
-            <button 
-              type="submit"
-              disabled={loading || !nume || !legit || !redactie || !numar} 
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium shadow-sm"
-            >
-              <Plus size={16} />
-              {loading ? "Se salvează..." : "Salvează acreditarea"}
-            </button>
-          </div>
-        </form>
-
-        {showPreview && (
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <Eye size={16} className="text-blue-600" />
-                <h3 className="font-medium text-gray-900">Previzualizare PDF</h3>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="h-[70vh] bg-gray-50 rounded-lg border border-gray-200">
-                {previewUrl ? (
-                  <iframe className="w-full h-full rounded-lg" src={previewUrl} />
-                ) : (
-                  <div className="grid place-items-center h-full">
-                    <div className="text-center">
-                      <div className="w-12 h-12 bg-gray-200 rounded-xl flex items-center justify-center mx-auto mb-3 animate-pulse">
-                        <FileText size={20} className="text-gray-400" />
-                      </div>
-                      <p className="text-sm text-gray-500">Se generează previzualizarea...</p>
+          {filtered.length > 0 && (
+            <div className="mt-3 rounded-xl border border-gray-200 overflow-hidden">
+              {filtered.map(({ c, nume, nrLegit, inst }) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedPrefill(makePrefillFromCerere(c));
+                    setPrefillKey((k) => k + 1);
+                    setSearchTerm("");
+                  }}
+                  className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center justify-between gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-gray-900 truncate">{nume || "—"}</div>
+                    <div className="text-xs text-gray-600 mt-0.5 truncate">
+                      {nrLegit ? `Legit: ${nrLegit}` : "Legit: —"} • {inst || "—"}
                     </div>
+                    <div className="text-[11px] text-gray-500 mt-0.5 font-mono truncate">{c.id}</div>
                   </div>
-                )}
-              </div>
+                  <div className="text-xs text-blue-700 font-medium">Aplică</div>
+                </button>
+              ))}
             </div>
-          </div>
-        )}
+          )}
+
+          {selectedPrefill && (
+            <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-sm text-gray-700">
+                Prefill activ: <span className="font-semibold">{selectedPrefill.numePrenume || "—"}</span>
+                {selectedPrefill.nrLegitimatie ? <span className="text-gray-500"> (legit {selectedPrefill.nrLegitimatie})</span> : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPrefill(null);
+                  setPrefillKey((k) => k + 1);
+                }}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+              >
+                <X size={14} />
+                Curăță prefill
+              </button>
+            </div>
+          )}
+        </div>
+
+        <CerereAcreditareForm
+          mode="admin_single_structura"
+          fixedStructuraKey={`${getTenantContext().judetId}_${getTenantContext().structuraId}`}
+          prefill={selectedPrefill}
+          prefillKey={prefillKey}
+          title="Formular acreditare"
+          description=""
+        />
       </div>
-      )}
     </div>
   );
 }
