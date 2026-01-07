@@ -11,7 +11,25 @@ function toDataUrl(buf: ArrayBuffer, mime: string) {
 
 function safeJsonParse(s: string): any | null {
   try {
-    return JSON.parse(s);
+    const raw = String(s || "").trim();
+    if (!raw) return null;
+
+    // Strip markdown code fences like ```json ... ```
+    const noFences = raw
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    try {
+      return JSON.parse(noFences);
+    } catch {
+      // Fallback: extract first JSON object/array if the model added extra text
+      const firstObj = noFences.match(/\{[\s\S]*\}/);
+      if (firstObj?.[0]) return JSON.parse(firstObj[0]);
+      const firstArr = noFences.match(/\[[\s\S]*\]/);
+      if (firstArr?.[0]) return JSON.parse(firstArr[0]);
+      return null;
+    }
   } catch {
     return null;
   }
