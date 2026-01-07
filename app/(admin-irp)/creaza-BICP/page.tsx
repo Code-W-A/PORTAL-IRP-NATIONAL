@@ -64,6 +64,11 @@ function todayYMD() {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
+function selectedYearFromYmd(ymd: string): number {
+  const y = Number(String(ymd || "").split("-")[0]);
+  return Number.isFinite(y) ? y : new Date().getFullYear();
+}
+
 function formatRO(d: string) {
   if (!d) return "";
   const [y, m, day] = d.split("-");
@@ -117,6 +122,7 @@ export default function CreateBicpPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [showMobileEditor, setShowMobileEditor] = useState(false);
   const [mobileEditorValue, setMobileEditorValue] = useState("");
+  const lastAutoNumberYearRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -254,11 +260,27 @@ export default function CreateBicpPage() {
     (async () => {
       try {
         const { judetId, structuraId } = getTenantContext();
+        const targetYear = selectedYearFromYmd(data);
+        // Avoid re-applying the same auto-numbering repeatedly for the same year
+        if (lastAutoNumberYearRef.current === targetYear && numarComunicat && numarInregistrare) return;
+
         const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate"));
         let maxComunicat = 0;
         let maxInreg = 0;
         for (const d of snap.docs) {
           const v = d.data() as any;
+          const docYear = (() => {
+            if (v.dataTimestamp?.toDate) return v.dataTimestamp.toDate().getFullYear();
+            if (typeof v.data === "string") {
+              const parts = v.data.split("/");
+              const yyyy = Number(parts?.[2]);
+              return Number.isFinite(yyyy) ? yyyy : null;
+            }
+            if (v.data?.toDate) return v.data.toDate().getFullYear();
+            return null;
+          })();
+          if (docYear != null && docYear !== targetYear) continue;
+
           const n1 = Number(v.numarComunicat || v.numar);
           const n2 = Number(v.numarInregistrare || 0);
           if (!Number.isNaN(n1)) maxComunicat = Math.max(maxComunicat, n1);
@@ -266,9 +288,10 @@ export default function CreateBicpPage() {
         }
         setNumarComunicat(String(maxComunicat + 1));
         setNumarInregistrare(String(maxInreg + 1));
+        lastAutoNumberYearRef.current = targetYear;
       } catch {}
     })();
-  }, [db, editMode]);
+  }, [db, editMode, data, numarComunicat, numarInregistrare]);
 
   // Optionally load last used registry number for the user (to facilitate long numbers management)
   useEffect(() => {

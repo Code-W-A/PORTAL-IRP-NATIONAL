@@ -96,7 +96,7 @@ function getDocumentBadge(tipDocument: string) {
 
 export default function ListaBicpPage() {
   const { db } = initFirebase();
-  const { loading, error, filters, setFilters, items, total, reload } = useBicpData();
+  const { loading, error, filters, setFilters, items, total, availableYears, reload } = useBicpData();
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [view, setView] = useState<string>(() => localStorage.getItem("bicpViewMode") || "card");
@@ -114,6 +114,11 @@ export default function ListaBicpPage() {
     currentPageIds.forEach((id) => { m[id] = val; });
     setSelected(m);
   };
+
+  const selectedYear = (typeof (filters as any).year === "number" && Number.isFinite((filters as any).year))
+    ? (filters as any).year
+    : new Date().getFullYear();
+  const currentYear = new Date().getFullYear();
 
   async function downloadBulkPdfsAsZip(variant: "signed" | "public") {
     if (!allSelectedIds.length || downloadingZipType) return;
@@ -395,7 +400,45 @@ export default function ListaBicpPage() {
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Lista Documente BI/CP</h1>
                 <div className="flex items-center gap-4 mt-1">
-                  <p className="text-lg text-gray-600">Anul {new Date().getFullYear()}</p>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <p className="text-lg text-gray-600">Anul</p>
+                    <select
+                      value={selectedYear}
+                      onChange={(e) => setFilters({ ...filters, year: Number(e.target.value), page: 1 })}
+                      className="bg-white border border-gray-300 rounded-xl px-3 py-2 text-sm font-semibold text-gray-900 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      title="Selectează anul (arhivă)"
+                    >
+                      {(availableYears?.length ? availableYears : [new Date().getFullYear()]).map((y: number) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFilters({ ...filters, year: currentYear, page: 1 })}
+                        className={`px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                          selectedYear === currentYear
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
+                        }`}
+                        title="Sari la anul curent"
+                      >
+                        An curent
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFilters({ ...filters, year: currentYear - 1, page: 1 })}
+                        className={`px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
+                          selectedYear === currentYear - 1
+                            ? "bg-indigo-600 text-white border-indigo-600"
+                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
+                        }`}
+                        title="Deschide arhiva (anul precedent)"
+                      >
+                        Arhivă
+                      </button>
+                    </div>
+                  </div>
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                     <span className="text-sm text-gray-600">Total: <span className="font-semibold text-gray-900">{total}</span> documente</span>

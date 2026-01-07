@@ -40,6 +40,7 @@ export type Filters = {
   functia?: string;
   pentru?: string;
   purtatorCuvant?: string;
+  year?: number;
   numarMin?: number;
   numarMax?: number;
   dataStart?: string;
@@ -60,6 +61,7 @@ const defaultFilters: Filters = {
   functia: "",
   pentru: "",
   purtatorCuvant: "",
+  year: new Date().getFullYear(),
   sortBy: "numar",
   sortDir: "desc",
   page: 1,
@@ -103,7 +105,7 @@ export function useBicpData() {
 
   const filtered = useMemo(() => {
     let arr = [...items];
-    const { search, tip, tipDocument, semnatarCat, numeSemnatar, grad, functia, pentru, purtatorCuvant, numarMin, numarMax, dataStart, dataEnd } = filters;
+    const { search, tip, tipDocument, semnatarCat, numeSemnatar, grad, functia, pentru, purtatorCuvant, year, numarMin, numarMax, dataStart, dataEnd } = filters;
     if (search) {
       const s = search.toLowerCase();
       arr = arr.filter((x) => {
@@ -157,6 +159,17 @@ export function useBicpData() {
       if ((item as any).data?.toDate) return (item as any).data.toDate();
       return null;
     };
+    const docYear = (item: Bicp): number | null => {
+      const d = parseDate(item);
+      return d ? d.getFullYear() : null;
+    };
+    if (typeof year === "number" && !Number.isNaN(year)) {
+      arr = arr.filter((x) => {
+        const y = docYear(x);
+        // If year is missing, keep it visible rather than hiding potentially important records
+        return y == null ? true : y === year;
+      });
+    }
     if (dataStart) arr = arr.filter((x) => {
       const d = parseDate(x);
       return d ? d >= new Date(dataStart) : true;
@@ -167,6 +180,30 @@ export function useBicpData() {
     });
     return arr;
   }, [items, filters]);
+
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    const parseYear = (item: Bicp): number | null => {
+      if (item.dataTimestamp?.toDate) return item.dataTimestamp.toDate().getFullYear();
+      if (item.data && typeof item.data === "string") {
+        const [dd, mm, yyyy] = item.data.split("/");
+        const y = Number(yyyy);
+        return Number.isFinite(y) ? y : null;
+      }
+      if ((item as any).data?.toDate) return (item as any).data.toDate().getFullYear();
+      return null;
+    };
+    for (const it of items) {
+      const y = parseYear(it);
+      if (typeof y === "number" && Number.isFinite(y)) years.add(y);
+    }
+    const arr = Array.from(years);
+    arr.sort((a, b) => b - a);
+    // Ensure current year is always selectable
+    const cy = new Date().getFullYear();
+    if (!years.has(cy)) arr.unshift(cy);
+    return arr;
+  }, [items]);
 
   const sorted = useMemo(() => {
     const { sortBy, sortDir } = filters;
@@ -218,7 +255,7 @@ export function useBicpData() {
 
   const reload = () => setVersion((v) => v + 1);
 
-  return { loading, error, filters, setFilters, items: paged.items, total: paged.total, reload };
+  return { loading, error, filters, setFilters, items: paged.items, total: paged.total, availableYears, reload };
 }
 
 
