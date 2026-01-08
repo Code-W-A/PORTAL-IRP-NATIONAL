@@ -49,6 +49,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     const nr = String((cerere as any)?.acreditare?.numar || "").trim();
     const dt = String((cerere as any)?.acreditare?.data || "").trim();
     const nume = String((cerere as any)?.jurnalist?.numePrenume || "");
+    const sex = String((cerere as any)?.jurnalist?.sex || "").toUpperCase();
     const legit = String((cerere as any)?.jurnalist?.legitimatie?.numar || "");
     const redactie = String((cerere as any)?.media?.denumire || "");
 
@@ -70,6 +71,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
           numar: nr || "—",
           dateLabel: toDDMMYYYYSlashes(dt),
           nume,
+          sex: (sex === "M" ? "M" : sex === "F" ? "F" : undefined) as any,
           legit,
           redactie,
         }}

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import React from "react";
-import { pdf } from "@react-pdf/renderer";
 
 import { requireBearerToken, lookupUserFromIdToken } from "@/lib/server/auth";
 import {
@@ -10,8 +9,6 @@ import {
 } from "@/lib/server/firestoreRest";
 import { buildStructuraKey, type CerereAcreditare } from "@/lib/acreditari";
 import { sendMailGmailSmtp } from "@/lib/server/smtp";
-import { AcreditarePdfDoc } from "@/app/(admin-irp)/components/pdf/AcreditarePdf";
-
 export const runtime = "nodejs";
 
 function ddmmyyyy(d = new Date()) {
@@ -112,11 +109,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const cerereNumar = String((cerere as any)?.acreditare?.numar || "").trim();
     const cerereData = String((cerere as any)?.acreditare?.data || "").trim();
     const numar = numarOverride || cerereNumar || `ACR-${new Date().getFullYear()}-${id.slice(0, 6).toUpperCase()}`;
+    const sex = String((cerere as any)?.jurnalist?.sex || "").toUpperCase();
     const acrDoc = {
       numar,
       data: dataOverride || cerereData || ddmmyyyy(new Date()),
       dataTimestamp: { __timestamp: nowIso },
       nume: String(jurnalist?.numePrenume || ""),
+      sex: sex === "M" ? "M" : sex === "F" ? "F" : null,
       legit: nrLegit,
       redactie: String(media?.denumire || ""),
       email: String(jurnalist?.email || ""),
@@ -142,66 +141,19 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       if (smtpUser && smtpPass) {
         const structLabel = `${structuraId} ${judetId}`;
         const origin = new URL(req.url).origin;
-        const pdfFileName = `${safeFileName(`acreditare_${String(jurnalist?.numePrenume || "")}`)}_fara_semnaturi.pdf`;
-        let pdfBuf: Buffer | null = null;
-
-        // Generate accreditation PDF (public variant = without signatures) and attach to email
-        try {
-          log("pdf_attach_generate_start", { filename: pdfFileName });
-          const DocPdf = React.createElement(AcreditarePdfDoc as any, {
-            settings: {
-              headerLines: (gen?.headerLines as string[]) || [],
-              logoUrlPublic: gen?.logoUrlPublic ? new URL(String(gen.logoUrlPublic), origin).toString() : undefined,
-              unitLabel: gen?.unitLabel,
-              city: gen?.city,
-              phone: gen?.phone,
-              footerLines: gen?.footerLines || [],
-              acreditareSemnatarStanga: gen?.acreditareSemnatarStanga,
-              acreditareSemnatarDreapta: gen?.acreditareSemnatarDreapta,
-              assetBaseUrl: origin,
-            },
-            variant: "public",
-            data: {
-              numar: String(acrDoc.numar || ""),
-              dateLabel: String(acrDoc.data || ""),
-              nume: String(jurnalist?.numePrenume || ""),
-              legit: nrLegit,
-              redactie: String(media?.denumire || ""),
-            },
-          });
-          const inst: any = pdf(DocPdf as any);
-          if (typeof inst?.toBuffer === "function") {
-            pdfBuf = await inst.toBuffer();
-          } else {
-            const blob = await inst.toBlob();
-            const ab = await blob.arrayBuffer();
-            pdfBuf = Buffer.from(ab);
-          }
-          log("pdf_attach_generate_success", { bytes: pdfBuf?.byteLength || 0 });
-        } catch (e: any) {
-          logErr("pdf_attach_generate_failed", { message: String(e?.message || e || "error") });
-          pdfBuf = null;
-        }
-
-        emailAttachPdf = !!pdfBuf;
-        log("email_attempt", { to, replyTo: replyTo || null, smtpUser, attachPdf: emailAttachPdf });
+        const downloadUrl = `${origin}/api/acreditari/${encodeURIComponent(acreditareId)}/pdf?variant=public`;
+        emailAttachPdf = false;
+        log("email_attempt", { to, replyTo: replyTo || null, smtpUser, downloadUrl });
         try {
           await sendMailGmailSmtp({
             smtpUser,
             smtpPass,
             to,
             subject: `Acreditare acceptată ${structLabel}`,
-            text: `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}.\n\nÎn atașament găsiți acreditarea (fără semnături).`,
+            text:
+              `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}.\n\n` +
+              `Descarcă acreditarea (fără semnături):\n${downloadUrl}\n`,
             replyTo,
-            attachments: pdfBuf
-              ? [
-                  {
-                    filename: pdfFileName,
-                    contentType: "application/pdf",
-                    content: pdfBuf,
-                  },
-                ]
-              : undefined,
           });
           log("email_success", { to });
           emailSent = true;

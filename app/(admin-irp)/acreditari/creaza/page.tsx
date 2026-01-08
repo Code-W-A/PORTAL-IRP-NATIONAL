@@ -82,6 +82,7 @@ function SimpleForm({
   prefillKey: number;
 }) {
   const [nume, setNume] = useState("");
+  const [sex, setSex] = useState<"F" | "M">("F");
   const [legit, setLegit] = useState("");
   const [redactie, setRedactie] = useState("");
   const [email, setEmail] = useState("");
@@ -145,11 +146,12 @@ function SimpleForm({
     setMsg(null);
 
     const nn = nume.trim();
+    const sx = sex;
     const lg = legit.trim();
     const rd = redactie.trim();
     const em = email.trim();
 
-    if (!nn || !lg || !rd || !em) {
+    if (!nn || !sx || !lg || !rd || !em) {
       setMsg("Completează toate câmpurile.");
       return;
     }
@@ -202,6 +204,7 @@ function SimpleForm({
         },
         jurnalist: {
           numePrenume: nn,
+          sex: sx,
           dataNasterii: null,
           locNastere: "",
           cetatenie: "Română",
@@ -251,6 +254,18 @@ function SimpleForm({
               placeholder="Nume Prenume"
               className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sex *</label>
+            <select
+              value={sex}
+              onChange={(e) => setSex(e.target.value === "M" ? "M" : "F")}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+            >
+              <option value="F">F (doamna)</option>
+              <option value="M">M (domnul)</option>
+            </select>
+            <div className="text-xs text-gray-500 mt-1">Influențează textul „doamna/domnul” din PDF-ul de acreditare.</div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Nr. legitimație *</label>

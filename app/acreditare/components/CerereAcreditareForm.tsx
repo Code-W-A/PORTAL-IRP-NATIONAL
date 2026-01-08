@@ -154,6 +154,7 @@ export function CerereAcreditareForm({
 
   // Date personale jurnalist
   const [numePrenume, setNumePrenume] = useState("");
+  const [sex, setSex] = useState<"F" | "M">("F");
   const [dataNasterii, setDataNasterii] = useState("");
   const [locNastere, setLocNastere] = useState("");
   const [cetatenie, setCetatenie] = useState("Română");
@@ -244,6 +245,7 @@ export function CerereAcreditareForm({
 
         // Jurnalist
         setNumePrenume(String(d?.jurnalist?.numePrenume || ""));
+        setSex(String(d?.jurnalist?.sex || "F").toUpperCase() === "M" ? "M" : "F");
         setDataNasterii(String(d?.jurnalist?.dataNasterii || "") || "");
         setLocNastere(String(d?.jurnalist?.locNastere || ""));
         setCetatenie(String(d?.jurnalist?.cetatenie || "Română"));
@@ -557,6 +559,7 @@ export function CerereAcreditareForm({
         },
         jurnalist: {
           numePrenume: numePrenume.trim(),
+          sex,
           dataNasterii: dataNasterii || null,
           locNastere: locNastere.trim(),
           cetatenie: cetatenie.trim(),
@@ -887,13 +890,28 @@ export function CerereAcreditareForm({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Sex <span className="text-red-600">*</span>
+                </label>
+                <select
+                  value={sex}
+                  onChange={(e) => setSex(e.target.value === "M" ? "M" : "F")}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                >
+                  <option value="F">F (doamna)</option>
+                  <option value="M">M (domnul)</option>
+                </select>
+                <div className="text-xs text-gray-500 mt-1">Influențează textul „doamna/domnul” din PDF-ul de acreditare.</div>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Data nașterii</label>
                 <input type="date" value={dataNasterii} onChange={(e) => setDataNasterii(e.target.value)} className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Locul nașterii</label>
-                <input value={locNastere} onChange={(e) => setLocNastere(e.target.value)} placeholder="Localitate / Județ" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Locul nașterii</label>
+              <input value={locNastere} onChange={(e) => setLocNastere(e.target.value)} placeholder="Localitate / Județ" className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

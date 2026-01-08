@@ -57,6 +57,7 @@ export type AcreditarePdfData = {
   nume: string; // Nume jurnalist
   legit: string; // legitimatia de presa
   redactie: string; // redactia
+  sex?: "F" | "M"; // pentru "doamna/domnul"
 };
 
 export function AcreditarePdfDoc({
@@ -118,9 +119,15 @@ export function AcreditarePdfDoc({
 
         <Text style={styles.title}>ACREDITARE</Text>
 
-        <Text style={styles.paragraph}>
-          În conformitate cu prevederile art. 18 din <Text style={styles.bold}>Legea nr. 544/2001</Text> se acreditează doamna:
-        </Text>
+        {(() => {
+          const sx = String((data as any)?.sex || "").toUpperCase();
+          const apelativ = sx === "M" ? "domnul" : sx === "F" ? "doamna" : "doamna/domnul";
+          return (
+            <Text style={styles.paragraph}>
+              În conformitate cu prevederile art. 18 din <Text style={styles.bold}>Legea nr. 544/2001</Text> se acreditează {apelativ}:
+            </Text>
+          );
+        })()}
         <Text style={styles.name}>{String(data.nume || "").toUpperCase()}</Text>
         <Text style={styles.paragraph}>
           legitimație de presă nr. <Text style={styles.bold}>{data.legit}</Text>, eliberată de redacția <Text style={styles.bold}>{data.redactie}</Text>, în vederea

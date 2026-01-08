@@ -482,7 +482,7 @@ export default function CereriAcreditareAdminPage() {
                                 emailJ
                                   ? `Se va transmite email cu aprobarea pe anul ${year} a acreditării către: ${emailJ}`
                                   : `Nu există email în cerere. NU se va transmite email cu aprobarea pe anul ${year}.`,
-                                "Emailul include acreditarea PDF (fără semnături).",
+                                "Emailul include un link de descărcare pentru acreditare.",
                               ].join("\n")
                             );
                             if (!ok) return;

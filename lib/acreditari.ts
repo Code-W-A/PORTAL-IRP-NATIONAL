@@ -32,6 +32,8 @@ export type CerereAcreditare = {
 
   jurnalist: {
     numePrenume: string;
+    /** Sex used for "doamna/domnul" in accreditation PDF. */
+    sex?: "F" | "M";
     dataNasterii?: string | null;
     locNastere?: string;
     cetatenie?: string;

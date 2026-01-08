@@ -73,6 +73,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         nume: d?.nume || "",
         legit: d?.legit || "",
         redactie: d?.redactie || "",
+        sex: (String(d?.sex || "").toUpperCase() === "M" ? "M" : String(d?.sex || "").toUpperCase() === "F" ? "F" : undefined) as any,
       }}
     />
   );
