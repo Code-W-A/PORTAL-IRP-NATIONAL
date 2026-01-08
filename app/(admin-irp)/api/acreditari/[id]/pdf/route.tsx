@@ -9,6 +9,9 @@ import { AcreditarePdfDoc } from "@/app/(admin-irp)/components/pdf/AcreditarePdf
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const { db } = initFirebase();
+  const url = new URL(req.url);
+  const variantRaw = String(url.searchParams.get("variant") || "").toLowerCase();
+  const variant = variantRaw === "public" ? "public" : "signed";
 
   let snap = await (async () => {
     try {
@@ -35,16 +38,18 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
 
   const origin = req.headers.get('origin') || `http://localhost:${process.env.PORT || 3000}`;
 
-  function toDDMMYYYYDots(str?: string): string {
+  function toDDMMYYYYSlashes(str?: string): string {
     const s = String(str || "").trim();
     if (!s) return "";
     // Normalize YYYY-MM-DD to DD.MM.YYYY
     const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m) return `${m[3]}.${m[2]}.${m[1]}`;
-    // Convert DD/MM/YYYY or DD-MM-YYYY to dots
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    // Convert DD.MM.YYYY or DD-MM-YYYY to slashes
     const m2 = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
-    if (m2) return `${m2[1]}.${m2[2]}.${m2[3]}`;
-    return s.replace(/-/g, ".").replace(/\//g, ".");
+    if (m2) return `${m2[1]}/${m2[2]}/${m2[3]}`;
+    const m3 = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (m3) return `${m3[1]}/${m3[2]}/${m3[3]}`;
+    return s.replace(/\./g, "/").replace(/-/g, "/");
   }
 
   const DocPdf = (
@@ -56,11 +61,14 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         city: settings?.city,
         phone: settings?.phone,
         footerLines: settings?.footerLines || [],
+        acreditareSemnatarStanga: settings?.acreditareSemnatarStanga,
+        acreditareSemnatarDreapta: settings?.acreditareSemnatarDreapta,
         assetBaseUrl: origin,
       }}
+      variant={variant as any}
       data={{
         numar: String(d?.numar || ""),
-        dateLabel: toDDMMYYYYDots(d?.data),
+        dateLabel: toDDMMYYYYSlashes(d?.data),
         nume: d?.nume || "",
         legit: d?.legit || "",
         redactie: d?.redactie || "",

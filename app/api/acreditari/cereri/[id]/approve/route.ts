@@ -26,16 +26,25 @@ function normalizeLegitId(s: string) {
 }
 
 export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const requestId = `acr_approve_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`;
+  const logPrefix = `[acreditari][approve][${requestId}]`;
+  const log = (...args: any[]) => console.log(logPrefix, ...args);
+  const logErr = (...args: any[]) => console.error(logPrefix, ...args);
   try {
     const { id } = await ctx.params;
+    log("start", { id });
     const idToken = await requireBearerToken(req);
     const authUser = await lookupUserFromIdToken(idToken);
+    const body = await req.json().catch(() => ({} as any));
+    const numarOverride = typeof body?.numar === "string" ? body.numar.trim() : "";
+    const dataOverride = typeof body?.data === "string" ? body.data.trim() : "";
 
     // Resolve tenant from user profile
     const profile = await firestoreGetDocAsJson<{ judetId?: string; structuraId?: string }>(`users/${authUser.uid}`, idToken);
     const judetId = String(profile?.judetId || "").toUpperCase();
     const structuraId = String(profile?.structuraId || "").toUpperCase();
     if (!judetId || !structuraId) return NextResponse.json({ error: "Profil incomplet (judetId/structuraId)." }, { status: 403 });
+    log("tenant", { judetId, structuraId, uid: authUser.uid, email: authUser.email || null });
 
     // Ensure caller is owner for that structura (Settings/owner.uid === caller uid)
     const owner = await firestoreGetDocAsJson<{ uid?: string }>(`Judete/${judetId}/Structuri/${structuraId}/Settings/owner`, idToken);
@@ -62,6 +71,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       statusByStructura,
       updatedAt: { __timestamp: nowIso },
     });
+    log("cerere->approved");
 
     // Upsert jurnalist
     const jurnalist = (cerere as any).jurnalist || {};
@@ -86,10 +96,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
 
     // Create Acreditari doc (so it appears in /acreditari/lista)
-    const numar = `ACR-${new Date().getFullYear()}-${id.slice(0, 6).toUpperCase()}`;
+    const cerereNumar = String((cerere as any)?.acreditare?.numar || "").trim();
+    const cerereData = String((cerere as any)?.acreditare?.data || "").trim();
+    const numar = numarOverride || cerereNumar || `ACR-${new Date().getFullYear()}-${id.slice(0, 6).toUpperCase()}`;
     const acrDoc = {
       numar,
-      data: ddmmyyyy(new Date()),
+      data: dataOverride || cerereData || ddmmyyyy(new Date()),
       dataTimestamp: { __timestamp: nowIso },
       nume: String(jurnalist?.numePrenume || ""),
       legit: nrLegit,
@@ -101,7 +113,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       updatedAt: { __timestamp: nowIso },
       source: { cerereId: id },
     };
-    await firestoreCreateDoc(`Judete/${judetId}/Structuri/${structuraId}/Acreditari`, idToken, acrDoc);
+    const acreditareId = await firestoreCreateDoc(`Judete/${judetId}/Structuri/${structuraId}/Acreditari`, idToken, acrDoc);
+    log("acreditare_created", { acreditareId, numar: acrDoc.numar, data: acrDoc.data });
 
     // Email (optional)
     const to = String(jurnalist?.email || "").trim();
@@ -112,23 +125,34 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       const smtpPass = process.env.SMTP_PASS || "";
       if (smtpUser && smtpPass) {
         const structLabel = `${structuraId} ${judetId}`;
-        await sendMailGmailSmtp({
-          smtpUser,
-          smtpPass,
-          to,
-          subject: `Acreditare acceptată ${structLabel}`,
-          text: `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}`,
-          replyTo,
-        });
+        log("email_attempt", { to, replyTo: replyTo || null, smtpUser });
+        try {
+          await sendMailGmailSmtp({
+            smtpUser,
+            smtpPass,
+            to,
+            subject: `Acreditare acceptată ${structLabel}`,
+            text: `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}`,
+            replyTo,
+          });
+          log("email_success", { to });
+        } catch (e: any) {
+          logErr("email_failed", { to, message: String(e?.message || e || "error") });
+        }
+      } else {
+        log("email_skip_missing_smtp", { to, hasUser: !!smtpUser, hasPass: !!smtpPass });
       }
+    } else {
+      log("email_skip_missing_recipient");
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, acreditareId, requestId });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "error";
-    if (msg === "missing_auth") return NextResponse.json({ error: "Missing Authorization" }, { status: 401 });
-    if (msg === "invalid_token") return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    return NextResponse.json({ error: "Approve failed" }, { status: 500 });
+    logErr("failed", { message: msg });
+    if (msg === "missing_auth") return NextResponse.json({ error: "Missing Authorization", requestId }, { status: 401 });
+    if (msg === "invalid_token") return NextResponse.json({ error: "Invalid token", requestId }, { status: 401 });
+    return NextResponse.json({ error: "Approve failed", requestId }, { status: 500 });
   }
 }
 

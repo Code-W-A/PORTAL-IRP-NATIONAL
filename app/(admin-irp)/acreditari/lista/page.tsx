@@ -12,17 +12,17 @@ export default function ListaAcreditariPage() {
   const { db } = initFirebase();
   const [items, setItems] = useState<Acr[]>([]);
   const [loading, setLoading] = useState(true);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
 
   async function load() {
-    try {
-      setLoading(true);
-      const { judetId, structuraId } = getTenantContext();
-      const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Acreditari"));
-      setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Acr[]);
-    } finally {
-      setLoading(false);
-    }
+      try {
+        setLoading(true);
+        const { judetId, structuraId } = getTenantContext();
+        const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Acreditari"));
+        setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Acr[]);
+      } finally {
+        setLoading(false);
+      }
   }
 
   useEffect(() => {
@@ -49,26 +49,29 @@ export default function ListaAcreditariPage() {
       .slice(0, 80);
   }
 
-  async function downloadPdf(x: Acr) {
-    if (downloadingId) return;
-    setDownloadingId(x.id);
+  async function downloadPdf(x: Acr, variant: "signed" | "public") {
+    const key = `pdf:${x.id}:${variant}`;
+    if (downloadingKey) return;
+    setDownloadingKey(key);
     try {
-      const res = await fetch(`/api/acreditari/${encodeURIComponent(x.id)}/pdf`, { method: "GET" });
+      const url = `/api/acreditari/${encodeURIComponent(x.id)}/pdf${variant === "public" ? "?variant=public" : ""}`;
+      const res = await fetch(url, { method: "GET" });
       if (!res.ok) throw new Error("download_failed");
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = `${safeFileName(`acreditare_${x.nume || ""}`)}.pdf`;
+      a.href = objUrl;
+      const suffix = variant === "public" ? "_fara_semnaturi" : "";
+      a.download = `${safeFileName(`acreditare_${x.nume || ""}${suffix}`)}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       // Avoid revoking too early (can cancel downloads in some browsers)
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
     } catch {
       alert("Nu am putut descărca PDF-ul. Încearcă din nou.");
     } finally {
-      setDownloadingId(null);
+      setDownloadingKey(null);
     }
   }
 
@@ -162,31 +165,44 @@ export default function ListaAcreditariPage() {
                 </div>
               </div>
               
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => downloadPdf(x)}
-                  disabled={downloadingId === x.id}
-                  className="inline-flex items-center gap-2 flex-1 justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {downloadingId === x.id ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
-                  {downloadingId === x.id ? "Se descarcă..." : "Descarcă PDF"}
-                </button>
-                <Link
-                  href={`/acreditari/creaza?edit=${encodeURIComponent(x.id)}`}
-                  className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
-                  title="Editează"
-                >
-                  <Pencil size={14} />
-                </Link>
-                <button
-                  type="button"
-                  onClick={() => onDelete(x.id)}
-                  className="inline-flex items-center justify-center px-3 py-2 border border-red-200 text-red-700 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
-                  title="Șterge"
-                >
-                  <Trash2 size={14} />
-                </button>
+              <div className="flex items-stretch gap-2">
+                <div className="flex-1 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => downloadPdf(x, "signed")}
+                    disabled={!!downloadingKey}
+                    className="inline-flex items-center gap-2 justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {downloadingKey === `pdf:${x.id}:signed` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                    {downloadingKey === `pdf:${x.id}:signed` ? "Se descarcă..." : "PDF (cu semnături)"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadPdf(x, "public")}
+                    disabled={!!downloadingKey}
+                    className="inline-flex items-center gap-2 justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {downloadingKey === `pdf:${x.id}:public` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                    {downloadingKey === `pdf:${x.id}:public` ? "Se descarcă..." : "PDF (fără semnături)"}
+                  </button>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Link
+                    href={`/acreditari/creaza?edit=${encodeURIComponent(x.id)}`}
+                    className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
+                    title="Editează"
+                  >
+                    <Pencil size={14} />
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(x.id)}
+                    className="inline-flex items-center justify-center px-3 py-2 border border-red-200 text-red-700 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
+                    title="Șterge"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

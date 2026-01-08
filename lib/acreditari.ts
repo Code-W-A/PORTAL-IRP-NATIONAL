@@ -60,6 +60,12 @@ export type CerereAcreditare = {
   };
 
   attachmentsUploadedAt?: Timestamp;
+
+  /** Optional: used by admin flows to store the accreditation certificate number/date to be used at approve time. */
+  acreditare?: {
+    numar?: string;
+    data?: string; // DD/MM/YYYY
+  };
 };
 
 export function buildStructuraKey(judetId: string, structuraId: string): StructuraKey {

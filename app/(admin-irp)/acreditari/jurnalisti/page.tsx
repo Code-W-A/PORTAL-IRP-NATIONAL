@@ -24,14 +24,14 @@ export default function JurnalistiPage() {
   });
 
   async function load() {
-    try {
-      setLoading(true);
-      const { judetId, structuraId } = getTenantContext();
-      const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Jurnalisti"));
-      setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Journalist[]);
-    } finally {
-      setLoading(false);
-    }
+      try {
+        setLoading(true);
+        const { judetId, structuraId } = getTenantContext();
+        const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Jurnalisti"));
+        setItems(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Journalist[]);
+      } finally {
+        setLoading(false);
+      }
   }
 
   useEffect(() => {
@@ -199,26 +199,26 @@ export default function JurnalistiPage() {
                 </div>
                 
                 {!isEditing ? (
-                  <div className="space-y-2 mb-4">
-                    {x.email && (
-                      <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <Mail size={14} className="text-gray-400" />
-                        <span className="truncate">{x.email}</span>
-                      </div>
-                    )}
-                    {x.legit && (
-                      <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <IdCard size={14} className="text-gray-400" />
-                        <span>Legitimație: {x.legit}</span>
-                      </div>
-                    )}
-                    {x.redactie && (
-                      <div className="flex items-center gap-2 text-sm text-gray-700">
-                        <Building2 size={14} className="text-gray-400" />
-                        <span className="truncate">{x.redactie}</span>
-                      </div>
-                    )}
-                  </div>
+                <div className="space-y-2 mb-4">
+                  {x.email && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Mail size={14} className="text-gray-400" />
+                      <span className="truncate">{x.email}</span>
+                    </div>
+                  )}
+                  {x.legit && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <IdCard size={14} className="text-gray-400" />
+                      <span>Legitimație: {x.legit}</span>
+                    </div>
+                  )}
+                  {x.redactie && (
+                    <div className="flex items-center gap-2 text-sm text-gray-700">
+                      <Building2 size={14} className="text-gray-400" />
+                      <span className="truncate">{x.redactie}</span>
+                    </div>
+                  )}
+                </div>
                 ) : (
                   <div className="space-y-3 mb-4">
                     <div>

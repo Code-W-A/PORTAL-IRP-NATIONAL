@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  updateDoc,
+} from "firebase/firestore";
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from "firebase/storage";
 import { initFirebase } from "@/lib/firebase";
 import { JUDETE, getStructuriForJudet } from "@/lib/judete";
@@ -32,6 +44,26 @@ function buildLabel(judetId: string, structuraId: string) {
 
 function bytesToMb(n: number) {
   return Math.round((n / 1024 / 1024) * 10) / 10;
+}
+
+function ddmmyyyySlashFromIso(iso: string) {
+  const s = String(iso || "").trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return s;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+function parseAcreditareNumar(v: any): number | null {
+  const s = String(v || "").trim();
+  if (!s) return null;
+  if (/^\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ""));
+  if (/^\d+$/.test(s)) return Number(s);
+  return null;
+}
+
+function formatNumarDots(n: number): string {
+  const s = String(Math.max(0, Math.trunc(n)));
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
 export type CerereAcreditareFormMode = "public" | "admin_single_structura";
@@ -70,6 +102,8 @@ type Props = {
   mode: CerereAcreditareFormMode;
   /** For admin_single_structura: required key like DB_ISU */
   fixedStructuraKey?: string;
+  /** When set, the form loads and updates an existing CereriAcreditare document instead of creating a new one. */
+  existingCerereId?: string;
   /** Optional prefill (applied when prefillKey changes) */
   prefill?: CerereAcreditarePrefill | null;
   prefillKey?: string | number;
@@ -81,6 +115,7 @@ type Props = {
 export function CerereAcreditareForm({
   mode,
   fixedStructuraKey,
+  existingCerereId,
   prefill,
   prefillKey,
   onSubmitted,
@@ -153,6 +188,17 @@ export function CerereAcreditareForm({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [successId, setSuccessId] = useState<string | null>(null);
+  const [loadedExistingId, setLoadedExistingId] = useState<string | null>(null);
+  const [existingDoc, setExistingDoc] = useState<any | null>(null);
+
+  // Admin: număr + dată acreditare (obligatorii pentru emitere certificat)
+  const [acrDateIso, setAcrDateIso] = useState<string>(todayYMD());
+  const [acrFixedNumar, setAcrFixedNumar] = useState<string>("");
+  const [acrNextNumar, setAcrNextNumar] = useState<number | null>(null);
+  const [acrNumarLoading, setAcrNumarLoading] = useState(false);
+  const [acrNumarNeedsInit, setAcrNumarNeedsInit] = useState(false);
+  const [acrMaxFromDocs, setAcrMaxFromDocs] = useState(0);
+  const [acrStartNumarText, setAcrStartNumarText] = useState("");
 
   // Apply fixed structura (admin)
   useEffect(() => {
@@ -161,12 +207,129 @@ export function CerereAcreditareForm({
     setSelectedStructKeys([fixedStructuraKey.toUpperCase().replace(":", "_")]);
   }, [isAdminSingle, fixedStructuraKey]);
 
+  // Load existing cerere (edit mode)
+  useEffect(() => {
+    if (!existingCerereId) return;
+    let alive = true;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "CereriAcreditare", existingCerereId));
+        if (!alive) return;
+        if (!snap.exists()) {
+          setSubmitError("Cererea selectată nu există sau nu poate fi citită.");
+          return;
+        }
+        const d = snap.data() as any;
+        setExistingDoc(d);
+        setLoadedExistingId(existingCerereId);
+
+        // Structuri (public only). Admin-single keeps fixed struct.
+        if (!isAdminSingle) {
+          const keys = Array.isArray(d?.structuraKeys) ? d.structuraKeys.map((x: any) => String(x).toUpperCase()) : [];
+          if (keys.length) setSelectedStructKeys(keys);
+        }
+
+        // Media
+        const tip = (d?.media?.tip || {}) as any;
+        setMediaTypes((prev) => ({ ...prev, ...tip }));
+        setMediaAltceva(String(d?.media?.tipAltceva || ""));
+        setInstitutieDenumire(String(d?.media?.denumire || ""));
+        setInstitutieCui(String(d?.media?.cui || ""));
+        setInstitutieAdresa(String(d?.media?.adresa || ""));
+        setInstitutieEmail(String(d?.media?.email || ""));
+        setInstitutieTelefonFix(String(d?.media?.telefon?.fix || ""));
+        setInstitutieTelefonFax(String(d?.media?.telefon?.fax || ""));
+        setInstitutieTelefonMobil(String(d?.media?.telefon?.mobil || ""));
+        setInstitutieWebsite(String(d?.media?.website || ""));
+
+        // Jurnalist
+        setNumePrenume(String(d?.jurnalist?.numePrenume || ""));
+        setDataNasterii(String(d?.jurnalist?.dataNasterii || "") || "");
+        setLocNastere(String(d?.jurnalist?.locNastere || ""));
+        setCetatenie(String(d?.jurnalist?.cetatenie || "Română"));
+        setTipDocIdentitate(String(d?.jurnalist?.documentIdentitate?.tip || "CI"));
+        setSerieNumarDoc(String(d?.jurnalist?.documentIdentitate?.serieNumar || ""));
+        setAdresaOptional(String(d?.jurnalist?.adresa || ""));
+        setNrLegitimatie(String(d?.jurnalist?.legitimatie?.numar || ""));
+        setDataExpirareLegit(String(d?.jurnalist?.legitimatie?.dataExpirare || "") || "");
+        const fn = (d?.jurnalist?.functie || {}) as any;
+        setFunctii((prev) => ({ ...prev, ...fn }));
+        setFunctieAltceva(String(fn?.altcevaText || ""));
+        setJurnalistEmail(String(d?.jurnalist?.email || ""));
+        setJurnalistTelefonFix(String(d?.jurnalist?.telefon?.fix || ""));
+        setJurnalistTelefonFax(String(d?.jurnalist?.telefon?.fax || ""));
+        setJurnalistTelefonMobil(String(d?.jurnalist?.telefon?.mobil || ""));
+
+        // GDPR (admin-single is implicit)
+        if (!isAdminSingle) setGdprAccepted(!!d?.consimtamant?.gdpr);
+
+        // Acreditare draft (admin)
+        if (isAdminSingle) {
+          const an = String(d?.acreditare?.numar || "").trim();
+          const ad = String(d?.acreditare?.data || "").trim();
+          if (an) setAcrFixedNumar(an);
+          if (ad) {
+            const m = ad.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (m) setAcrDateIso(`${m[3]}-${m[2]}-${m[1]}`);
+          }
+        }
+      } catch {
+        if (!alive) return;
+        setSubmitError("Nu am putut încărca cererea pentru editare.");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [db, existingCerereId, isAdminSingle]);
+
   // Admin: GDPR consent is handled by the institution (no user-facing consent UI here)
   useEffect(() => {
     if (!isAdminSingle) return;
     setGdprAccepted(true);
     setShowGdpr(false);
   }, [isAdminSingle]);
+
+  async function computeAcreditareNumarPreview() {
+    if (!isAdminSingle) return;
+    if (acrNumarLoading) return;
+    if (acrFixedNumar) return;
+    setAcrNumarLoading(true);
+    try {
+      const parts = fixedStructuraKey ? keyToParts(fixedStructuraKey.toUpperCase().replace(":", "_")) : null;
+      if (!parts?.judetId || !parts?.structuraId) {
+        setAcrNumarNeedsInit(true);
+        setAcrNextNumar(1);
+        return;
+      }
+      const settingsRef = doc(db, `Judete/${parts.judetId}/Structuri/${parts.structuraId}/Settings/general`);
+      const sSnap = await getDoc(settingsRef);
+      const lastFromSettings = typeof (sSnap.data() as any)?.acreditareLastNumar === "number" ? Number((sSnap.data() as any).acreditareLastNumar) : 0;
+
+      const acrColl = collection(doc(db, `Judete/${parts.judetId}/Structuri/${parts.structuraId}`), "Acreditari");
+      const snap = await getDocs(query(acrColl, orderBy("createdAt", "desc"), limit(50)));
+      let max = 0;
+      for (const d of snap.docs) {
+        const n = parseAcreditareNumar((d.data() as any)?.numar);
+        if (typeof n === "number" && Number.isFinite(n)) max = Math.max(max, n);
+      }
+      setAcrMaxFromDocs(max);
+      const base = Math.max(lastFromSettings || 0, max || 0);
+      setAcrNumarNeedsInit(base <= 0);
+      setAcrNextNumar(base + 1);
+    } catch {
+      setAcrMaxFromDocs(0);
+      setAcrNumarNeedsInit(true);
+      setAcrNextNumar(1);
+    } finally {
+      setAcrNumarLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    computeAcreditareNumarPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminSingle, fixedStructuraKey, loadedExistingId, acrFixedNumar]);
 
   // Load available structuri that have an owner doc (public only)
   useEffect(() => {
@@ -289,8 +452,34 @@ export function CerereAcreditareForm({
     if (legitimatieFiles.length === 0) return false;
     if (!isAdminSingle && !signatureBlob) return false;
     if (!isAdminSingle && !gdprAccepted) return false;
+    if (isAdminSingle) {
+      if (!acrDateIso) return false;
+      if (!acrFixedNumar) {
+        if (acrNumarNeedsInit) {
+          const start = parseAcreditareNumar(acrStartNumarText);
+          if (!start || start <= 0) return false;
+        } else {
+          if (!acrNextNumar) return false;
+        }
+      }
+    }
     return true;
-  }, [submitting, selectedStructKeys, institutieDenumire, numePrenume, nrLegitimatie, legitimatieFiles, signatureBlob, gdprAccepted, isAdminSingle]);
+  }, [
+    submitting,
+    selectedStructKeys,
+    institutieDenumire,
+    numePrenume,
+    nrLegitimatie,
+    legitimatieFiles,
+    signatureBlob,
+    gdprAccepted,
+    isAdminSingle,
+    acrDateIso,
+    acrFixedNumar,
+    acrNumarNeedsInit,
+    acrStartNumarText,
+    acrNextNumar,
+  ]);
 
   const onPickLegitimatie = (files: FileList | null) => {
     setSubmitError(null);
@@ -339,7 +528,12 @@ export function CerereAcreditareForm({
       }
 
       const statusByStructura: Record<string, any> = {};
-      for (const k of selectedStructKeys) statusByStructura[k] = { status: "pending" };
+      if (loadedExistingId && existingDoc?.statusByStructura && typeof existingDoc.statusByStructura === "object") {
+        Object.assign(statusByStructura, existingDoc.statusByStructura);
+      }
+      for (const k of selectedStructKeys) {
+        statusByStructura[k] = statusByStructura[k] || { status: "pending" };
+      }
 
       const structuriPayload = selectedStructuri.map((s) => ({
         judetId: s.judetId,
@@ -347,12 +541,10 @@ export function CerereAcreditareForm({
         display: s.label,
       }));
 
-      const payload: any = {
+      const basePayload: any = {
         structuri: structuriPayload,
         structuraKeys: selectedStructKeys,
         statusByStructura,
-        createdAt: serverTimestamp(),
-        submittedAt: serverTimestamp(),
         media: {
           tip: mediaTypes,
           tipAltceva: mediaAltceva.trim(),
@@ -380,13 +572,72 @@ export function CerereAcreditareForm({
           gdprVersion: "v1",
           gdprAcceptedAt: serverTimestamp(),
         },
-        attachments: null,
       };
 
-      const cereriRef = collection(db, "CereriAcreditare");
-      const created = await addDoc(cereriRef, payload);
+      if (isAdminSingle) {
+        const parts = fixedStructuraKey ? keyToParts(fixedStructuraKey.toUpperCase().replace(":", "_")) : null;
+        if (!parts?.judetId || !parts?.structuraId) throw new Error("Structura invalidă.");
 
-      const cerereId = created.id;
+        const settingsRef = doc(db, `Judete/${parts.judetId}/Structuri/${parts.structuraId}/Settings/general`);
+        let numarFinal = acrFixedNumar || String(existingDoc?.acreditare?.numar || "").trim();
+        if (!numarFinal) {
+          const allocated = await runTransaction(db, async (tx) => {
+            const sSnap = await tx.get(settingsRef);
+            const last = typeof (sSnap.data() as any)?.acreditareLastNumar === "number" ? Number((sSnap.data() as any).acreditareLastNumar) : 0;
+            let next: number;
+            if (last > 0) next = last + 1;
+            else if (acrMaxFromDocs > 0) next = acrMaxFromDocs + 1;
+            else {
+              const start = parseAcreditareNumar(acrStartNumarText);
+              if (!start || start <= 0) throw new Error("numar_start_required");
+              next = start;
+            }
+            tx.set(settingsRef, { acreditareLastNumar: next }, { merge: true });
+            return next;
+          });
+          numarFinal = formatNumarDots(allocated);
+          setAcrFixedNumar(numarFinal);
+          setAcrNextNumar(allocated + 1);
+          setAcrNumarNeedsInit(false);
+        }
+
+        basePayload.acreditare = {
+          numar: numarFinal,
+          data: ddmmyyyySlashFromIso(acrDateIso),
+        };
+      }
+
+      let cerereId = loadedExistingId || null;
+      if (cerereId) {
+        await updateDoc(doc(db, "CereriAcreditare", cerereId), {
+          ...basePayload,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        const cereriRef = collection(db, "CereriAcreditare");
+        const created = await addDoc(cereriRef, {
+          ...basePayload,
+          createdAt: serverTimestamp(),
+          submittedAt: serverTimestamp(),
+          attachments: null,
+        });
+        cerereId = created.id;
+      }
+
+      if (!cerereId) throw new Error("Nu am putut salva cererea.");
+
+      // Upload attachments only if user provided them (or if public requires signature)
+      const shouldUploadLegit = legitimatieFiles.length > 0;
+      const shouldUploadSig = !isAdminSingle && !!signatureBlob;
+      const shouldUploadAny = shouldUploadLegit || shouldUploadSig;
+
+      if (!shouldUploadAny) {
+        setSuccessId(cerereId);
+        setSubmitting(false);
+        onSubmitted?.(cerereId);
+        return;
+      }
+
       const legitItems: { path: string; name: string; contentType: string; size: number }[] = [];
       for (let i = 0; i < legitimatieFiles.length; i++) {
         const legit = legitimatieFiles[i]!;
@@ -402,8 +653,9 @@ export function CerereAcreditareForm({
       }
 
       const attachmentsUpdate: any = {
-        legitimatie: legitItems,
+        ...(existingDoc?.attachments && typeof existingDoc.attachments === "object" ? existingDoc.attachments : {}),
       };
+      if (legitItems.length) attachmentsUpdate.legitimatie = legitItems;
 
       if (!isAdminSingle) {
         const sigPath = `cereri-acreditare/${cerereId}/semnatura.png`;
@@ -425,7 +677,12 @@ export function CerereAcreditareForm({
       onSubmitted?.(cerereId);
     } catch (err: any) {
       setSubmitting(false);
-      setSubmitError(typeof err?.message === "string" ? err.message : "Eroare la trimiterea cererii.");
+      const msg = typeof err?.message === "string" ? err.message : "";
+      if (msg === "numar_start_required") {
+        setSubmitError("Introduceți numărul de start pentru prima acreditare (ex: 2.560.588).");
+      } else {
+        setSubmitError(typeof err?.message === "string" ? err.message : "Eroare la trimiterea cererii.");
+      }
     }
   }
 
@@ -491,6 +748,52 @@ export function CerereAcreditareForm({
           <div className="text-sm text-gray-700 mt-1">Cererea va fi salvată doar pentru structura curentă.</div>
           <div className="mt-3 inline-flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 text-sm">
             {fixedLabel || (selectedStructKeys[0] ? selectedStructKeys[0].replace("_", ":") : "-")}
+          </div>
+        </div>
+      )}
+
+      {isAdminSingle && (
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-6">
+          <div className="text-sm font-semibold text-gray-900">Acreditare (pentru certificatul PDF)</div>
+          <div className="text-xs text-gray-600 mt-1">Numărul este obligatoriu și se autoincrementează (+1). La prima acreditare se setează numărul de start.</div>
+
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Data acreditare *</label>
+              <input
+                type="date"
+                value={acrDateIso}
+                onChange={(e) => setAcrDateIso(e.target.value)}
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+              <div className="text-xs text-gray-500 mt-1">În certificat va apărea ca DD/MM/YYYY.</div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nr. acreditare *</label>
+              {acrFixedNumar ? (
+                <input value={acrFixedNumar} readOnly className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-gray-50 text-gray-900" />
+              ) : acrNumarNeedsInit ? (
+                <>
+                  <input
+                    value={acrStartNumarText}
+                    onChange={(e) => setAcrStartNumarText(e.target.value)}
+                    placeholder="Ex: 2.560.588"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                  <div className="text-xs text-gray-500 mt-1">Prima acreditare: introduceți numărul de start. Următoarele vor fi +1 automat.</div>
+                </>
+              ) : (
+                <>
+                  <input
+                    value={acrNextNumar ? formatNumarDots(acrNextNumar) : ""}
+                    readOnly
+                    placeholder={acrNumarLoading ? "Se calculează..." : "Se calculează..."}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-gray-50 text-gray-900"
+                  />
+                  <div className="text-xs text-gray-500 mt-1">Autoincrement (+1) față de ultimul număr emis pentru structura curentă.</div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

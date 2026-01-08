@@ -17,6 +17,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Pencil,
   Search,
   ThumbsDown,
   ThumbsUp,
@@ -284,6 +285,8 @@ export default function CereriAcreditareAdminPage() {
             const nume = String(r.data?.jurnalist?.numePrenume || "");
             const nrLegit = String(r.data?.jurnalist?.legitimatie?.numar || "");
             const institutie = String(r.data?.media?.denumire || "");
+            const nrAcreditare = String((r.data as any)?.acreditare?.numar || "").trim();
+            const dataAcreditare = String((r.data as any)?.acreditare?.data || "").trim();
             const createdAt = tsToLabel((r.data?.submittedAt as any) || (r.data?.createdAt as any));
             const legits = normalizeLegitimatieAttachments(r.data.attachments || null);
             const sigPath = (r.data.attachments as any)?.semnatura?.path as string | undefined;
@@ -306,6 +309,18 @@ export default function CereriAcreditareAdminPage() {
                       <span className="mx-2 text-gray-300">•</span>
                       <span className="text-gray-500">Instituție:</span> {institutie || "—"}
                     </div>
+                    {nrAcreditare ? (
+                      <div className="text-sm text-gray-700 mt-1">
+                        <span className="text-gray-500">Nr acreditare:</span>{" "}
+                        <span className="font-semibold">{nrAcreditare}</span>
+                        {dataAcreditare ? (
+                          <>
+                            <span className="mx-2 text-gray-300">•</span>
+                            <span className="text-gray-500">Data:</span> {dataAcreditare}
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="text-xs text-gray-500 mt-1">
                       ID: <span className="font-mono">{r.id}</span>
                       {createdAt ? <span className="ml-2">• {createdAt}</span> : null}
@@ -313,6 +328,14 @@ export default function CereriAcreditareAdminPage() {
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
+                    <Link
+                      href={`/acreditari/creaza?tab=cerere&cerereId=${encodeURIComponent(r.id)}`}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+                      title="Editează cererea în formularul complex"
+                    >
+                      <Pencil size={14} />
+                      Editează
+                    </Link>
                     <button
                       type="button"
                       onClick={() => downloadCererePdf(r.id, `cerere_${nume || r.id}`)}
