@@ -36,7 +36,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     settings = s.exists() ? s.data() : null;
   } catch {}
 
-  const origin = req.headers.get('origin') || `http://localhost:${process.env.PORT || 3000}`;
+  // IMPORTANT: on Vercel, `origin` header can be missing; never fall back to localhost.
+  const origin = new URL(req.url).origin;
 
   function toDDMMYYYYSlashes(str?: string): string {
     const s = String(str || "").trim();
@@ -56,7 +57,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     <AcreditarePdfDoc
       settings={{
         headerLines: (settings?.headerLines as string[]) || [],
-        logoUrlPublic: settings?.logoUrlPublic ? `${origin}${settings.logoUrlPublic}` : undefined,
+        logoUrlPublic: settings?.logoUrlPublic ? new URL(String(settings.logoUrlPublic), origin).toString() : undefined,
         unitLabel: settings?.unitLabel,
         city: settings?.city,
         phone: settings?.phone,

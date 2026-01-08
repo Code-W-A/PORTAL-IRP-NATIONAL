@@ -26,7 +26,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const origin = req.headers.get("origin") || `http://localhost:${process.env.PORT || 3000}`;
+    // IMPORTANT: on Vercel, `origin` header can be missing; never fall back to localhost.
+    const origin = new URL(req.url).origin;
     const submittedAt = (cerere as any).submittedAt || (cerere as any).createdAt;
 
     const DocPdf = (

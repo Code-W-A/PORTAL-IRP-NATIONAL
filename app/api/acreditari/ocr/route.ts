@@ -142,8 +142,13 @@ export async function POST(req: Request) {
     });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
-      console.error("[OCR] OpenAI request failed", { requestId, status: res.status, detail: t.slice(0, 500) });
-      return NextResponse.json({ error: "OpenAI request failed", detail: t.slice(0, 500) }, { status: 500 });
+      const retryAfter = res.headers.get("retry-after") || "";
+      console.error("[OCR] OpenAI request failed", { requestId, status: res.status, retryAfter: retryAfter || null, detail: t.slice(0, 500) });
+      // Preserve upstream status (esp. 429 rate_limit_exceeded) so UI can show "try again later"
+      return NextResponse.json(
+        { error: "OpenAI request failed", requestId, status: res.status, retryAfter: retryAfter || null, detail: t.slice(0, 500) },
+        { status: res.status === 429 ? 429 : 500 }
+      );
     }
     const data = (await res.json()) as any;
     const content = String(data?.choices?.[0]?.message?.content || "").trim();

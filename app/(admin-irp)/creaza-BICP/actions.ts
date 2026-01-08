@@ -2,7 +2,11 @@
 import { revalidatePath } from "next/cache";
 
 export async function generateDocxFromTemplate(input: { title: string; content: string }) {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ""}/api/generate/docx`, {
+  // Avoid calling localhost in production (Vercel). Prefer explicit base URL, then VERCEL_URL, then localhost for dev.
+  const baseUrl =
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+  const res = await fetch(`${baseUrl}/api/generate/docx`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
