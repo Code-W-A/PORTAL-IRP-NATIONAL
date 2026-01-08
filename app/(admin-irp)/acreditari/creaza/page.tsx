@@ -86,7 +86,6 @@ function SimpleForm({
   const [numarLoading, setNumarLoading] = useState(false);
   const [maxFromDocs, setMaxFromDocs] = useState(0);
   const [numarText, setNumarText] = useState("");
-  const [minAllowedNumar, setMinAllowedNumar] = useState<number>(1);
 
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -109,22 +108,19 @@ function SimpleForm({
         if (typeof n === "number" && Number.isFinite(n)) max = Math.max(max, n);
       }
       setMaxFromDocs(max);
-      const base = Math.max(lastFromSettings || 0, max || 0);
-      const suggested = base > 0 ? base + 1 : 0;
-      setMinAllowedNumar(base > 0 ? base + 1 : 1);
-      setNextNumar(base > 0 ? base + 1 : null);
-      // prefill editable input if empty or if it matched previous suggested
+      const base = lastFromSettings > 0 ? lastFromSettings : (max || 0);
+      const suggested = base > 0 ? base + 1 : 1;
+      setNextNumar(suggested);
+      // prefill editable input if empty
       setNumarText((prev) => {
         const prevN = parseAcreditareNumar(prev);
-        if (!prevN || prevN < (base > 0 ? base + 1 : 1)) return suggested ? String(suggested) : "";
+        if (!prevN) return String(suggested);
         return prev;
       });
     } catch {
       // fallback
       setMaxFromDocs(0);
-      setMinAllowedNumar(1);
       setNextNumar(null);
-      if (!numarText) setNumarText("");
     } finally {
       setNumarLoading(false);
     }
@@ -159,10 +155,6 @@ function SimpleForm({
       setMsg("Completează toate câmpurile.");
       return;
     }
-    if (chosenNumar < minAllowedNumar) {
-      setMsg(`Nr. trebuie să fie cel puțin ${minAllowedNumar} (autoincrement).`);
-      return;
-    }
 
     const { judetId, structuraId } = getTenantContext();
     const currentKey = `${String(judetId || "").toUpperCase()}_${String(structuraId || "").toUpperCase()}`;
@@ -174,16 +166,14 @@ function SimpleForm({
       // Allocate next number atomically (Settings/general.acreditareLastNumar)
       const settingsRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
       const allocated = await runTransaction(db, async (tx) => {
-        const sSnap = await tx.get(settingsRef);
-        const last = typeof (sSnap.data() as any)?.acreditareLastNumar === "number" ? Number((sSnap.data() as any).acreditareLastNumar) : 0;
-        const base = Math.max(last || 0, maxFromDocs || 0);
-        const minAllowed = base > 0 ? base + 1 : 1;
-        if (chosenNumar < minAllowed) throw new Error("numar_too_small");
+        await tx.get(settingsRef);
+        // user-controlled numbering: set counter to whatever is in the input (can go up/down)
         tx.set(settingsRef, { acreditareLastNumar: chosenNumar }, { merge: true });
         return chosenNumar;
       });
       setNextNumar(allocated + 1);
       const numarFormatted = String(allocated);
+      setNumarText(String(allocated + 1));
 
       // 1) Create CereriAcreditare in the SAME schema as complex form (minimal fields)
       const cererePayload: any = {
@@ -225,11 +215,7 @@ function SimpleForm({
       setLastCerereId(cerereId);
       setMsg("Cerere salvată. Status: În așteptare. O poți aproba/respinge din „Cereri acreditare”.");
     } catch (e: any) {
-      if (String(e?.message || "") === "numar_too_small") {
-        setMsg(`Nr. trebuie să fie cel puțin ${minAllowedNumar} (autoincrement).`);
-      } else {
-        setMsg("Nu am putut salva cererea. Încearcă din nou.");
-      }
+      setMsg("Nu am putut salva cererea. Încearcă din nou.");
     } finally {
       setSaving(false);
     }
@@ -314,7 +300,7 @@ function SimpleForm({
               className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
             <div className="text-xs text-gray-500 mt-1">
-              Autoincrement: minim <span className="font-semibold">{minAllowedNumar}</span>. Introdu doar cifre (fără puncte). În PDF apare identic (fără puncte).
+              Introdu doar cifre (fără puncte). După fiecare salvare, numărul din input va fi incrementat automat cu +1.
             </div>
           </div>
         </div>
@@ -324,7 +310,7 @@ function SimpleForm({
         <div className="mt-6 flex items-center gap-2 flex-wrap">
           <button
             type="submit"
-            disabled={saving || numarLoading || !nextNumar}
+            disabled={saving || numarLoading || !parseAcreditareNumar(numarText)}
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {saving ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
@@ -391,8 +377,8 @@ export default function CreeazaAcreditarePage() {
       if (cerereId) {
         setEditCerereId(cerereId);
         setActiveTab("cerere");
-      }
-    } catch {}
+        }
+      } catch {}
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
