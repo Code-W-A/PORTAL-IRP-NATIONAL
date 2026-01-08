@@ -240,6 +240,27 @@ export default function CereriAcreditareAdminPage() {
     }
   }
 
+  async function resendApprovalEmail(cerereId: string) {
+    const key = `resend:${cerereId}`;
+    setDownloadingKey(key);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Trebuie să fii autentificat.");
+      const res = await fetch(`/api/acreditari/cereri/${encodeURIComponent(cerereId)}/resend-email`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "resend_failed");
+      const to = String(data?.email?.to || "").trim();
+      showToast(`Email retransmis cu succes către ${to || "jurnalist"}.`, "success");
+    } catch (e: any) {
+      showToast(typeof e?.message === "string" ? e.message : "Nu am putut retrimite emailul.", "error");
+    } finally {
+      setDownloadingKey(null);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {toast && (
@@ -410,6 +431,34 @@ export default function CereriAcreditareAdminPage() {
                     >
                       {downloadingKey === `pdf:${r.id}` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
                       PDF cerere
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const year = new Date().getFullYear();
+                        const ok = confirm(
+                          [
+                            `Retrimiți emailul de aprobare pentru ${nume || "acest jurnalist"}?`,
+                            "",
+                            emailJ
+                              ? `Se va transmite email cu aprobarea pe anul ${year} a acreditării către: ${emailJ}`
+                              : `Nu există email în cerere. Nu se poate retrimite email.`,
+                          ].join("\n")
+                        );
+                        if (!ok) return;
+                        if (!emailJ) {
+                          showToast("Nu există email în cerere.", "error");
+                          return;
+                        }
+                        resendApprovalEmail(r.id);
+                      }}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+                      disabled={st !== "approved" || !emailJ || downloadingKey === `resend:${r.id}`}
+                      title={st !== "approved" ? "Disponibil doar după aprobare" : !emailJ ? "Lipsește email în cerere" : "Retrimite emailul de aprobare (cu link de descărcare)"}
+                    >
+                      {downloadingKey === `resend:${r.id}` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                      Retrimite email
                     </button>
 
                     <button

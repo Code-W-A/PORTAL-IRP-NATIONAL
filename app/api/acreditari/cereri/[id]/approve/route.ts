@@ -128,6 +128,18 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const acreditareId = await firestoreCreateDoc(`Judete/${judetId}/Structuri/${structuraId}/Acreditari`, idToken, acrDoc);
     log("acreditare_created", { acreditareId, numar: acrDoc.numar, data: acrDoc.data });
 
+    // Backlink for later actions (ex: resend email)
+    try {
+      const existingSource = (cerere as any)?.source && typeof (cerere as any).source === "object" ? (cerere as any).source : {};
+      await firestorePatchDoc(`CereriAcreditare/${id}`, idToken, {
+        source: { ...existingSource, acreditareId },
+        updatedAt: { __timestamp: nowIso },
+      });
+      log("cerere_backlink_set", { acreditareId });
+    } catch (e: any) {
+      logErr("cerere_backlink_failed", { message: String(e?.message || e || "error") });
+    }
+
     // Email (optional)
     let emailSent = false;
     let emailAttachPdf = false;
