@@ -7,14 +7,36 @@ type SendMailArgs = {
   subject: string;
   text: string;
   replyTo?: string;
+  attachments?: Array<{
+    filename: string;
+    contentType: string;
+    content: Buffer;
+  }>;
 };
 
 function b64(s: string) {
   return Buffer.from(s, "utf8").toString("base64");
 }
 
+function b64Bytes(buf: Buffer) {
+  return buf.toString("base64");
+}
+
 function normalizeCrlf(s: string) {
   return s.replace(/\r?\n/g, "\r\n");
+}
+
+function dotStuff(message: string) {
+  // SMTP "dot transparency": any line starting with "." must be doubled.
+  // Also handle message that begins with a dot.
+  if (message.startsWith(".")) message = "." + message;
+  return message.replace(/\r\n\./g, "\r\n..");
+}
+
+function foldBase64(b64str: string, lineLen = 76) {
+  const out: string[] = [];
+  for (let i = 0; i < b64str.length; i += lineLen) out.push(b64str.slice(i, i + lineLen));
+  return out.join("\r\n");
 }
 
 async function smtpDialogue(socket: tls.TLSSocket, cmd: string) {
@@ -68,7 +90,7 @@ function readResponse(socket: tls.TLSSocket): Promise<{ code: number; lines: str
 }
 
 export async function sendMailGmailSmtp(args: SendMailArgs): Promise<void> {
-  const { smtpUser, smtpPass, to, subject, text, replyTo } = args;
+  const { smtpUser, smtpPass, to, subject, text, replyTo, attachments } = args;
 
   const socket = tls.connect({
     host: "smtp.gmail.com",
@@ -107,12 +129,43 @@ export async function sendMailGmailSmtp(args: SendMailArgs): Promise<void> {
   headers.push(`To: <${to}>`);
   headers.push(`Subject: ${subject}`);
   headers.push("MIME-Version: 1.0");
-  headers.push("Content-Type: text/plain; charset=utf-8");
-  headers.push("Content-Transfer-Encoding: 8bit");
   if (replyTo) headers.push(`Reply-To: ${replyTo}`);
 
-  const message = normalizeCrlf(headers.join("\r\n") + "\r\n\r\n" + text + "\r\n");
-  socket.write(message);
+  const atts = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
+  let message = "";
+  if (atts.length === 0) {
+    headers.push("Content-Type: text/plain; charset=utf-8");
+    headers.push("Content-Transfer-Encoding: 8bit");
+    message = normalizeCrlf(headers.join("\r\n") + "\r\n\r\n" + text + "\r\n");
+  } else {
+    const boundary = `----portalirp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+    const parts: string[] = [];
+
+    // Text part
+    parts.push(`--${boundary}`);
+    parts.push("Content-Type: text/plain; charset=utf-8");
+    parts.push("Content-Transfer-Encoding: 8bit");
+    parts.push("");
+    parts.push(text);
+
+    // Attachments
+    for (const a of atts) {
+      const encoded = foldBase64(b64Bytes(a.content));
+      parts.push(`--${boundary}`);
+      parts.push(`Content-Type: ${a.contentType}; name="${a.filename}"`);
+      parts.push("Content-Transfer-Encoding: base64");
+      parts.push(`Content-Disposition: attachment; filename="${a.filename}"`);
+      parts.push("");
+      parts.push(encoded);
+    }
+
+    parts.push(`--${boundary}--`);
+    parts.push("");
+    message = normalizeCrlf(headers.join("\r\n") + "\r\n\r\n" + parts.join("\r\n"));
+  }
+
+  socket.write(dotStuff(message));
   socket.write("\r\n.\r\n");
 
   const dataOk = await readResponse(socket);

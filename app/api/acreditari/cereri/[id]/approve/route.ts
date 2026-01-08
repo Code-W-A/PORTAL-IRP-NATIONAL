@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import React from "react";
+import { pdf } from "@react-pdf/renderer";
 
 import { requireBearerToken, lookupUserFromIdToken } from "@/lib/server/auth";
 import {
@@ -8,6 +10,9 @@ import {
 } from "@/lib/server/firestoreRest";
 import { buildStructuraKey, type CerereAcreditare } from "@/lib/acreditari";
 import { sendMailGmailSmtp } from "@/lib/server/smtp";
+import { AcreditarePdfDoc } from "@/app/(admin-irp)/components/pdf/AcreditarePdf";
+
+export const runtime = "nodejs";
 
 function ddmmyyyy(d = new Date()) {
   const dd = String(d.getDate()).padStart(2, "0");
@@ -22,6 +27,14 @@ function normalizeLegitId(s: string) {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
+function safeFileName(name: string): string {
+  return String(name || "acreditare")
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/[^\w.-]+/g, "_")
     .slice(0, 80);
 }
 
@@ -117,36 +130,110 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     log("acreditare_created", { acreditareId, numar: acrDoc.numar, data: acrDoc.data });
 
     // Email (optional)
+    let emailSent = false;
+    let emailAttachPdf = false;
+    let emailSkipReason: "missing_recipient" | "missing_smtp" | "send_failed" | "not_attempted" | null = null;
     const to = String(jurnalist?.email || "").trim();
     if (to) {
-      const gen = await firestoreGetDocAsJson<{ email?: string }>(`Judete/${judetId}/Structuri/${structuraId}/Settings/general`, idToken);
+      const gen = await firestoreGetDocAsJson<any>(`Judete/${judetId}/Structuri/${structuraId}/Settings/general`, idToken).catch(() => null);
       const replyTo = String(gen?.email || "").trim() || undefined;
       const smtpUser = process.env.SMTP_USER || "";
       const smtpPass = process.env.SMTP_PASS || "";
       if (smtpUser && smtpPass) {
         const structLabel = `${structuraId} ${judetId}`;
-        log("email_attempt", { to, replyTo: replyTo || null, smtpUser });
+        const origin = new URL(req.url).origin;
+        const pdfFileName = `${safeFileName(`acreditare_${String(jurnalist?.numePrenume || "")}`)}_fara_semnaturi.pdf`;
+        let pdfBuf: Buffer | null = null;
+
+        // Generate accreditation PDF (public variant = without signatures) and attach to email
+        try {
+          log("pdf_attach_generate_start", { filename: pdfFileName });
+          const DocPdf = React.createElement(AcreditarePdfDoc as any, {
+            settings: {
+              headerLines: (gen?.headerLines as string[]) || [],
+              logoUrlPublic: gen?.logoUrlPublic ? new URL(String(gen.logoUrlPublic), origin).toString() : undefined,
+              unitLabel: gen?.unitLabel,
+              city: gen?.city,
+              phone: gen?.phone,
+              footerLines: gen?.footerLines || [],
+              acreditareSemnatarStanga: gen?.acreditareSemnatarStanga,
+              acreditareSemnatarDreapta: gen?.acreditareSemnatarDreapta,
+              assetBaseUrl: origin,
+            },
+            variant: "public",
+            data: {
+              numar: String(acrDoc.numar || ""),
+              dateLabel: String(acrDoc.data || ""),
+              nume: String(jurnalist?.numePrenume || ""),
+              legit: nrLegit,
+              redactie: String(media?.denumire || ""),
+            },
+          });
+          const inst: any = pdf(DocPdf as any);
+          if (typeof inst?.toBuffer === "function") {
+            pdfBuf = await inst.toBuffer();
+          } else {
+            const blob = await inst.toBlob();
+            const ab = await blob.arrayBuffer();
+            pdfBuf = Buffer.from(ab);
+          }
+          log("pdf_attach_generate_success", { bytes: pdfBuf?.byteLength || 0 });
+        } catch (e: any) {
+          logErr("pdf_attach_generate_failed", { message: String(e?.message || e || "error") });
+          pdfBuf = null;
+        }
+
+        emailAttachPdf = !!pdfBuf;
+        log("email_attempt", { to, replyTo: replyTo || null, smtpUser, attachPdf: emailAttachPdf });
         try {
           await sendMailGmailSmtp({
             smtpUser,
             smtpPass,
             to,
             subject: `Acreditare acceptată ${structLabel}`,
-            text: `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}`,
+            text: `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}.\n\nÎn atașament găsiți acreditarea (fără semnături).`,
             replyTo,
+            attachments: pdfBuf
+              ? [
+                  {
+                    filename: pdfFileName,
+                    contentType: "application/pdf",
+                    content: pdfBuf,
+                  },
+                ]
+              : undefined,
           });
           log("email_success", { to });
+          emailSent = true;
+          emailSkipReason = null;
         } catch (e: any) {
           logErr("email_failed", { to, message: String(e?.message || e || "error") });
+          emailSent = false;
+          emailSkipReason = "send_failed";
         }
       } else {
         log("email_skip_missing_smtp", { to, hasUser: !!smtpUser, hasPass: !!smtpPass });
+        emailSent = false;
+        emailSkipReason = "missing_smtp";
       }
     } else {
       log("email_skip_missing_recipient");
+      emailSent = false;
+      emailSkipReason = "missing_recipient";
     }
 
-    return NextResponse.json({ ok: true, acreditareId, requestId });
+    if (!emailSkipReason && !emailSent) emailSkipReason = "not_attempted";
+    return NextResponse.json({
+      ok: true,
+      acreditareId,
+      requestId,
+      email: {
+        to: to || null,
+        sent: emailSent,
+        attachPdf: emailAttachPdf,
+        skipReason: emailSkipReason,
+      },
+    });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "error";
     logErr("failed", { message: msg });

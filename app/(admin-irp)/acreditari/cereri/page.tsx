@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   getDocs,
@@ -85,6 +85,14 @@ export default function CereriAcreditareAdminPage() {
 
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [actingId, setActingId] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<{ type: "success" | "info" | "error"; message: string } | null>(null);
+  const toastTimer = useRef<any>(null);
+  function showToast(message: string, type: "success" | "info" | "error" = "success") {
+    setToast({ type, message });
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 4500);
+  }
 
   async function load() {
     setLoading(true);
@@ -173,6 +181,34 @@ export default function CereriAcreditareAdminPage() {
     }
   }
 
+  async function downloadAcreditarePdfFromCerere(cerereId: string, nameHint: string, variant: "signed" | "public") {
+    const key = `acrpdf:${cerereId}:${variant}`;
+    setDownloadingKey(key);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Trebuie să fii autentificat.");
+      const url = `/api/acreditari/cereri/${encodeURIComponent(cerereId)}/acreditare-pdf${variant === "public" ? "?variant=public" : ""}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("pdf_failed");
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      const suffix = variant === "public" ? "_fara_semnaturi" : "_cu_semnaturi";
+      a.download = `${safeFileName(nameHint)}${suffix}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
+    } catch {
+      alert("Nu am putut descărca PDF-ul acreditării. Încearcă din nou.");
+    } finally {
+      setDownloadingKey(null);
+    }
+  }
+
   async function callAction(cerereId: string, action: "approve" | "reject") {
     if (actingId) return;
     setActingId(cerereId);
@@ -192,6 +228,10 @@ export default function CereriAcreditareAdminPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "action_failed");
+      if (action === "approve" && data?.email?.sent) {
+        const to = String(data?.email?.to || "").trim();
+        showToast(`Email transmis cu succes către ${to || "jurnalist"}.`, "success");
+      }
       await load();
     } catch (e: any) {
       alert(typeof e?.message === "string" ? e.message : "Acțiune eșuată.");
@@ -202,6 +242,30 @@ export default function CereriAcreditareAdminPage() {
 
   return (
     <div className="space-y-6">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50">
+          <div
+            className={`rounded-xl border shadow-lg px-4 py-3 text-sm max-w-sm ${
+              toast.type === "success"
+                ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+                : toast.type === "error"
+                  ? "bg-red-50 border-red-200 text-red-900"
+                  : "bg-blue-50 border-blue-200 text-blue-900"
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className="flex-1">{toast.message}</div>
+              <button
+                type="button"
+                onClick={() => setToast(null)}
+                className="text-xs px-2 py-1 rounded-lg hover:bg-white/50 border border-transparent hover:border-current/10"
+              >
+                Închide
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <div className="text-2xl font-semibold tracking-tight text-gray-900 inline-flex items-center gap-2">
@@ -285,6 +349,7 @@ export default function CereriAcreditareAdminPage() {
             const nume = String(r.data?.jurnalist?.numePrenume || "");
             const nrLegit = String(r.data?.jurnalist?.legitimatie?.numar || "");
             const institutie = String(r.data?.media?.denumire || "");
+            const emailJ = String((r.data as any)?.jurnalist?.email || "").trim();
             const nrAcreditare = String((r.data as any)?.acreditare?.numar || "").trim();
             const dataAcreditare = String((r.data as any)?.acreditare?.data || "").trim();
             const createdAt = tsToLabel((r.data?.submittedAt as any) || (r.data?.createdAt as any));
@@ -347,6 +412,28 @@ export default function CereriAcreditareAdminPage() {
                       PDF cerere
                     </button>
 
+                    <button
+                      type="button"
+                      onClick={() => downloadAcreditarePdfFromCerere(r.id, `acreditare_${nume || r.id}`, "signed")}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+                      disabled={!nrAcreditare || downloadingKey === `acrpdf:${r.id}:signed`}
+                      title={nrAcreditare ? "Descarcă PDF acreditare (cu semnături) - disponibil și înainte de aprobare" : "Completează Nr acreditare pentru a putea genera PDF-ul"}
+                    >
+                      {downloadingKey === `acrpdf:${r.id}:signed` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                      Acreditare PDF (cu semnături)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => downloadAcreditarePdfFromCerere(r.id, `acreditare_${nume || r.id}`, "public")}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+                      disabled={!nrAcreditare || downloadingKey === `acrpdf:${r.id}:public`}
+                      title={nrAcreditare ? "Descarcă PDF acreditare (fără semnături) - disponibil și înainte de aprobare" : "Completează Nr acreditare pentru a putea genera PDF-ul"}
+                    >
+                      {downloadingKey === `acrpdf:${r.id}:public` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
+                      Acreditare PDF (fără semnături)
+                    </button>
+
                     <div className="flex items-center gap-2 flex-wrap">
                       {legits.length > 0 ? (
                         legits.map((f, idx) => (
@@ -387,7 +474,17 @@ export default function CereriAcreditareAdminPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            const ok = confirm(`Aprobi cererea pentru ${nume || "acest jurnalist"}?`);
+                            const year = new Date().getFullYear();
+                            const ok = confirm(
+                              [
+                                `Aprobi cererea pentru ${nume || "acest jurnalist"}?`,
+                                "",
+                                emailJ
+                                  ? `Se va transmite email cu aprobarea pe anul ${year} a acreditării către: ${emailJ}`
+                                  : `Nu există email în cerere. NU se va transmite email cu aprobarea pe anul ${year}.`,
+                                "Emailul include acreditarea PDF (fără semnături).",
+                              ].join("\n")
+                            );
                             if (!ok) return;
                             callAction(r.id, "approve");
                           }}
