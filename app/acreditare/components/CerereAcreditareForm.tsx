@@ -66,6 +66,10 @@ function formatNumarDots(n: number): string {
   return s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
+function digitsOnly(v: any): string {
+  return String(v || "").replace(/\D+/g, "");
+}
+
 export type CerereAcreditareFormMode = "public" | "admin_single_structura";
 
 export type CerereAcreditarePrefill = {
@@ -196,6 +200,7 @@ export function CerereAcreditareForm({
   const [acrDateIso, setAcrDateIso] = useState<string>(todayYMD());
   const [acrFixedNumar, setAcrFixedNumar] = useState<string>("");
   const [acrManualEdit, setAcrManualEdit] = useState(false);
+  const [acrManualDigits, setAcrManualDigits] = useState<string>("");
   const [acrNextNumar, setAcrNextNumar] = useState<number | null>(null);
   const [acrNumarLoading, setAcrNumarLoading] = useState(false);
   const [acrNumarNeedsInit, setAcrNumarNeedsInit] = useState(false);
@@ -271,6 +276,7 @@ export function CerereAcreditareForm({
           const an = String(d?.acreditare?.numar || "").trim();
           const ad = String(d?.acreditare?.data || "").trim();
           if (an) setAcrFixedNumar(an);
+          if (an) setAcrManualDigits(digitsOnly(an));
           if (ad) {
             const m = ad.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
             if (m) setAcrDateIso(`${m[3]}-${m[2]}-${m[1]}`);
@@ -458,7 +464,7 @@ export function CerereAcreditareForm({
     if (isAdminSingle) {
       if (!acrDateIso) return false;
       if (acrManualEdit) {
-        const n = parseAcreditareNumar(acrFixedNumar);
+        const n = parseAcreditareNumar(acrManualDigits);
         if (!n || n <= 0) return false;
       } else if (!acrFixedNumar) {
         if (acrNumarNeedsInit) {
@@ -483,6 +489,7 @@ export function CerereAcreditareForm({
     acrDateIso,
     acrFixedNumar,
     acrManualEdit,
+    acrManualDigits,
     acrNumarNeedsInit,
     acrStartNumarText,
     acrNextNumar,
@@ -589,7 +596,7 @@ export function CerereAcreditareForm({
         const settingsRef = doc(db, `Judete/${parts.judetId}/Structuri/${parts.structuraId}/Settings/general`);
         let numarFinal = acrFixedNumar || String(existingDoc?.acreditare?.numar || "").trim();
         if (acrManualEdit) {
-          const manual = parseAcreditareNumar(numarFinal);
+          const manual = parseAcreditareNumar(acrManualDigits);
           if (!manual || manual <= 0) throw new Error("numar_invalid");
           // Ensure counter >= manual value to avoid future collisions
           await runTransaction(db, async (tx) => {
@@ -799,11 +806,14 @@ export function CerereAcreditareForm({
                 <button
                   type="button"
                   onClick={() => {
-                    setAcrManualEdit((v) => !v);
-                    // if enabling manual edit and we don't have a value yet, prefill with preview
-                    if (!acrManualEdit && !acrFixedNumar && acrNextNumar) {
-                      setAcrFixedNumar(formatNumarDots(acrNextNumar));
-                    }
+                    setAcrManualEdit((v) => {
+                      const next = !v;
+                      if (next) {
+                        const seed = digitsOnly(acrFixedNumar) || (acrNextNumar ? String(acrNextNumar) : "") || digitsOnly(existingDoc?.acreditare?.numar);
+                        setAcrManualDigits(seed);
+                      }
+                      return next;
+                    });
                   }}
                   className="text-xs px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
                   title="Permite modificarea manuală a numărului"
@@ -815,13 +825,13 @@ export function CerereAcreditareForm({
               {acrManualEdit ? (
                 <>
                   <input
-                    value={acrFixedNumar}
-                    onChange={(e) => setAcrFixedNumar(e.target.value)}
-                    placeholder="Ex: 2.560.588"
+                    value={acrManualDigits}
+                    onChange={(e) => setAcrManualDigits(digitsOnly(e.target.value))}
+                    placeholder="Ex: 2560588"
                     className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                   <div className="text-xs text-gray-500 mt-1">
-                    Poți modifica numărul. La salvare, contorul se aliniază automat ca să nu apară dubluri.
+                    Introdu doar cifre. În PDF numărul va apărea formatat automat ca x.xxx.xxx.
                   </div>
                 </>
               ) : acrFixedNumar ? (
