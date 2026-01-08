@@ -164,7 +164,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
             subject: `Acreditare acceptată ${structLabel}`,
             text:
               `Acreditarea dvs pe anul ${new Date().getFullYear()} a fost acceptată la ${structLabel}.\n\n` +
-              `Descarcă acreditarea:\n${downloadUrl}\n`,
+              `Descarcă acreditarea:\n${downloadUrl}\n` +
+              `Cu stimă,\n` +
+              `COMPARTIMENT INFORMARE RELAȚII PUBLICE`,
             replyTo,
           });
           log("email_success", { to });
