@@ -195,6 +195,7 @@ export function CerereAcreditareForm({
   // Admin: număr + dată acreditare (obligatorii pentru emitere certificat)
   const [acrDateIso, setAcrDateIso] = useState<string>(todayYMD());
   const [acrFixedNumar, setAcrFixedNumar] = useState<string>("");
+  const [acrManualEdit, setAcrManualEdit] = useState(false);
   const [acrNextNumar, setAcrNextNumar] = useState<number | null>(null);
   const [acrNumarLoading, setAcrNumarLoading] = useState(false);
   const [acrNumarNeedsInit, setAcrNumarNeedsInit] = useState(false);
@@ -456,7 +457,10 @@ export function CerereAcreditareForm({
     if (!isAdminSingle && !gdprAccepted) return false;
     if (isAdminSingle) {
       if (!acrDateIso) return false;
-      if (!acrFixedNumar) {
+      if (acrManualEdit) {
+        const n = parseAcreditareNumar(acrFixedNumar);
+        if (!n || n <= 0) return false;
+      } else if (!acrFixedNumar) {
         if (acrNumarNeedsInit) {
           const start = parseAcreditareNumar(acrStartNumarText);
           if (!start || start <= 0) return false;
@@ -478,6 +482,7 @@ export function CerereAcreditareForm({
     isAdminSingle,
     acrDateIso,
     acrFixedNumar,
+    acrManualEdit,
     acrNumarNeedsInit,
     acrStartNumarText,
     acrNextNumar,
@@ -583,6 +588,21 @@ export function CerereAcreditareForm({
 
         const settingsRef = doc(db, `Judete/${parts.judetId}/Structuri/${parts.structuraId}/Settings/general`);
         let numarFinal = acrFixedNumar || String(existingDoc?.acreditare?.numar || "").trim();
+        if (acrManualEdit) {
+          const manual = parseAcreditareNumar(numarFinal);
+          if (!manual || manual <= 0) throw new Error("numar_invalid");
+          // Ensure counter >= manual value to avoid future collisions
+          await runTransaction(db, async (tx) => {
+            const sSnap = await tx.get(settingsRef);
+            const last = typeof (sSnap.data() as any)?.acreditareLastNumar === "number" ? Number((sSnap.data() as any).acreditareLastNumar) : 0;
+            const nextLast = Math.max(last || 0, acrMaxFromDocs || 0, manual);
+            tx.set(settingsRef, { acreditareLastNumar: nextLast }, { merge: true });
+          });
+          // normalize format
+          numarFinal = formatNumarDots(manual);
+          setAcrFixedNumar(numarFinal);
+          setAcrNumarNeedsInit(false);
+        }
         if (!numarFinal) {
           const allocated = await runTransaction(db, async (tx) => {
             const sSnap = await tx.get(settingsRef);
@@ -683,6 +703,8 @@ export function CerereAcreditareForm({
       const msg = typeof err?.message === "string" ? err.message : "";
       if (msg === "numar_start_required") {
         setSubmitError("Introduceți numărul de start pentru prima acreditare (ex: 2.560.588).");
+      } else if (msg === "numar_invalid") {
+        setSubmitError("Nr. acreditare invalid. Folosiți doar cifre (ex: 2.560.588).");
       } else {
         setSubmitError(typeof err?.message === "string" ? err.message : "Eroare la trimiterea cererii.");
       }
@@ -772,8 +794,37 @@ export function CerereAcreditareForm({
               <div className="text-xs text-gray-500 mt-1">În certificat va apărea ca DD/MM/YYYY.</div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nr. acreditare *</label>
-              {acrFixedNumar ? (
+              <div className="flex items-center justify-between gap-3">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nr. acreditare *</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAcrManualEdit((v) => !v);
+                    // if enabling manual edit and we don't have a value yet, prefill with preview
+                    if (!acrManualEdit && !acrFixedNumar && acrNextNumar) {
+                      setAcrFixedNumar(formatNumarDots(acrNextNumar));
+                    }
+                  }}
+                  className="text-xs px-2 py-1 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700"
+                  title="Permite modificarea manuală a numărului"
+                >
+                  {acrManualEdit ? "Autoincrement" : "Editează manual"}
+                </button>
+              </div>
+
+              {acrManualEdit ? (
+                <>
+                  <input
+                    value={acrFixedNumar}
+                    onChange={(e) => setAcrFixedNumar(e.target.value)}
+                    placeholder="Ex: 2.560.588"
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                  <div className="text-xs text-gray-500 mt-1">
+                    Poți modifica numărul. La salvare, contorul se aliniază automat ca să nu apară dubluri.
+                  </div>
+                </>
+              ) : acrFixedNumar ? (
                 <input value={acrFixedNumar} readOnly className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-gray-50 text-gray-900" />
               ) : acrNumarNeedsInit ? (
                 <>
