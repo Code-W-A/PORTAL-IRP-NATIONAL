@@ -1,13 +1,19 @@
 import React from "react";
 import { Document, Page, Text, View, Image, StyleSheet, Font } from "@react-pdf/renderer";
 
+// Prevent awkward word splitting (hyphenation) in Romanian headers/text.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (Font as any).registerHyphenationCallback?.((word: string) => [word]);
+} catch {}
+
 const styles = StyleSheet.create({
   // Align with BICP PDFs (margins + footer spacing)
-  page: { padding: 72, paddingTop: 54, paddingBottom: 110 },
+  page: { padding: 78, paddingTop: 54, paddingBottom: 110 },
   headerRow: { flexDirection: "row", alignItems: "flex-start" },
-  logo: { width: 92, height: 92, marginRight: 14 },
+  logo: { width: 84, height: 84, marginRight: 12 },
   headerCol: { flex: 1, alignItems: "center" },
-  headerLine: { fontSize: 12, marginVertical: 1.5, textAlign: "center", fontWeight: 700 },
+  headerLine: { fontSize: 11.5, marginVertical: 1.5, textAlign: "center", fontWeight: 700 },
   unit: { fontSize: 10.5, marginTop: 6, fontStyle: "italic", textAlign: "center", fontWeight: 700 },
   numar: { fontSize: 11, marginTop: 6, textAlign: "center", fontWeight: 700 },
   title: { marginTop: 24, fontSize: 28, color: "#2563eb", textAlign: "center", letterSpacing: 6, fontWeight: 700 },
@@ -15,17 +21,17 @@ const styles = StyleSheet.create({
   name: { color: "#2563eb", fontSize: 13.5, fontWeight: 700, textAlign: "center", marginTop: 10 },
   bold: { fontWeight: 700 },
   center: { textAlign: "center" },
-  signArea: { position: "absolute", left: 72, right: 72, flexDirection: "row", justifyContent: "space-between" },
+  signArea: { position: "absolute", left: 78, right: 78, flexDirection: "row", justifyContent: "space-between" },
   signCol: { width: "48%", alignItems: "center" },
   signTitle: { fontSize: 10.5, fontWeight: 700, textAlign: "center" },
   signSub: { fontSize: 9.5, fontWeight: 700, textAlign: "center", marginTop: 2 },
   signGrad: { fontSize: 9.5, fontStyle: "italic", fontWeight: 700, textAlign: "center", marginTop: 8 },
   signName: { fontSize: 10.2, fontStyle: "italic", fontWeight: 700, textAlign: "center", marginTop: 3 },
   // Footer aligned with BICP PDFs
-  footer: { position: "absolute", left: 72, right: 72, bottom: 16 },
+  footer: { position: "absolute", left: 78, right: 78, bottom: 16 },
   footerLine: { fontSize: 9, textAlign: "center" },
   // Tricolor bar above footer (same as BICP)
-  tricolorFooter: { position: "absolute", left: 72, right: 72, height: 6, flexDirection: "row" },
+  tricolorFooter: { position: "absolute", left: 78, right: 78, height: 6, flexDirection: "row" },
   triBlue: { flex: 1, backgroundColor: "#002B7F" },
   triYellow: { flex: 1, backgroundColor: "#FCD116" },
   triRed: { flex: 1, backgroundColor: "#CE1126" },
