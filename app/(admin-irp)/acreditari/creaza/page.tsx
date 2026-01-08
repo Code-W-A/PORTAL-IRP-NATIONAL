@@ -57,15 +57,10 @@ function safeFileName(name: string): string {
 function parseAcreditareNumar(v: any): number | null {
   const s = String(v || "").trim();
   if (!s) return null;
-  // accept "2.560.588" or "2560588"
-  if (/^\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ""));
+  // accept digits only (preferred) or legacy dotted format "2.560.588"
   if (/^\d+$/.test(s)) return Number(s);
+  if (/^\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ""));
   return null;
-}
-
-function formatNumarDots(n: number): string {
-  const s = String(Math.max(0, Math.trunc(n)));
-  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
 function SimpleForm({
@@ -89,9 +84,9 @@ function SimpleForm({
   const [dataIso, setDataIso] = useState<string>(isoToday());
   const [nextNumar, setNextNumar] = useState<number | null>(null);
   const [numarLoading, setNumarLoading] = useState(false);
-  const [numarNeedsInit, setNumarNeedsInit] = useState(false);
   const [maxFromDocs, setMaxFromDocs] = useState(0);
-  const [startNumarText, setStartNumarText] = useState("");
+  const [numarText, setNumarText] = useState("");
+  const [minAllowedNumar, setMinAllowedNumar] = useState<number>(1);
 
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -115,13 +110,21 @@ function SimpleForm({
       }
       setMaxFromDocs(max);
       const base = Math.max(lastFromSettings || 0, max || 0);
-      setNumarNeedsInit(base <= 0);
-      setNextNumar(base + 1);
+      const suggested = base > 0 ? base + 1 : 0;
+      setMinAllowedNumar(base > 0 ? base + 1 : 1);
+      setNextNumar(base > 0 ? base + 1 : null);
+      // prefill editable input if empty or if it matched previous suggested
+      setNumarText((prev) => {
+        const prevN = parseAcreditareNumar(prev);
+        if (!prevN || prevN < (base > 0 ? base + 1 : 1)) return suggested ? String(suggested) : "";
+        return prev;
+      });
     } catch {
       // fallback
       setMaxFromDocs(0);
-      setNumarNeedsInit(true);
-      setNextNumar(1);
+      setMinAllowedNumar(1);
+      setNextNumar(null);
+      if (!numarText) setNumarText("");
     } finally {
       setNumarLoading(false);
     }
@@ -150,9 +153,14 @@ function SimpleForm({
     const lg = legit.trim();
     const rd = redactie.trim();
     const em = email.trim();
+    const chosenNumar = parseAcreditareNumar(numarText);
 
-    if (!nn || !sx || !lg || !rd || !em) {
+    if (!nn || !sx || !lg || !rd || !em || !chosenNumar) {
       setMsg("Completează toate câmpurile.");
+      return;
+    }
+    if (chosenNumar < minAllowedNumar) {
+      setMsg(`Nr. trebuie să fie cel puțin ${minAllowedNumar} (autoincrement).`);
       return;
     }
 
@@ -168,21 +176,14 @@ function SimpleForm({
       const allocated = await runTransaction(db, async (tx) => {
         const sSnap = await tx.get(settingsRef);
         const last = typeof (sSnap.data() as any)?.acreditareLastNumar === "number" ? Number((sSnap.data() as any).acreditareLastNumar) : 0;
-        let next: number;
-        if (last > 0) {
-          next = last + 1;
-        } else if (maxFromDocs > 0) {
-          next = maxFromDocs + 1;
-        } else {
-          const start = parseAcreditareNumar(startNumarText);
-          if (!start || start <= 0) throw new Error("numar_start_required");
-          next = start;
-        }
-        tx.set(settingsRef, { acreditareLastNumar: next }, { merge: true });
-        return next;
+        const base = Math.max(last || 0, maxFromDocs || 0);
+        const minAllowed = base > 0 ? base + 1 : 1;
+        if (chosenNumar < minAllowed) throw new Error("numar_too_small");
+        tx.set(settingsRef, { acreditareLastNumar: chosenNumar }, { merge: true });
+        return chosenNumar;
       });
       setNextNumar(allocated + 1);
-      const numarFormatted = formatNumarDots(allocated);
+      const numarFormatted = String(allocated);
 
       // 1) Create CereriAcreditare in the SAME schema as complex form (minimal fields)
       const cererePayload: any = {
@@ -224,8 +225,8 @@ function SimpleForm({
       setLastCerereId(cerereId);
       setMsg("Cerere salvată. Status: În așteptare. O poți aproba/respinge din „Cereri acreditare”.");
     } catch (e: any) {
-      if (String(e?.message || "") === "numar_start_required") {
-        setMsg("Introdu numărul de start pentru prima acreditare (ex: 2.560.588).");
+      if (String(e?.message || "") === "numar_too_small") {
+        setMsg(`Nr. trebuie să fie cel puțin ${minAllowedNumar} (autoincrement).`);
       } else {
         setMsg("Nu am putut salva cererea. Încearcă din nou.");
       }
@@ -306,27 +307,15 @@ function SimpleForm({
           </div>
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1">Nr. *</label>
-            {numarNeedsInit ? (
-              <>
-                <input
-                  value={startNumarText}
-                  onChange={(e) => setStartNumarText(e.target.value)}
-                  placeholder="Ex: 2.560.588"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-                <div className="text-xs text-gray-500 mt-1">Prima acreditare: introduceți numărul de start. Următoarele vor fi +1 automat.</div>
-              </>
-            ) : (
-              <>
-                <input
-                  value={nextNumar ? formatNumarDots(nextNumar) : ""}
-                  readOnly
-                  placeholder={numarLoading ? "Se calculează..." : "Se calculează..."}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-gray-50 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                />
-                <div className="text-xs text-gray-500 mt-1">Autoincrement (+1) față de ultimul număr emis pentru structura curentă.</div>
-              </>
-            )}
+            <input
+              value={numarText}
+              onChange={(e) => setNumarText(String(e.target.value || "").replace(/\D+/g, ""))}
+              placeholder={numarLoading ? "Se calculează..." : nextNumar ? String(nextNumar) : "Introduceți numărul"}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              Autoincrement: minim <span className="font-semibold">{minAllowedNumar}</span>. Introdu doar cifre (fără puncte). În PDF apare identic (fără puncte).
+            </div>
           </div>
         </div>
 

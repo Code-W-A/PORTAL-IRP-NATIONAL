@@ -56,14 +56,10 @@ function ddmmyyyySlashFromIso(iso: string) {
 function parseAcreditareNumar(v: any): number | null {
   const s = String(v || "").trim();
   if (!s) return null;
-  if (/^\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ""));
   if (/^\d+$/.test(s)) return Number(s);
+  // legacy dotted format
+  if (/^\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ""));
   return null;
-}
-
-function formatNumarDots(n: number): string {
-  const s = String(Math.max(0, Math.trunc(n)));
-  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
 function digitsOnly(v: any): string {
@@ -606,7 +602,7 @@ export function CerereAcreditareForm({
             tx.set(settingsRef, { acreditareLastNumar: nextLast }, { merge: true });
           });
           // normalize format
-          numarFinal = formatNumarDots(manual);
+          numarFinal = String(manual);
           setAcrFixedNumar(numarFinal);
           setAcrNumarNeedsInit(false);
         }
@@ -625,7 +621,7 @@ export function CerereAcreditareForm({
             tx.set(settingsRef, { acreditareLastNumar: next }, { merge: true });
             return next;
           });
-          numarFinal = formatNumarDots(allocated);
+          numarFinal = String(allocated);
           setAcrFixedNumar(numarFinal);
           setAcrNextNumar(allocated + 1);
           setAcrNumarNeedsInit(false);
@@ -849,7 +845,7 @@ export function CerereAcreditareForm({
               ) : (
                 <>
                   <input
-                    value={acrNextNumar ? formatNumarDots(acrNextNumar) : ""}
+                    value={acrNextNumar ? String(acrNextNumar) : ""}
                     readOnly
                     placeholder={acrNumarLoading ? "Se calculează..." : "Se calculează..."}
                     className="w-full border border-gray-300 rounded-xl px-4 py-3 bg-gray-50 text-gray-900"
