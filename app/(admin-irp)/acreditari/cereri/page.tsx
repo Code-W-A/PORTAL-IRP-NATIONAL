@@ -18,6 +18,7 @@ import {
   FileText,
   Loader2,
   Pencil,
+  Printer,
   Search,
   ThumbsDown,
   ThumbsUp,
@@ -68,6 +69,53 @@ function safeFileName(name: string): string {
     .replace(/\s+/g, "_")
     .replace(/[^\w.-]+/g, "_")
     .slice(0, 80);
+}
+
+function openPrintWindow(label: string) {
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("Pop-up blocat. Permite pop-up-urile pentru a tipări.");
+    return null;
+  }
+  try {
+    win.document.title = label;
+    win.document.body.innerHTML = `<div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px;">Se pregătește pentru tipărire...</div>`;
+  } catch {}
+  return win;
+}
+
+function writePdfPrintHtml(win: Window, objUrl: string, label: string) {
+  const safeLabel = String(label || "PDF").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  win.document.open();
+  win.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${safeLabel}</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      iframe { width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <iframe id="pdf" src="${objUrl}"></iframe>
+    <script>
+      (function() {
+        var f = document.getElementById('pdf');
+        var done = false;
+        function doPrint() {
+          if (done) return;
+          done = true;
+          try { f.contentWindow && f.contentWindow.focus(); } catch (e) {}
+          try { f.contentWindow && f.contentWindow.print(); } catch (e) { window.print(); }
+        }
+        f.addEventListener('load', function() { setTimeout(doPrint, 50); });
+        setTimeout(doPrint, 2000);
+      })();
+    </script>
+  </body>
+</html>`);
+  win.document.close();
 }
 
 export default function CereriAcreditareAdminPage() {
@@ -204,6 +252,32 @@ export default function CereriAcreditareAdminPage() {
       setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
     } catch {
       alert("Nu am putut descărca PDF-ul acreditării. Încearcă din nou.");
+    } finally {
+      setDownloadingKey(null);
+    }
+  }
+
+  async function printAcreditarePdfFromCerere(cerereId: string, nameHint: string, variant: "signed" | "public") {
+    const key = `acrprint:${cerereId}:${variant}`;
+    if (downloadingKey) return;
+    const win = openPrintWindow(nameHint);
+    if (!win) return;
+    setDownloadingKey(key);
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Trebuie să fii autentificat.");
+      const url = `/api/acreditari/cereri/${encodeURIComponent(cerereId)}/acreditare-pdf${variant === "public" ? "?variant=public" : ""}`;
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("pdf_failed");
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      writePdfPrintHtml(win, objUrl, nameHint);
+      setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+    } catch {
+      try {
+        win.close();
+      } catch {}
+      alert("Nu am putut deschide pentru tipărire. Încearcă din nou.");
     } finally {
       setDownloadingKey(null);
     }
@@ -471,6 +545,16 @@ export default function CereriAcreditareAdminPage() {
                       {downloadingKey === `acrpdf:${r.id}:signed` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
                       Acreditare PDF (cu semnături)
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => printAcreditarePdfFromCerere(r.id, `acreditare_${nume || r.id}`, "signed")}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+                      disabled={!nrAcreditare || downloadingKey === `acrprint:${r.id}:signed`}
+                      title={nrAcreditare ? "Printează acreditare (cu semnături)" : "Completează Nr acreditare pentru a putea genera PDF-ul"}
+                    >
+                      {downloadingKey === `acrprint:${r.id}:signed` ? <Loader2 className="animate-spin" size={14} /> : <Printer size={14} />}
+                      Print (cu semnături)
+                    </button>
 
                     <button
                       type="button"
@@ -481,6 +565,16 @@ export default function CereriAcreditareAdminPage() {
                     >
                       {downloadingKey === `acrpdf:${r.id}:public` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
                       Acreditare PDF (fără semnături)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => printAcreditarePdfFromCerere(r.id, `acreditare_${nume || r.id}`, "public")}
+                      className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors text-sm font-medium"
+                      disabled={!nrAcreditare || downloadingKey === `acrprint:${r.id}:public`}
+                      title={nrAcreditare ? "Printează acreditare (fără semnături)" : "Completează Nr acreditare pentru a putea genera PDF-ul"}
+                    >
+                      {downloadingKey === `acrprint:${r.id}:public` ? <Loader2 className="animate-spin" size={14} /> : <Printer size={14} />}
+                      Print (fără semnături)
                     </button>
 
                     <div className="flex items-center gap-2 flex-wrap">

@@ -4,7 +4,7 @@ import { collection, deleteDoc, doc, getDocs } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import Link from "next/link";
-import { FileText, Plus, Calendar, IdCard, Building2, Download, Pencil, Trash2, Loader2 } from "lucide-react";
+import { FileText, Plus, Calendar, IdCard, Building2, Download, Pencil, Trash2, Loader2, Printer } from "lucide-react";
 
 type Acr = { id: string; numar: string; data: string; nume: string; legit: string; redactie: string };
 
@@ -49,6 +49,53 @@ export default function ListaAcreditariPage() {
       .slice(0, 80);
   }
 
+  function openPrintWindow(label: string) {
+    const win = window.open("", "_blank");
+    if (!win) {
+      alert("Pop-up blocat. Permite pop-up-urile pentru a tipări.");
+      return null;
+    }
+    try {
+      win.document.title = label;
+      win.document.body.innerHTML = `<div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; padding: 16px;">Se pregătește pentru tipărire...</div>`;
+    } catch {}
+    return win;
+  }
+
+  function writePdfPrintHtml(win: Window, objUrl: string, label: string) {
+    const safeLabel = String(label || "PDF").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    win.document.open();
+    win.document.write(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>${safeLabel}</title>
+    <style>
+      html, body { margin: 0; height: 100%; }
+      iframe { width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <iframe id="pdf" src="${objUrl}"></iframe>
+    <script>
+      (function() {
+        var f = document.getElementById('pdf');
+        var done = false;
+        function doPrint() {
+          if (done) return;
+          done = true;
+          try { f.contentWindow && f.contentWindow.focus(); } catch (e) {}
+          try { f.contentWindow && f.contentWindow.print(); } catch (e) { window.print(); }
+        }
+        f.addEventListener('load', function() { setTimeout(doPrint, 50); });
+        setTimeout(doPrint, 2000);
+      })();
+    </script>
+  </body>
+</html>`);
+    win.document.close();
+  }
+
   async function downloadPdf(x: Acr, variant: "signed" | "public") {
     const key = `pdf:${x.id}:${variant}`;
     if (downloadingKey) return;
@@ -70,6 +117,32 @@ export default function ListaAcreditariPage() {
       setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
     } catch {
       alert("Nu am putut descărca PDF-ul. Încearcă din nou.");
+    } finally {
+      setDownloadingKey(null);
+    }
+  }
+
+  async function printPdf(x: Acr, variant: "signed" | "public") {
+    const key = `print:${x.id}:${variant}`;
+    if (downloadingKey) return;
+    const label = `Acreditare ${x.nume || ""}`.trim() || "Acreditare";
+    const win = openPrintWindow(label);
+    if (!win) return;
+    setDownloadingKey(key);
+    try {
+      const url = `/api/acreditari/${encodeURIComponent(x.id)}/pdf${variant === "public" ? "?variant=public" : ""}`;
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) throw new Error("print_failed");
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      writePdfPrintHtml(win, objUrl, label);
+      // revoke later (after print)
+      setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+    } catch {
+      try {
+        win.close();
+      } catch {}
+      alert("Nu am putut deschide pentru tipărire. Încearcă din nou.");
     } finally {
       setDownloadingKey(null);
     }
@@ -178,12 +251,30 @@ export default function ListaAcreditariPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => printPdf(x, "signed")}
+                    disabled={!!downloadingKey}
+                    className="inline-flex items-center gap-2 justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {downloadingKey === `print:${x.id}:signed` ? <Loader2 className="animate-spin" size={14} /> : <Printer size={14} />}
+                    {downloadingKey === `print:${x.id}:signed` ? "Se pregătește..." : "Print (cu semnături)"}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => downloadPdf(x, "public")}
                     disabled={!!downloadingKey}
                     className="inline-flex items-center gap-2 justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {downloadingKey === `pdf:${x.id}:public` ? <Loader2 className="animate-spin" size={14} /> : <Download size={14} />}
                     {downloadingKey === `pdf:${x.id}:public` ? "Se descarcă..." : "PDF (fără semnături)"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => printPdf(x, "public")}
+                    disabled={!!downloadingKey}
+                    className="inline-flex items-center gap-2 justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {downloadingKey === `print:${x.id}:public` ? <Loader2 className="animate-spin" size={14} /> : <Printer size={14} />}
+                    {downloadingKey === `print:${x.id}:public` ? "Se pregătește..." : "Print (fără semnături)"}
                   </button>
                 </div>
                 <div className="flex flex-col gap-2">
