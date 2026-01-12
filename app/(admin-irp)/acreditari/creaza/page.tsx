@@ -354,7 +354,7 @@ export default function CreeazaAcreditarePage() {
     if (typeof window === "undefined") return;
     try {
       const url = new URL(window.location.href);
-      const cerereId = (url.searchParams.get("cerereId") || "").trim();
+      const cerereId = (url.searchParams.get("cerereId") || "").trim(); 
       const tab = (url.searchParams.get("tab") || "").trim();
       if (tab === "simplu") setActiveTab("simplu");
       if (tab === "cerere") setActiveTab("cerere");

@@ -21,7 +21,8 @@ const styles = StyleSheet.create({
   name: { color: "#2563eb", fontSize: 13.5, fontWeight: 700, textAlign: "center", marginTop: 10 },
   bold: { fontWeight: 700 },
   center: { textAlign: "center" },
-  signArea: { position: "absolute", left: 78, right: 78, flexDirection: "row", justifyContent: "space-between" },
+  // Flow layout (no absolute positioning) so it can move to the next page if needed
+  signArea: { marginTop: 22, flexDirection: "row", justifyContent: "space-between" },
   signCol: { width: "48%", alignItems: "center" },
   signTitle: { fontSize: 10.5, fontWeight: 700, textAlign: "center" },
   signSub: { fontSize: 9.5, fontWeight: 700, textAlign: "center", marginTop: 2 },
@@ -106,12 +107,12 @@ export function AcreditarePdfDoc({
   const footerLinesCount = footerLines.length;
   // keep tricolor above footer even when there are many footer lines (same logic as BICP)
   const tricolorBottom = 40 + Math.max(0, footerLinesCount - 1) * 12;
-  // keep signatures comfortably above footer/tricolor
-  const signAreaBottom = tricolorBottom + 86;
+  // Reserve space for the fixed footer/tricolor so flowing content never overlaps it
+  const contentPaddingBottom = Math.max(110, tricolorBottom + 26);
 
   return (
     <Document>
-      <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif" }]}>
+      <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif", paddingBottom: contentPaddingBottom }]}>
         <View style={styles.headerRow}>
           {s.logoUrlPublic ? <Image src={s.logoUrlPublic} style={styles.logo} /> : null}
           <View style={styles.headerCol}>
@@ -158,7 +159,10 @@ export function AcreditarePdfDoc({
         </Text>
 
         {variant === "signed" && (
-          <View style={[styles.signArea, { bottom: signAreaBottom }]} fixed>
+          <>
+            {/* Push signatures towards the bottom when there's room; if not, they'll naturally flow onto the next page */}
+            <View style={{ flexGrow: 1 }} />
+            <View style={styles.signArea}>
             <View style={styles.signCol}>
               {linesOf(st.functia).length ? (
                 <>
@@ -186,7 +190,8 @@ export function AcreditarePdfDoc({
               {dr.grad ? <Text style={styles.signGrad}>{dr.grad}</Text> : <Text style={styles.signGrad} />}
               {dr.nume ? <Text style={styles.signName}>{dr.nume}</Text> : <Text style={styles.signName} />}
             </View>
-          </View>
+            </View>
+          </>
         )}
 
         {/* Tricolor bar + footer (same pattern as Communicate/Buletine) */}
