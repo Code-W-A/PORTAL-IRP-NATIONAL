@@ -87,11 +87,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const jurnalist = (cerere as any).jurnalist || {};
     const media = (cerere as any).media || {};
     const nrLegit = String(jurnalist?.legitimatie?.numar || "");
+    const telefonMobil = String(jurnalist?.telefon?.mobil || "");
     const jId = normalizeLegitId(nrLegit) || id;
     const jurnalistPath = `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jId}`;
     const jurnalistDoc = {
       nume: String(jurnalist?.numePrenume || ""),
       email: String(jurnalist?.email || ""),
+      telefon: telefonMobil,
       legit: nrLegit,
       redactie: String(media?.denumire || ""),
       lastAcreditareYear: new Date().getFullYear(),
@@ -119,6 +121,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       legit: nrLegit,
       redactie: String(media?.denumire || ""),
       email: String(jurnalist?.email || ""),
+      telefon: telefonMobil,
       judetId,
       structuraId,
       createdAt: { __timestamp: nowIso },

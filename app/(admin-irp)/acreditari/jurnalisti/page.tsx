@@ -4,12 +4,14 @@ import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc } from "fi
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import Link from "next/link";
-import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X, LayoutGrid, Table, ChevronLeft, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X, LayoutGrid, Table, ChevronLeft, ChevronRight, Phone } from "lucide-react";
 
-type Journalist = { id: string; nume: string; email?: string; legit?: string; redactie?: string; lastAcreditareYear?: number };
+type Journalist = { id: string; nume: string; email?: string; telefon?: string; legit?: string; redactie?: string; lastAcreditareYear?: number };
 
 export default function JurnalistiPage() {
   const { db } = initFirebase();
+  const router = useRouter();
   const [items, setItems] = useState<Journalist[]>([]);
   const [loading, setLoading] = useState(true);
   const currentYear = new Date().getFullYear();
@@ -19,9 +21,10 @@ export default function JurnalistiPage() {
   const [pageSize, setPageSize] = useState<number>(25);
   const [page, setPage] = useState<number>(1);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState<Pick<Journalist, "nume" | "email" | "legit" | "redactie">>({
+  const [editDraft, setEditDraft] = useState<Pick<Journalist, "nume" | "email" | "telefon" | "legit" | "redactie">>({
     nume: "",
     email: "",
+    telefon: "",
     legit: "",
     redactie: "",
   });
@@ -46,6 +49,7 @@ export default function JurnalistiPage() {
     setEditDraft({
       nume: x.nume || "",
       email: x.email || "",
+      telefon: x.telefon || "",
       legit: x.legit || "",
       redactie: x.redactie || "",
     });
@@ -53,10 +57,19 @@ export default function JurnalistiPage() {
 
   function cancelEdit() {
     setEditingId(null);
-    setEditDraft({ nume: "", email: "", legit: "", redactie: "" });
+    setEditDraft({ nume: "", email: "", telefon: "", legit: "", redactie: "" });
+  }
+
+  function normalizePhoneForTel(v?: string): string {
+    const s = String(v || "").trim();
+    if (!s) return "";
+    // keep leading +, remove spaces/dashes/parentheses
+    return s.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "");
   }
 
   async function saveEdit(id: string) {
+    const ok = confirm("Sigur vrei să salvezi modificările pentru acest jurnalist?");
+    if (!ok) return;
     try {
       const { judetId, structuraId } = getTenantContext();
       const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`);
@@ -85,7 +98,7 @@ export default function JurnalistiPage() {
     const s = search.trim().toLowerCase();
     return items
       .filter((x) => (onlyCurrent ? x.lastAcreditareYear === currentYear : true))
-      .filter((x) => !s || [x.nume, x.email, x.redactie, x.legit].filter(Boolean).map(String).some((v) => v.toLowerCase().includes(s)));
+      .filter((x) => !s || [x.nume, x.email, x.telefon, x.redactie, x.legit].filter(Boolean).map(String).some((v) => v.toLowerCase().includes(s)));
   }, [items, search, onlyCurrent, currentYear]);
 
   useEffect(() => {
@@ -127,7 +140,7 @@ export default function JurnalistiPage() {
           <input 
             value={search} 
             onChange={(e)=>setSearch(e.target.value)} 
-            placeholder="Caută nume, email sau redacție..." 
+            placeholder="Caută nume, telefon, email sau redacție..." 
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none" 
           />
         </div>
@@ -255,6 +268,7 @@ export default function JurnalistiPage() {
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr className="text-left text-gray-700">
                       <th className="px-4 py-3 font-semibold">Nume</th>
+                      <th className="px-4 py-3 font-semibold">Telefon</th>
                       <th className="px-4 py-3 font-semibold">Email</th>
                       <th className="px-4 py-3 font-semibold">Legitimație</th>
                       <th className="px-4 py-3 font-semibold">Redacție</th>
@@ -267,13 +281,21 @@ export default function JurnalistiPage() {
                       const isCurrent = x.lastAcreditareYear === currentYear;
                       const isEditing = editingId === x.id;
                       return (
-                        <tr key={x.id} className="hover:bg-gray-50/60">
+                        <tr
+                          key={x.id}
+                          className={`hover:bg-gray-50/60 ${!isEditing ? "cursor-pointer" : ""}`}
+                          onClick={() => {
+                            if (isEditing) return;
+                            router.push(`/acreditari/jurnalisti/${encodeURIComponent(x.id)}`);
+                          }}
+                        >
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
                                 value={editDraft.nume}
                                 onChange={(e) => setEditDraft((p) => ({ ...p, nume: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                                onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
                               <div className="font-medium text-gray-900">{x.nume}</div>
@@ -282,9 +304,36 @@ export default function JurnalistiPage() {
                           <td className="px-4 py-3">
                             {isEditing ? (
                               <input
+                                value={editDraft.telefon || ""}
+                                onChange={(e) => setEditDraft((p) => ({ ...p, telefon: e.target.value }))}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                                placeholder="07xx..."
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                            ) : x.telefon ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-700">{x.telefon}</span>
+                                <a
+                                  href={`tel:${normalizePhoneForTel(x.telefon)}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-xs font-medium"
+                                  title="Apelează"
+                                >
+                                  <Phone size={12} />
+                                  Apelează
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="text-gray-500">—</div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {isEditing ? (
+                              <input
                                 value={editDraft.email || ""}
                                 onChange={(e) => setEditDraft((p) => ({ ...p, email: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                                onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
                               <div className="text-gray-700">{x.email || "—"}</div>
@@ -296,6 +345,7 @@ export default function JurnalistiPage() {
                                 value={editDraft.legit || ""}
                                 onChange={(e) => setEditDraft((p) => ({ ...p, legit: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                                onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
                               <div className="text-gray-700">{x.legit || "—"}</div>
@@ -307,6 +357,7 @@ export default function JurnalistiPage() {
                                 value={editDraft.redactie || ""}
                                 onChange={(e) => setEditDraft((p) => ({ ...p, redactie: e.target.value }))}
                                 className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                                onClick={(e) => e.stopPropagation()}
                               />
                             ) : (
                               <div className="text-gray-700">{x.redactie || "—"}</div>
@@ -325,6 +376,12 @@ export default function JurnalistiPage() {
                             <div className="flex items-center justify-end gap-2">
                               <Link
                                 href={`/acreditari/creaza?from=${x.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                onClickCapture={(e) => {
+                                  e.stopPropagation();
+                                  const ok = confirm("Sigur vrei să reacreditezi acest jurnalist?");
+                                  if (!ok) e.preventDefault();
+                                }}
                                 className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
                               >
                                 <RotateCcw size={14} />
@@ -335,6 +392,8 @@ export default function JurnalistiPage() {
                                   <button
                                     type="button"
                                     onClick={() => startEdit(x)}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClickCapture={(e) => e.stopPropagation()}
                                     className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
                                     title="Editează"
                                   >
@@ -343,6 +402,8 @@ export default function JurnalistiPage() {
                                   <button
                                     type="button"
                                     onClick={() => onDelete(x.id)}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClickCapture={(e) => e.stopPropagation()}
                                     className="inline-flex items-center justify-center px-3 py-2 border border-red-200 text-red-700 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
                                     title="Șterge"
                                   >
@@ -354,6 +415,8 @@ export default function JurnalistiPage() {
                                   <button
                                     type="button"
                                     onClick={() => saveEdit(x.id)}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClickCapture={(e) => e.stopPropagation()}
                                     disabled={!editDraft.nume?.trim()}
                                     className="inline-flex items-center justify-center px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                                     title="Salvează"
@@ -363,6 +426,8 @@ export default function JurnalistiPage() {
                                   <button
                                     type="button"
                                     onClick={cancelEdit}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClickCapture={(e) => e.stopPropagation()}
                                     className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
                                     title="Renunță"
                                   >
@@ -388,11 +453,18 @@ export default function JurnalistiPage() {
                 const isCurrent = x.lastAcreditareYear === currentYear;
                 const isEditing = editingId === x.id;
                 return (
-                  <div key={x.id} className={`group rounded-2xl border shadow-sm p-6 hover:shadow-xl transition-all duration-200 ${
+                  <div
+                    key={x.id}
+                    className={`group rounded-2xl border shadow-sm p-6 hover:shadow-xl transition-all duration-200 ${
                     isCurrent 
                       ? "bg-gradient-to-br from-green-50 to-green-100 border-green-200 hover:border-green-300" 
                       : "bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200 hover:border-yellow-300"
-                  }`}>
+                  } ${!isEditing ? "cursor-pointer" : ""}`}
+                    onClick={() => {
+                      if (isEditing) return;
+                      router.push(`/acreditari/jurnalisti/${encodeURIComponent(x.id)}`);
+                    }}
+                  >
                     <div className="flex items-center gap-3 mb-4">
                       <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
                         isCurrent ? "bg-green-200" : "bg-yellow-200"
@@ -422,6 +494,23 @@ export default function JurnalistiPage() {
                         <div className="flex items-center gap-2 text-sm text-gray-700">
                           <Mail size={14} className="text-gray-400" />
                           <span className="truncate">{x.email}</span>
+                        </div>
+                      )}
+                      {x.telefon && (
+                        <div className="flex items-center justify-between gap-2 text-sm text-gray-700">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Phone size={14} className="text-gray-400" />
+                            <span className="truncate">{x.telefon}</span>
+                          </div>
+                          <a
+                            href={`tel:${normalizePhoneForTel(x.telefon)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors text-xs font-medium"
+                            title="Apelează"
+                          >
+                            <Phone size={12} />
+                            Apelează
+                          </a>
                         </div>
                       )}
                       {x.legit && (
@@ -457,6 +546,15 @@ export default function JurnalistiPage() {
                             />
                           </div>
                           <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Telefon</label>
+                            <input
+                              value={editDraft.telefon || ""}
+                              onChange={(e) => setEditDraft((p) => ({ ...p, telefon: e.target.value }))}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+                              placeholder="07xx..."
+                            />
+                          </div>
+                          <div>
                             <label className="block text-xs font-medium text-gray-700 mb-1">Legitimație</label>
                             <input
                               value={editDraft.legit || ""}
@@ -479,6 +577,12 @@ export default function JurnalistiPage() {
                     <div className="flex gap-2">
                       <Link 
                         href={`/acreditari/creaza?from=${x.id}`} 
+                        onClick={(e) => e.stopPropagation()}
+                        onClickCapture={(e) => {
+                          e.stopPropagation();
+                          const ok = confirm("Sigur vrei să reacreditezi acest jurnalist?");
+                          if (!ok) e.preventDefault();
+                        }}
                         className="inline-flex items-center gap-2 flex-1 justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
                       >
                         <RotateCcw size={14} />
@@ -489,6 +593,8 @@ export default function JurnalistiPage() {
                           <button
                             type="button"
                             onClick={() => startEdit(x)}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClickCapture={(e) => e.stopPropagation()}
                             className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
                             title="Editează"
                           >
@@ -497,6 +603,8 @@ export default function JurnalistiPage() {
                           <button
                             type="button"
                             onClick={() => onDelete(x.id)}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClickCapture={(e) => e.stopPropagation()}
                             className="inline-flex items-center justify-center px-3 py-2 border border-red-200 text-red-700 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
                             title="Șterge"
                           >
@@ -508,6 +616,8 @@ export default function JurnalistiPage() {
                           <button
                             type="button"
                             onClick={() => saveEdit(x.id)}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClickCapture={(e) => e.stopPropagation()}
                             disabled={!editDraft.nume?.trim()}
                             className="inline-flex items-center justify-center px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Salvează"
@@ -517,6 +627,8 @@ export default function JurnalistiPage() {
                           <button
                             type="button"
                             onClick={cancelEdit}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClickCapture={(e) => e.stopPropagation()}
                             className="inline-flex items-center justify-center px-3 py-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-800"
                             title="Renunță"
                           >

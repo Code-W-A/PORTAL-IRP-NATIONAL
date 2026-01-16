@@ -7,6 +7,7 @@ import { initFirebase } from "@/lib/firebase";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -15,6 +16,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
 } from "firebase/firestore";
@@ -69,18 +71,21 @@ function SimpleForm({
   onContinueComplex,
   prefill,
   prefillKey,
+  existingAcreditareId,
 }: {
   db: ReturnType<typeof initFirebase>["db"];
   auth: ReturnType<typeof initFirebase>["auth"];
   onContinueComplex: (cerereId: string) => void;
-  prefill: { nume?: string; legit?: string; redactie?: string; email?: string } | null;
+  prefill: { nume?: string; legit?: string; redactie?: string; email?: string; telefon?: string } | null;
   prefillKey: number;
+  existingAcreditareId?: string | null;
 }) {
   const [nume, setNume] = useState("");
   const [sex, setSex] = useState<"F" | "M">("F");
   const [legit, setLegit] = useState("");
   const [redactie, setRedactie] = useState("");
   const [email, setEmail] = useState("");
+  const [telefon, setTelefon] = useState("");
   const [dataIso, setDataIso] = useState<string>(isoToday());
   const [nextNumar, setNextNumar] = useState<number | null>(null);
   const [numarLoading, setNumarLoading] = useState(false);
@@ -90,6 +95,8 @@ function SimpleForm({
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [lastCerereId, setLastCerereId] = useState<string | null>(null);
+  const [loadedAcreditareId, setLoadedAcreditareId] = useState<string | null>(null);
+  const [originalLegit, setOriginalLegit] = useState<string>("");
 
   async function computeNextNumarPreview() {
     if (numarLoading) return;
@@ -137,7 +144,47 @@ function SimpleForm({
     setLegit(prefill.legit || "");
     setRedactie(prefill.redactie || "");
     setEmail(prefill.email || "");
+    setTelefon(prefill.telefon || "");
   }, [prefillKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const id = String(existingAcreditareId || "").trim();
+      if (!id) return;
+      try {
+        const { judetId, structuraId } = getTenantContext();
+        const ref = doc(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Acreditari", id);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return;
+        const d = snap.data() as any;
+        if (!alive) return;
+        setLoadedAcreditareId(id);
+        setNume(String(d?.nume || ""));
+        setSex(String(d?.sex || "").toUpperCase() === "M" ? "M" : "F");
+        setLegit(String(d?.legit || ""));
+        setOriginalLegit(String(d?.legit || ""));
+        setRedactie(String(d?.redactie || ""));
+        setEmail(String(d?.email || ""));
+        setTelefon(String(d?.telefon || ""));
+        setNumarText(String(parseAcreditareNumar(d?.numar) ?? d?.numar ?? ""));
+
+        // Try to convert stored DD/MM/YYYY to ISO for the date input.
+        const rawDate = String(d?.data || "").trim();
+        const m = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+        if (m) setDataIso(`${m[3]}-${m[2]}-${m[1]}`);
+      } catch {}
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [db, existingAcreditareId]);
+
+  function normalizePhoneForTel(v?: string): string {
+    const s = String(v || "").trim();
+    if (!s) return "";
+    return s.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "");
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -149,6 +196,7 @@ function SimpleForm({
     const lg = legit.trim();
     const rd = redactie.trim();
     const em = email.trim();
+    const tel = telefon.trim();
     const chosenNumar = parseAcreditareNumar(numarText);
 
     if (!nn || !sx || !lg || !rd || !em || !chosenNumar) {
@@ -160,6 +208,11 @@ function SimpleForm({
     const currentKey = `${String(judetId || "").toUpperCase()}_${String(structuraId || "").toUpperCase()}`;
     const dataLabel = ddmmyyyySlashFromIso(dataIso);
     const nowTs = serverTimestamp();
+    const now = new Date();
+    const yearFromIso = (() => {
+      const m = String(dataIso || "").match(/^(\d{4})-/);
+      return m ? Number(m[1]) : now.getFullYear();
+    })();
 
     try {
       setSaving(true);
@@ -175,7 +228,55 @@ function SimpleForm({
       const numarFormatted = String(allocated);
       setNumarText(String(allocated + 1));
 
-      // 1) Create CereriAcreditare in the SAME schema as complex form (minimal fields)
+      if (loadedAcreditareId) {
+        const ok = confirm("Sigur vrei să actualizezi această acreditare? Modificările vor actualiza și datele jurnalistului.");
+        if (!ok) return;
+        // Edit existing Acreditare (already approved / issued)
+        const acrRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Acreditari/${loadedAcreditareId}`);
+        await updateDoc(acrRef, {
+          numar: numarFormatted,
+          data: dataLabel || null,
+          dataTimestamp: nowTs,
+          nume: nn,
+          sex: sx,
+          legit: lg,
+          redactie: rd,
+          email: em,
+          telefon: tel,
+          updatedAt: nowTs,
+        } as any);
+
+        // Keep Jurnalisti in sync (including phone)
+        const prevJId = normalizeLegitId(originalLegit) || loadedAcreditareId;
+        const nextJId = normalizeLegitId(lg) || loadedAcreditareId;
+        const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${nextJId}`);
+        await setDoc(
+          jurnalistRef,
+          {
+            nume: nn,
+            email: em,
+            telefon: tel,
+            legit: lg,
+            redactie: rd,
+            lastAcreditareYear: yearFromIso,
+            updatedAt: nowTs,
+            createdAt: nowTs,
+          },
+          { merge: true }
+        );
+        if (prevJId && prevJId !== nextJId) {
+          // best-effort: remove old id if legit changed
+          try {
+            await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${prevJId}`));
+          } catch {}
+          setOriginalLegit(lg);
+        }
+
+        setMsg("Acreditarea a fost actualizată. Datele jurnalistului au fost sincronizate.");
+        return;
+      }
+
+      // Create CereriAcreditare in the SAME schema as complex form (minimal fields)
       const cererePayload: any = {
         structuri: [{ judetId: String(judetId || "").toUpperCase(), structuraId: String(structuraId || "").toUpperCase(), display: `${structuraId} ${judetId}` }],
         structuraKeys: [currentKey],
@@ -204,7 +305,7 @@ function SimpleForm({
           legitimatie: { numar: lg, dataExpirare: null },
           functie: { redactor: false, reporter: false, fotoreporter: false, cameraman: false, tehnician: false, altceva: false, altcevaText: "" },
           email: em,
-          telefon: { fix: "", fax: "", mobil: "" },
+          telefon: { fix: "", fax: "", mobil: tel },
         },
         consimtamant: { gdpr: true, gdprVersion: "v1", gdprAcceptedAt: nowTs },
         attachments: null,
@@ -282,6 +383,17 @@ function SimpleForm({
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Telefon jurnalist (mobil)</label>
+            <input
+              type="tel"
+              value={telefon}
+              onChange={(e) => setTelefon(e.target.value)}
+              placeholder="Ex: 07xx xxx xxx"
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            />
+            <div className="text-xs text-gray-500 mt-1">Opțional. Se afișează în lista „Jurnaliști” cu buton de apelare.</div>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Data *</label>
             <input
               type="date"
@@ -314,7 +426,7 @@ function SimpleForm({
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {saving ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
-            {saving ? "Se salvează..." : "Salvează cererea"}
+            {saving ? "Se salvează..." : loadedAcreditareId ? "Actualizează acreditarea" : "Salvează cererea"}
           </button>
 
           {lastCerereId && (
@@ -348,6 +460,7 @@ export default function CreeazaAcreditarePage() {
   // Default to "Completare simplă"
   const [activeTab, setActiveTab] = useState<ActiveTab>("simplu");
   const [editCerereId, setEditCerereId] = useState<string | null>(null);
+  const [editAcreditareId, setEditAcreditareId] = useState<string | null>(null);
 
   // Allow deep-linking: /acreditari/creaza?tab=cerere&cerereId=...
   useEffect(() => {
@@ -355,9 +468,14 @@ export default function CreeazaAcreditarePage() {
     try {
       const url = new URL(window.location.href);
       const cerereId = (url.searchParams.get("cerereId") || "").trim(); 
+      const acreditareId = (url.searchParams.get("edit") || "").trim();
       const tab = (url.searchParams.get("tab") || "").trim();
       if (tab === "simplu") setActiveTab("simplu");
       if (tab === "cerere") setActiveTab("cerere");
+      if (acreditareId) {
+        setEditAcreditareId(acreditareId);
+        setActiveTab("simplu");
+      }
       if (cerereId) {
         setEditCerereId(cerereId);
         setActiveTab("cerere");
@@ -493,6 +611,7 @@ export default function CreeazaAcreditarePage() {
             auth={auth}
             prefill={null}
             prefillKey={0}
+            existingAcreditareId={editAcreditareId}
             onContinueComplex={(cerereId) => {
               setEditCerereId(cerereId);
               setActiveTab("cerere");

@@ -170,6 +170,7 @@ export function BottomNavbar() {
   const router = useRouter();
   const { auth } = initFirebase();
   const [bicpOpen, setBicpOpen] = useState(false);
+  const [acreditariOpen, setAcreditariOpen] = useState(false);
 
   async function handleLogout() {
     try {
@@ -201,7 +202,10 @@ export function BottomNavbar() {
     <nav className="fixed bottom-0 left-0 right-0 border-t bg-white h-16 md:hidden flex z-40">
       <div className="relative flex-1">
         <button
-          onClick={() => setBicpOpen((v) => !v)}
+          onClick={() => {
+            setAcreditariOpen(false);
+            setBicpOpen((v) => !v);
+          }}
           className={`flex flex-col items-center justify-center w-full py-2 ${
             pathname.startsWith("/lista-BICP") || pathname.startsWith("/creaza-BICP") || pathname.startsWith("/statistici-BICP")
               ? "text-blue-700"
@@ -214,7 +218,21 @@ export function BottomNavbar() {
         </button>
         {/* Modal handled outside of nav */}
       </div>
-      {item("/acreditari/lista", "Acreditări", <Users size={18} />)}
+      <div className="relative flex-1">
+        <button
+          onClick={() => {
+            setBicpOpen(false);
+            setAcreditariOpen((v) => !v);
+          }}
+          className={`flex flex-col items-center justify-center w-full py-2 ${
+            pathname.startsWith("/acreditari") ? "text-blue-700" : "text-gray-700"
+          }`}
+          aria-label="Acreditări"
+        >
+          <Users size={18} />
+          <span className="text-xs mt-1">Acreditări</span>
+        </button>
+      </div>
       {/* {item("/monitorizare/lista", "Monitorizare", <Newspaper size={18} />)} */}
       {item("/setari-structura", "Setări", <Settings size={18} />)}
       <button aria-label="Logout" onClick={handleLogout} className="flex flex-col items-center justify-center flex-1 py-2 text-red-600">
@@ -249,6 +267,55 @@ export function BottomNavbar() {
           </div>
           <div className="mt-2 text-center">
             <button onClick={() => setBicpOpen(false)} className="text-sm text-gray-500 hover:text-gray-700">Închide</button>
+          </div>
+        </div>
+      </div>
+    )}
+    {acreditariOpen && (
+      <div className="fixed inset-0 z-50">
+        <div className="absolute inset-0 bg-black/40" onClick={() => setAcreditariOpen(false)} />
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-200 p-4">
+          <div className="text-center mb-2 font-semibold text-gray-900">Acreditări</div>
+          <div className="flex flex-col">
+            <button
+              onClick={() => {
+                setAcreditariOpen(false);
+                router.push("/acreditari/creaza");
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <Plus size={16} /> Cerere acreditare
+            </button>
+            <button
+              onClick={() => {
+                setAcreditariOpen(false);
+                router.push("/acreditari/cereri");
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <FileText size={16} /> Cereri acreditare
+            </button>
+            <button
+              onClick={() => {
+                setAcreditariOpen(false);
+                router.push("/acreditari/lista");
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <List size={16} /> Lista acreditări
+            </button>
+            <button
+              onClick={() => {
+                setAcreditariOpen(false);
+                router.push("/acreditari/jurnalisti");
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <Users size={16} /> Jurnaliști acreditați
+            </button>
+          </div>
+          <div className="mt-2 text-center">
+            <button onClick={() => setAcreditariOpen(false)} className="text-sm text-gray-500 hover:text-gray-700">Închide</button>
           </div>
         </div>
       </div>
