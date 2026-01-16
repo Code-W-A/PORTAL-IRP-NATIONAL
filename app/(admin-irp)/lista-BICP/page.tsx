@@ -829,7 +829,7 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
               </a>
               <a 
                 className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
-                href={`/api/comunicate/${x.id}/docx`}
+                href={`/api/comunicate/${x.id}/docx?judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}`}
                 title="Descarcă DOCX (Word)"
               >
                 <FileText size={14}/> DOCX
@@ -1069,7 +1069,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                       </a>
                       <a 
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
-                        href={`/api/comunicate/${x.id}/docx`} 
+                        href={`/api/comunicate/${x.id}/docx?judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}`} 
                         title="Descarcă DOCX"
                       >
                         <FileText size={12}/> DOCX

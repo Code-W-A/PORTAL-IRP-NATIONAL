@@ -276,6 +276,9 @@ function SimpleForm({
         return;
       }
 
+      const okCreate = confirm("Sigur vrei să salvezi această cerere de acreditare?");
+      if (!okCreate) return;
+
       // Create CereriAcreditare in the SAME schema as complex form (minimal fields)
       const cererePayload: any = {
         structuri: [{ judetId: String(judetId || "").toUpperCase(), structuraId: String(structuraId || "").toUpperCase(), display: `${structuraId} ${judetId}` }],

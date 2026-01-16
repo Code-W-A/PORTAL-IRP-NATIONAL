@@ -38,9 +38,22 @@ function parseHtmlToParagraphs(html: string): Paragraph[] {
       blocks.push({ tag: match[1].toLowerCase(), inner: match[2] });
     }
 
-    const pushParagraph = (text: string, opts?: { bold?: boolean; italics?: boolean; underline?: boolean }) => {
-      const run = new TextRun({ text, size: 24, bold: opts?.bold, italics: opts?.italics, underline: opts?.underline ? ({} as any) : undefined });
-      paragraphs.push(new Paragraph({ children: [run] }));
+    type AlignmentValue = (typeof AlignmentType)[keyof typeof AlignmentType];
+    const pushParagraph = (text: string, opts?: { bold?: boolean; italics?: boolean; underline?: boolean; alignment?: AlignmentValue }) => {
+      const run = new TextRun({
+        text,
+        size: 24, // 12pt
+        bold: opts?.bold,
+        italics: opts?.italics,
+        underline: opts?.underline ? ({} as any) : undefined,
+      });
+      paragraphs.push(
+        new Paragraph({
+          children: [run],
+          alignment: opts?.alignment ?? AlignmentType.JUSTIFIED,
+          spacing: { after: 120 },
+        })
+      );
     };
 
     if (blocks.length === 0) {
@@ -56,7 +69,7 @@ function parseHtmlToParagraphs(html: string): Paragraph[] {
         const hasItalic = /<(i|em)[^>]*>/i.test(b.inner);
         const hasUnderline = /<u[^>]*>/i.test(b.inner);
         const text = b.inner.replace(/<[^>]+>/g, "").trim();
-        if (text) pushParagraph(text, { bold: hasBold, italics: hasItalic, underline: hasUnderline });
+        if (text) pushParagraph(text, { bold: hasBold, italics: hasItalic, underline: hasUnderline, alignment: AlignmentType.JUSTIFIED });
       } else if (b.tag === "ul" || b.tag === "ol") {
         const isOl = b.tag === "ol";
         const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
@@ -66,7 +79,7 @@ function parseHtmlToParagraphs(html: string): Paragraph[] {
           const liText = (m[1] || "").replace(/<[^>]+>/g, "").trim();
           if (!liText) continue;
           const prefix = isOl ? `${++idx}. ` : "• ";
-          pushParagraph(prefix + liText);
+          pushParagraph(prefix + liText, { alignment: AlignmentType.LEFT });
         }
       }
     }
@@ -152,6 +165,108 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
     rows: [new TableRow({ children: [headerCol, metaCol] })],
   });
 
+  const headerTricolor = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      insideHorizontal: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      insideVertical: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            shading: { fill: "002B7F" },
+            children: [new Paragraph({})],
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+            },
+          }),
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            shading: { fill: "FCD116" },
+            children: [new Paragraph({})],
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+            },
+          }),
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            shading: { fill: "CE1126" },
+            children: [new Paragraph({})],
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+            },
+          }),
+        ],
+      }),
+    ],
+  });
+
+  const footerTricolor = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      insideHorizontal: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+      insideVertical: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+    },
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            shading: { fill: "002B7F" },
+            children: [new Paragraph({})],
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+            },
+          }),
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            shading: { fill: "FCD116" },
+            children: [new Paragraph({})],
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+            },
+          }),
+          new TableCell({
+            width: { size: 33.33, type: WidthType.PERCENTAGE },
+            shading: { fill: "CE1126" },
+            children: [new Paragraph({})],
+            borders: {
+              top: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              bottom: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              left: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+              right: { style: BorderStyle.NONE, size: 0, color: "ffffff" },
+            },
+          }),
+        ],
+      }),
+    ],
+  });
+
   const doc = new Document({
     styles: {
       default: {
@@ -167,6 +282,15 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
         properties: {},
         children: [
           table,
+          headerTricolor,
+          // Contact block under header (like PDF)
+          new Paragraph({
+            children: [new TextRun({ text: settings.unitLabel || "COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE", bold: true, size: 22, font: "Noto Serif" })],
+            spacing: { before: 120, after: 60 },
+          }),
+          ...(settings.phone ? [new Paragraph({ children: [new TextRun({ text: `Telefon: ${settings.phone}`, size: 20, font: "Noto Serif" })] })] : []),
+          ...(settings.email ? [new Paragraph({ children: [new TextRun({ text: `E-mail: ${settings.email}`, size: 20, font: "Noto Serif" })] })] : []),
+          new Paragraph({ spacing: { after: 160 } }),
           // APROB pe rând separat, aliniat la dreapta (dar centrat în box)
           new Paragraph({}),
           new Table({
@@ -212,28 +336,21 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
               }),
             ],
           }),
-          // Spațiu + unitate jos stânga (semibold ~600)
-          new Paragraph({ spacing: { after: 200 } }),
-          ...(settings.unitLabel
-            ? [
-                new Paragraph({
-                  children: [new TextRun({ text: settings.unitLabel, bold: true, size: 28, font: "Noto Serif" })],
-                }),
-              ]
-            : []),
           new Paragraph({ 
             children: [new TextRun({ text: (data.tipDocument || "").toUpperCase(), bold: true, size: 32, font: "Noto Serif" })],
-            spacing: { before: 400, after: 100 }
+            spacing: { before: 280, after: 80 },
+            alignment: AlignmentType.CENTER,
           }),
           new Paragraph({ 
             children: [new TextRun({ text: data.titlu, bold: true, size: 28, font: "Noto Serif" })],
-            spacing: { after: 200 }
+            spacing: { after: 160 },
+            alignment: AlignmentType.CENTER,
           }),
           // Conținut: dacă avem HTML, mapăm taguri de bază (p, strong, em, u, ul/ol/li) fără DOMParser
           ...(() => {
             const out: Paragraph[] = data.continutHtml ? parseHtmlToParagraphs(data.continutHtml) : [];
             if (out.length === 0) {
-              out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24, font: "Noto Serif" })] }));
+              out.push(new Paragraph({ children: [new TextRun({ text: data.continut, size: 24, font: "Noto Serif" })], alignment: AlignmentType.JUSTIFIED, spacing: { after: 120 } }));
             }
             return out;
           })(),
@@ -242,7 +359,7 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
             if (settings.showSpokespersonBlock === false) return [];
             const lines: Paragraph[] = [];
             if (data.purtator) {
-              lines.push(new Paragraph({ children: [new TextRun({ text: data.purtator, size: 20, bold: true, font: "Noto Serif" })] }));
+              lines.push(new Paragraph({ children: [new TextRun({ text: data.purtator, size: 20, bold: true, font: "Noto Serif" })], spacing: { before: 200 } }));
             }
             const disp = settings.structureDisplay || settings.unitLabel || "";
             if (disp) {
@@ -256,6 +373,8 @@ export async function buildBicpDocx(settings: DocxSettings, data: DocxData) {
             if (!fl.length) return [];
             return fl.map((l) => new Paragraph({ children: [new TextRun({ text: l, size: 18, font: "Noto Serif" })], alignment: AlignmentType.CENTER }));
           })(),
+          ...(settings.footerLines && settings.footerLines.length ? [new Paragraph({ spacing: { before: 80 } })] : []),
+          footerTricolor,
         ],
       },
     ],
