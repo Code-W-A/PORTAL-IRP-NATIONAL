@@ -40,6 +40,13 @@ function ddmmyyyySlashFromIso(iso: string) {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+function isoFromDdMmYyyy(v: string): string {
+  const s = String(v || "").trim();
+  const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  return s;
+}
+
 function isoToday() {
   const d = new Date();
   const yyyy = String(d.getFullYear());
@@ -76,7 +83,7 @@ function SimpleForm({
   db: ReturnType<typeof initFirebase>["db"];
   auth: ReturnType<typeof initFirebase>["auth"];
   onContinueComplex: (cerereId: string) => void;
-  prefill: { nume?: string; legit?: string; redactie?: string; email?: string; telefon?: string } | null;
+  prefill: { nume?: string; legit?: string; redactie?: string; email?: string; telefon?: string; sex?: "F" | "M"; dataIso?: string; numar?: string } | null;
   prefillKey: number;
   existingAcreditareId?: string | null;
 }) {
@@ -141,10 +148,13 @@ function SimpleForm({
   useEffect(() => {
     if (!prefill) return;
     setNume(prefill.nume || "");
+    setSex(prefill.sex === "M" ? "M" : "F");
     setLegit(prefill.legit || "");
     setRedactie(prefill.redactie || "");
     setEmail(prefill.email || "");
     setTelefon(prefill.telefon || "");
+    if (prefill.dataIso) setDataIso(prefill.dataIso);
+    if (prefill.numar) setNumarText(prefill.numar);
   }, [prefillKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -464,6 +474,17 @@ export default function CreeazaAcreditarePage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>("simplu");
   const [editCerereId, setEditCerereId] = useState<string | null>(null);
   const [editAcreditareId, setEditAcreditareId] = useState<string | null>(null);
+  const [simplePrefill, setSimplePrefill] = useState<{
+    nume?: string;
+    legit?: string;
+    redactie?: string;
+    email?: string;
+    telefon?: string;
+    sex?: "F" | "M";
+    dataIso?: string;
+    numar?: string;
+  } | null>(null);
+  const [simplePrefillKey, setSimplePrefillKey] = useState(0);
 
   // Allow deep-linking: /acreditari/creaza?tab=cerere&cerereId=...
   useEffect(() => {
@@ -481,12 +502,45 @@ export default function CreeazaAcreditarePage() {
       }
       if (cerereId) {
         setEditCerereId(cerereId);
-        setActiveTab("cerere");
+        // For edit view, start on Completare simplă
+        setActiveTab("simplu");
         }
       } catch {}
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!editCerereId) return;
+      try {
+        const ref = doc(db, "CereriAcreditare", editCerereId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return;
+        const d = snap.data() as any;
+        if (!alive) return;
+        const acreditareNumar = String(d?.acreditare?.numar || "").trim();
+        const acreditareData = String(d?.acreditare?.data || "").trim();
+        const dataIso = isoFromDdMmYyyy(acreditareData);
+        const sex = String(d?.jurnalist?.sex || "").toUpperCase() === "M" ? "M" : "F";
+        setSimplePrefill({
+          nume: String(d?.jurnalist?.numePrenume || ""),
+          legit: String(d?.jurnalist?.legitimatie?.numar || ""),
+          redactie: String(d?.media?.denumire || ""),
+          email: String(d?.jurnalist?.email || ""),
+          telefon: String(d?.jurnalist?.telefon?.mobil || ""),
+          sex,
+          dataIso: dataIso && /^\d{4}-\d{2}-\d{2}$/.test(dataIso) ? dataIso : undefined,
+          numar: acreditareNumar || undefined,
+        });
+        setSimplePrefillKey((k) => k + 1);
+      } catch {}
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [db, editCerereId]);
 
   async function copyCereriLink() {
     try {
@@ -612,8 +666,8 @@ export default function CreeazaAcreditarePage() {
           <SimpleForm
             db={db}
             auth={auth}
-            prefill={null}
-            prefillKey={0}
+            prefill={simplePrefill}
+            prefillKey={simplePrefillKey}
             existingAcreditareId={editAcreditareId}
             onContinueComplex={(cerereId) => {
               setEditCerereId(cerereId);
