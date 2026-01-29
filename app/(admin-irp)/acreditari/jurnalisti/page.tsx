@@ -32,13 +32,33 @@ export default function JurnalistiPage() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  function normalizeId(nume: string, redactie: string) {
-    return `${nume || ""} ${redactie || ""}`
+  function normalizeIdFromValue(value: string) {
+    return String(value || "")
       .trim()
       .toUpperCase()
       .replace(/[^A-Z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "")
-      .slice(0, 80) || `J_${Date.now()}`;
+      .slice(0, 80);
+  }
+
+  function normalizeId(nume: string, redactie: string, email?: string, telefon?: string, legit?: string) {
+    const l = normalizeIdFromValue(legit || "");
+    if (l) return l;
+    const em = normalizeIdFromValue(String(email || "").toLowerCase());
+    if (em) return em;
+    const tel = normalizeIdFromValue(String(telefon || "").replace(/[^\d+]/g, ""));
+    if (tel) return tel;
+    const nr = normalizeIdFromValue(`${nume || ""} ${redactie || ""}`);
+    return nr || `J_${Date.now()}`;
+  }
+
+  function toTitleCase(text: string) {
+    const s = String(text || "").trim().toLowerCase();
+    if (!s) return "";
+    return s
+      .split(/\s+/)
+      .map((word) => word.replace(/^([a-zăâîșț]+)(.*)$/i, (_, a, b) => a.charAt(0).toUpperCase() + a.slice(1).toLowerCase() + (b || "")))
+      .join(" ");
   }
 
   function normalizeHeader(h: string) {
@@ -49,11 +69,11 @@ export default function JurnalistiPage() {
     const idx = (name: string) => headers.indexOf(name);
     const val = (name: string) => (idx(name) >= 0 ? String(cols[idx(name)] || "").trim() : "");
     return {
-      redactie: val("redactie"),
+      redactie: toTitleCase(val("redactie")),
       adresaRedactie: val("adresaredactie"),
-      numeJurnalist: val("numejurnalist"),
+      numeJurnalist: toTitleCase(val("numejurnalist")),
       telefon: val("telefon"),
-      email: val("email"),
+      email: val("email").toLowerCase(),
       legit: val("legitimatie"),
     };
   }
@@ -112,7 +132,7 @@ export default function JurnalistiPage() {
       const batch = writeBatch(db);
       let count = 0;
       cleaned.forEach((r) => {
-        const id = normalizeId(r.numeJurnalist, r.redactie);
+        const id = normalizeId(r.numeJurnalist, r.redactie, r.email, r.telefon, r.legit);
         const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`);
         batch.set(
           ref,

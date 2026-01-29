@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { getTenantContext } from "@/lib/tenant";
-import { FileText, Link2, Check, Copy, ExternalLink, Search, Loader2, X, ScanText, Wand2 } from "lucide-react";
+import { FileText, Link2, Check, Copy, ExternalLink, Search, Loader2, X, ScanText, Wand2, Users } from "lucide-react";
 import { CerereAcreditareForm, type CerereAcreditarePrefill } from "@/app/acreditare/components/CerereAcreditareForm";
 import { initFirebase } from "@/lib/firebase";
 import {
@@ -23,6 +23,7 @@ import {
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 
 type ActiveTab = "cerere" | "simplu";
+type JurnalistRecord = { id: string; nume?: string; email?: string; telefon?: string; redactie?: string; legit?: string; adresaRedactie?: string; lastAcreditareYear?: number };
 
 function normalizeLegitId(s: string) {
   return String(s || "")
@@ -31,6 +32,18 @@ function normalizeLegitId(s: string) {
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 80);
+}
+
+function normalizeIdFromValue(s: string) {
+  return normalizeLegitId(String(s || ""));
+}
+
+function normalizePhoneValue(s: string) {
+  return String(s || "").trim().replace(/[^\d+]/g, "");
+}
+
+function normalizeEmailValue(s: string) {
+  return String(s || "").trim().toLowerCase();
 }
 
 function ddmmyyyySlashFromIso(iso: string) {
@@ -106,6 +119,68 @@ function SimpleForm({
   const [lastCerereId, setLastCerereId] = useState<string | null>(null);
   const [loadedAcreditareId, setLoadedAcreditareId] = useState<string | null>(null);
   const [originalLegit, setOriginalLegit] = useState<string>("");
+  const [jurnalisti, setJurnalisti] = useState<JurnalistRecord[]>([]);
+  const [jurnalistiLoading, setJurnalistiLoading] = useState(false);
+  const [jurnalistiSearch, setJurnalistiSearch] = useState("");
+  const [selectedJurnalistId, setSelectedJurnalistId] = useState<string | null>(null);
+
+  function computeJurnalistId() {
+    const l = normalizeLegitId(legit);
+    if (l) return l;
+    if (selectedJurnalistId) return selectedJurnalistId;
+    const em = normalizeIdFromValue(String(email || "").toLowerCase());
+    if (em) return em;
+    const tel = normalizeIdFromValue(normalizePhoneValue(telefon));
+    if (tel) return tel;
+    const nr = normalizeIdFromValue(`${nume || ""} ${redactie || ""}`);
+    return nr || selectedJurnalistId || `J_${Date.now()}`;
+  }
+
+  async function loadJurnalisti() {
+    try {
+      setJurnalistiLoading(true);
+      const { judetId, structuraId } = getTenantContext();
+      if (!judetId || !structuraId) return;
+      const snap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Jurnalisti"));
+      setJurnalisti(snap.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as JurnalistRecord[]);
+    } finally {
+      setJurnalistiLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadJurnalisti();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db]);
+
+  const jurnalistiFiltered = useMemo(() => {
+    const s = jurnalistiSearch.trim().toLowerCase();
+    if (!s) return jurnalisti.slice(0, 8);
+    return jurnalisti
+      .filter((j) => [j.nume, j.email, j.telefon, j.redactie, j.legit].filter(Boolean).map(String).some((v) => v.toLowerCase().includes(s)))
+      .slice(0, 8);
+  }, [jurnalisti, jurnalistiSearch]);
+
+  const jurnalistiMatches = useMemo(() => {
+    const l = normalizeLegitId(legit);
+    const em = normalizeEmailValue(email);
+    const tel = normalizePhoneValue(telefon);
+    return jurnalisti.filter((j) => {
+      const jl = normalizeLegitId(String(j.legit || ""));
+      const je = normalizeEmailValue(String(j.email || ""));
+      const jt = normalizePhoneValue(String(j.telefon || ""));
+      return (l && jl === l) || (em && je === em) || (tel && jt === tel);
+    });
+  }, [jurnalisti, legit, email, telefon]);
+
+  function applyJurnalist(j: JurnalistRecord) {
+    setSelectedJurnalistId(j.id);
+    setNume(String(j.nume || ""));
+    setEmail(String(j.email || ""));
+    setTelefon(String(j.telefon || ""));
+    setRedactie(String(j.redactie || ""));
+    setLegit(String(j.legit || ""));
+  }
 
   async function computeNextNumarPreview() {
     if (numarLoading) return;
@@ -216,6 +291,14 @@ function SimpleForm({
       return;
     }
 
+    if (jurnalistiMatches.length > 0) {
+      const matchIds = new Set(jurnalistiMatches.map((j) => j.id));
+      if (!selectedJurnalistId || !matchIds.has(selectedJurnalistId)) {
+        alert("Există jurnalist(e) în baza de date cu aceeași legitimație/email/telefon. Te rog selectează jurnalistul corect din listă înainte de salvare.");
+        return;
+      }
+    }
+
     const { judetId, structuraId } = getTenantContext();
     const currentKey = `${String(judetId || "").toUpperCase()}_${String(structuraId || "").toUpperCase()}`;
     const dataLabel = ddmmyyyySlashFromIso(dataIso);
@@ -245,6 +328,29 @@ function SimpleForm({
           "jurnalist.telefon.mobil": tel,
           updatedAt: nowTs,
         } as any);
+        try {
+          const jurnalistId = computeJurnalistId();
+          const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jurnalistId}`);
+          await setDoc(
+            jurnalistRef,
+            {
+              nume: nn,
+              email: em,
+              telefon: tel,
+              legit: lg,
+              redactie: rd,
+              lastAcreditareYear: yearFromIso,
+              updatedAt: nowTs,
+              createdAt: nowTs,
+            },
+            { merge: true }
+          );
+          if (selectedJurnalistId && jurnalistId !== selectedJurnalistId) {
+            try {
+              await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${selectedJurnalistId}`));
+            } catch {}
+          }
+        } catch {}
         setMsg("Cererea a fost actualizată.");
         return;
       }
@@ -313,6 +419,31 @@ function SimpleForm({
       const okCreate = confirm("Sigur vrei să salvezi această cerere de acreditare?");
       if (!okCreate) return;
 
+      // Upsert Jurnalist in structura (so it appears in /acreditari/jurnalisti)
+      try {
+        const jurnalistId = computeJurnalistId();
+        const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jurnalistId}`);
+        await setDoc(
+          jurnalistRef,
+          {
+            nume: nn,
+            email: em,
+            telefon: tel,
+            legit: lg,
+            redactie: rd,
+            lastAcreditareYear: yearFromIso,
+            updatedAt: nowTs,
+            createdAt: nowTs,
+          },
+          { merge: true }
+        );
+        if (selectedJurnalistId && jurnalistId !== selectedJurnalistId) {
+          try {
+            await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${selectedJurnalistId}`));
+          } catch {}
+        }
+      } catch {}
+
       // Create CereriAcreditare in the SAME schema as complex form (minimal fields)
       const cererePayload: any = {
         structuri: [{ judetId: String(judetId || "").toUpperCase(), structuraId: String(structuraId || "").toUpperCase(), display: `${structuraId} ${judetId}` }],
@@ -368,6 +499,90 @@ function SimpleForm({
             <div className="text-xs text-gray-600 mt-1">Doar câmpurile minime necesare pentru certificatul din exemplu.</div>
           </div>
           <div className="text-xs text-gray-500">PDF se generează după salvare.</div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 p-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-sm font-semibold text-gray-900 inline-flex items-center gap-2">
+              <Users size={16} className="text-gray-600" />
+              Caută jurnalist existent
+            </div>
+            {jurnalistiLoading && (
+              <div className="text-xs text-gray-500 inline-flex items-center gap-2">
+                <Loader2 size={12} className="animate-spin" />
+                Se încarcă baza de jurnaliști...
+              </div>
+            )}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={jurnalistiSearch}
+                onChange={(e) => setJurnalistiSearch(e.target.value)}
+                placeholder="Caută nume, email, telefon, redacție, legitimație..."
+                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-600 outline-none bg-white"
+              />
+            </div>
+            {selectedJurnalistId && (
+              <button
+                type="button"
+                onClick={() => setSelectedJurnalistId(null)}
+                className="inline-flex items-center gap-1 px-2 py-2 border border-gray-200 rounded-lg text-xs text-gray-700 hover:bg-white"
+                title="Deselectează"
+              >
+                <X size={12} />
+                Deselectează
+              </button>
+            )}
+          </div>
+          {jurnalistiSearch.trim() && (
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+              {jurnalistiFiltered.length === 0 ? (
+                <div className="text-xs text-gray-500">Niciun jurnalist găsit.</div>
+              ) : (
+                jurnalistiFiltered.map((j) => (
+                  <button
+                    key={j.id}
+                    type="button"
+                    onClick={() => applyJurnalist(j)}
+                    className={`text-left px-3 py-2 rounded-lg border ${
+                      selectedJurnalistId === j.id ? "border-blue-400 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50"
+                    }`}
+                  >
+                    <div className="text-sm font-medium text-gray-900">{j.nume || "—"}</div>
+                    <div className="text-xs text-gray-600">{j.redactie || "—"}</div>
+                    <div className="text-xs text-gray-500">{[j.email, j.telefon, j.legit].filter(Boolean).join(" • ") || "—"}</div>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+          {selectedJurnalistId && (
+            <div className="mt-3 text-xs text-gray-600">Jurnalist selectat: {selectedJurnalistId}</div>
+          )}
+          {!selectedJurnalistId && jurnalistiMatches.length > 0 && (
+            <div className="mt-3 text-xs text-amber-700">
+              Atenție: există jurnalist(e) care se potrivesc după legitimație/email/telefon. Selectează jurnalistul corect înainte de salvare.
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-auto pr-1">
+                {jurnalistiMatches.slice(0, 8).map((j) => (
+                  <div key={j.id} className="px-2 py-1 rounded border border-amber-200 bg-amber-50 flex items-center justify-between gap-2">
+                    <div>
+                      <div className="font-medium text-amber-900">{j.nume || "—"}</div>
+                      <div className="text-amber-800">{[j.email, j.telefon, j.legit].filter(Boolean).join(" • ") || "—"}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => applyJurnalist(j)}
+                      className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded border border-amber-300 bg-white text-amber-900 hover:bg-amber-100 text-xs"
+                    >
+                      Selectează
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -704,5 +919,3 @@ export default function CreeazaAcreditarePage() {
     </div>
   );
 }
-
-
