@@ -4,7 +4,7 @@ import { collection, deleteDoc, doc, getDocs } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import Link from "next/link";
-import { FileText, Plus, Calendar, IdCard, Building2, Download, Pencil, Trash2, Loader2, Printer, Search, Filter, LayoutGrid, Table } from "lucide-react";
+import { FileText, Plus, Calendar, IdCard, Building2, Download, Pencil, Trash2, Loader2, Printer, Search, Filter, LayoutGrid, Table, ChevronUp, ChevronDown } from "lucide-react";
 
 type Acr = { id: string; numar: string; data: string; nume: string; legit: string; redactie: string };
 
@@ -17,6 +17,8 @@ export default function ListaAcreditariPage() {
   const [search, setSearch] = useState("");
   const [onlyCurrent, setOnlyCurrent] = useState(false);
   const currentYear = new Date().getFullYear();
+  const [sortBy, setSortBy] = useState<"numar" | "data" | "nume" | "legit" | "redactie">("data");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   async function load() {
       try {
@@ -74,6 +76,62 @@ export default function ListaAcreditariPage() {
       .filter((x) => (onlyCurrent ? yearFromData(x.data) === currentYear : true))
       .filter((x) => !s || [x.nume, x.redactie, x.legit, x.numar, x.data].filter(Boolean).map(String).some((v) => v.toLowerCase().includes(s)));
   }, [items, search, onlyCurrent, currentYear]);
+
+  function parseNumar(v?: string): number | null {
+    const s = String(v || "").trim();
+    if (!s) return null;
+    if (/^\d+$/.test(s)) return Number(s);
+    const n = Number(s.replace(/\D+/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function parseDateToNumber(v?: string): number | null {
+    const s = String(v || "").trim();
+    if (!s) return null;
+    const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m1) return Number(`${m1[3]}${m1[2]}${m1[1]}`);
+    const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m2) return Number(`${m2[1]}${m2[2]}${m2[3]}`);
+    return null;
+  }
+
+  const sorted = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const list = [...filtered];
+    list.sort((a, b) => {
+      let av: any = "";
+      let bv: any = "";
+      if (sortBy === "numar") {
+        av = parseNumar(a.numar);
+        bv = parseNumar(b.numar);
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return (av - bv) * dir;
+      }
+      if (sortBy === "data") {
+        av = parseDateToNumber(a.data);
+        bv = parseDateToNumber(b.data);
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        return (av - bv) * dir;
+      }
+      if (sortBy === "nume") {
+        av = String(a.nume || "").toLowerCase();
+        bv = String(b.nume || "").toLowerCase();
+      } else if (sortBy === "legit") {
+        av = String(a.legit || "").toLowerCase();
+        bv = String(b.legit || "").toLowerCase();
+      } else if (sortBy === "redactie") {
+        av = String(a.redactie || "").toLowerCase();
+        bv = String(b.redactie || "").toLowerCase();
+      }
+      if (av === bv) return 0;
+      return av > bv ? dir : -dir;
+    });
+    return list;
+  }, [filtered, sortBy, sortDir]);
 
   async function onDelete(id: string) {
     const ok = confirm("Sigur vrei să ștergi această acreditare? Acțiunea este ireversibilă.");
@@ -205,7 +263,7 @@ export default function ListaAcreditariPage() {
             </div>
             Lista acreditări
           </div>
-          <div className="text-sm text-gray-600 mt-1">Documentele de acreditare emise ({filtered.length} afișate din {items.length})</div>
+          <div className="text-sm text-gray-600 mt-1">Documentele de acreditare emise ({sorted.length} afișate din {items.length})</div>
         </div>
         <Link 
           href="/acreditari/creaza" 
@@ -284,7 +342,7 @@ export default function ListaAcreditariPage() {
             </div>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : sorted.length === 0 ? (
         <div className="text-center py-12">
           <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <FileText size={24} className="text-gray-400" />
@@ -307,16 +365,71 @@ export default function ListaAcreditariPage() {
                 <table className="min-w-full text-sm">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr className="text-left text-gray-700">
-                      <th className="px-4 py-3 font-semibold">Nr.</th>
-                      <th className="px-4 py-3 font-semibold">Data</th>
-                      <th className="px-4 py-3 font-semibold">Nume</th>
-                      <th className="px-4 py-3 font-semibold">Legitimație</th>
-                      <th className="px-4 py-3 font-semibold">Redacție</th>
+                      <th
+                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-100"
+                        onClick={() => {
+                          if (sortBy === "numar") setSortDir(sortDir === "asc" ? "desc" : "asc");
+                          else { setSortBy("numar"); setSortDir("desc"); }
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Nr.
+                          {sortBy === "numar" ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null}
+                        </span>
+                      </th>
+                      <th
+                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-100"
+                        onClick={() => {
+                          if (sortBy === "data") setSortDir(sortDir === "asc" ? "desc" : "asc");
+                          else { setSortBy("data"); setSortDir("desc"); }
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Data
+                          {sortBy === "data" ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null}
+                        </span>
+                      </th>
+                      <th
+                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-100"
+                        onClick={() => {
+                          if (sortBy === "nume") setSortDir(sortDir === "asc" ? "desc" : "asc");
+                          else { setSortBy("nume"); setSortDir("asc"); }
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Nume
+                          {sortBy === "nume" ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null}
+                        </span>
+                      </th>
+                      <th
+                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-100"
+                        onClick={() => {
+                          if (sortBy === "legit") setSortDir(sortDir === "asc" ? "desc" : "asc");
+                          else { setSortBy("legit"); setSortDir("asc"); }
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Legitimație
+                          {sortBy === "legit" ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null}
+                        </span>
+                      </th>
+                      <th
+                        className="px-4 py-3 font-semibold cursor-pointer hover:bg-gray-100"
+                        onClick={() => {
+                          if (sortBy === "redactie") setSortDir(sortDir === "asc" ? "desc" : "asc");
+                          else { setSortBy("redactie"); setSortDir("asc"); }
+                        }}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          Redacție
+                          {sortBy === "redactie" ? (sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />) : null}
+                        </span>
+                      </th>
                       <th className="px-4 py-3 font-semibold text-right">Acțiuni</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {filtered.map((x) => (
+                    {sorted.map((x) => (
                       <tr key={x.id} className="hover:bg-gray-50/60">
                         <td className="px-4 py-3 font-medium text-gray-900">{x.numar}</td>
                         <td className="px-4 py-3 text-gray-700">
@@ -391,7 +504,7 @@ export default function ListaAcreditariPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filtered.map((x) => (
+              {sorted.map((x) => (
                 <div key={x.id} className="group rounded-2xl border border-gray-200 bg-white shadow-sm p-6 hover:shadow-xl hover:border-gray-300 transition-all duration-200">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center">
