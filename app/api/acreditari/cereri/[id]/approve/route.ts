@@ -90,6 +90,9 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const telefonMobil = String(jurnalist?.telefon?.mobil || "");
     const jId = normalizeLegitId(nrLegit) || id;
     const jurnalistPath = `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jId}`;
+    const cerereNumar = String((cerere as any)?.acreditare?.numar || "").trim();
+    const cerereData = String((cerere as any)?.acreditare?.data || "").trim();
+    const numar = numarOverride || cerereNumar || `ACR-${new Date().getFullYear()}-${id.slice(0, 6).toUpperCase()}`;
     const jurnalistDoc = {
       nume: String(jurnalist?.numePrenume || ""),
       email: String(jurnalist?.email || ""),
@@ -97,6 +100,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       legit: nrLegit,
       redactie: String(media?.denumire || ""),
       lastAcreditareYear: new Date().getFullYear(),
+      lastAcreditareNumar: numar,
       updatedAt: { __timestamp: nowIso },
       createdAt: { __timestamp: nowIso },
     };
@@ -108,9 +112,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
 
     // Create Acreditari doc (so it appears in /acreditari/lista)
-    const cerereNumar = String((cerere as any)?.acreditare?.numar || "").trim();
-    const cerereData = String((cerere as any)?.acreditare?.data || "").trim();
-    const numar = numarOverride || cerereNumar || `ACR-${new Date().getFullYear()}-${id.slice(0, 6).toUpperCase()}`;
     const sex = String((cerere as any)?.jurnalist?.sex || "").toUpperCase();
     const acrDoc = {
       numar,
@@ -211,5 +212,4 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "Approve failed", requestId }, { status: 500 });
   }
 }
-
 

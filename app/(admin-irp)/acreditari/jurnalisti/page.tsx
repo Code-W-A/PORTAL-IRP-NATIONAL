@@ -1,13 +1,13 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X, LayoutGrid, Table, ChevronLeft, ChevronRight, Phone, Upload, Loader2 } from "lucide-react";
+import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X, LayoutGrid, Table, ChevronLeft, ChevronRight, Phone, Upload, Loader2, Download } from "lucide-react";
 
-type Journalist = { id: string; nume: string; email?: string; telefon?: string; legit?: string; redactie?: string; adresaRedactie?: string; lastAcreditareYear?: number };
+type Journalist = { id: string; nume: string; email?: string; telefon?: string; legit?: string; redactie?: string; adresaRedactie?: string; lastAcreditareYear?: number; lastAcreditareNumar?: string };
 type ImportRow = { redactie: string; adresaRedactie: string; numeJurnalist: string; telefon: string; email: string; legit: string };
 
 export default function JurnalistiPage() {
@@ -31,6 +31,35 @@ export default function JurnalistiPage() {
   });
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [exportScope, setExportScope] = useState<"all" | "year">("year");
+  const [exportYear, setExportYear] = useState<number>(currentYear);
+
+  function getViewStorageKey() {
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      return `acreditari:jurnalisti:view:${String(judetId || "")}:${String(structuraId || "")}`;
+    } catch {
+      return "acreditari:jurnalisti:view";
+    }
+  }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const v = localStorage.getItem(getViewStorageKey());
+      if (v === "cards" || v === "table") setView(v);
+    } catch {}
+    // run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(getViewStorageKey(), view);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   function normalizeIdFromValue(value: string) {
     return String(value || "")
@@ -162,6 +191,54 @@ export default function JurnalistiPage() {
     }
   }
 
+  const exportYears = useMemo(() => {
+    const years = Array.from(new Set(items.map((i) => i.lastAcreditareYear).filter(Boolean))) as number[];
+    years.sort((a, b) => b - a);
+    return years;
+  }, [items]);
+
+  function exportRows(scope: "all" | "year") {
+    const list = scope === "year" ? items.filter((x) => x.lastAcreditareYear === exportYear) : items;
+    return list.map((x) => ({
+      nume: x.nume || "",
+      email: x.email || "",
+      telefon: x.telefon || "",
+      legit: x.legit || "",
+      redactie: x.redactie || "",
+      adresaRedactie: x.adresaRedactie || "",
+      lastAcreditareYear: x.lastAcreditareYear || "",
+      lastAcreditareNumar: x.lastAcreditareNumar || "",
+      status: x.lastAcreditareYear === currentYear ? "Acreditat" : x.lastAcreditareYear ? `Neacreditat (${x.lastAcreditareYear})` : "Neacreditat",
+    }));
+  }
+
+  function downloadCsv(scope: "all" | "year") {
+    const rows = exportRows(scope);
+    const headers = ["nume", "email", "telefon", "legit", "redactie", "adresaRedactie", "lastAcreditareYear", "lastAcreditareNumar", "status"];
+    const csv = [
+      headers.join(","),
+      ...rows.map((r) => headers.map((h) => `"${String((r as any)[h] ?? "").replace(/\"/g, '""')}"`).join(",")),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `jurnalisti_${scope === "year" ? exportYear : "toti"}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  async function downloadXlsx(scope: "all" | "year") {
+    const XLSX = await import("xlsx");
+    const rows = exportRows(scope);
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Jurnalisti");
+    XLSX.writeFile(wb, `jurnalisti_${scope === "year" ? exportYear : "toti"}.xlsx`);
+  }
+
   function PaginationControls() {
     return (
       <div className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg">
@@ -233,9 +310,30 @@ export default function JurnalistiPage() {
     if (!ok) return;
     try {
       const { judetId, structuraId } = getTenantContext();
-      const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`);
-      await setDoc(ref, { ...editDraft, updatedAt: serverTimestamp() }, { merge: true });
-      setItems((prev) => prev.map((j) => (j.id === id ? { ...j, ...editDraft } : j)));
+      const fromId = id;
+      const toId = normalizeId(editDraft.nume, editDraft.redactie, editDraft.email, editDraft.telefon, editDraft.legit);
+      const updatedAt = serverTimestamp();
+
+      if (toId && toId !== fromId) {
+        const okMove = confirm("Ai schimbat câmpuri care afectează identificarea (legitimație/email/telefon). Vrei să mut jurnalistul pe un ID nou (recomandat) ca să evităm dubluri?");
+        if (!okMove) return;
+        const fromRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${fromId}`);
+        const toRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${toId}`);
+        const exists = await getDoc(toRef);
+        if (exists.exists()) {
+          alert("Există deja un jurnalist cu acest ID (probabil legitimație/email/telefon identic). Selectează-l din listă și actualizează-l pe acela.");
+          return;
+        }
+        await setDoc(toRef, { ...editDraft, updatedAt, createdAt: updatedAt }, { merge: true });
+        await deleteDoc(fromRef);
+        setItems((prev) => prev.map((j) => (j.id === fromId ? ({ ...j, id: toId, ...editDraft } as any) : j)));
+        cancelEdit();
+        return;
+      }
+
+      const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${fromId}`);
+      await setDoc(ref, { ...editDraft, updatedAt }, { merge: true });
+      setItems((prev) => prev.map((j) => (j.id === fromId ? { ...j, ...editDraft } : j)));
       cancelEdit();
     } catch {
       alert("Nu am putut salva modificările. Încearcă din nou.");
@@ -358,6 +456,47 @@ export default function JurnalistiPage() {
 
         <PaginationControls />
 
+        <div className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg">
+          <span className="text-sm text-gray-600">Export:</span>
+          <select
+            value={exportScope}
+            onChange={(e) => setExportScope(e.target.value === "year" ? "year" : "all")}
+            className="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white"
+          >
+            <option value="year">Acreditați pe anul</option>
+            <option value="all">Toți</option>
+          </select>
+          {exportScope === "year" && (
+            <select
+              value={exportYear}
+              onChange={(e) => setExportYear(Number(e.target.value) || currentYear)}
+              className="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white"
+            >
+              {[currentYear, ...exportYears.filter((y) => y !== currentYear)].map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            onClick={() => downloadCsv(exportScope)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-900 text-white text-xs font-medium"
+            title="Export CSV"
+          >
+            <Download size={12} />
+            CSV
+          </button>
+          <button
+            type="button"
+            onClick={() => downloadXlsx(exportScope)}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-600 text-white text-xs font-medium"
+            title="Export Excel"
+          >
+            <Download size={12} />
+            Excel
+          </button>
+        </div>
+
         <input
           ref={fileInputRef}
           type="file"
@@ -428,7 +567,8 @@ export default function JurnalistiPage() {
                       <th className="px-4 py-3 font-semibold">Email</th>
                       <th className="px-4 py-3 font-semibold">Legitimație</th>
                       <th className="px-4 py-3 font-semibold">Redacție</th>
-                      <th className="px-4 py-3 font-semibold">Ultimul an</th>
+                      <th className="px-4 py-3 font-semibold">Nr. acreditare</th>
+                      <th className="px-4 py-3 font-semibold">Status</th>
                       <th className="px-4 py-3 font-semibold text-right">Acțiuni</th>
                     </tr>
                   </thead>
@@ -478,6 +618,16 @@ export default function JurnalistiPage() {
                                   <Phone size={12} />
                                   Apelează
                                 </a>
+                                <a
+                                  href={`https://wa.me/${normalizePhoneForTel(x.telefon)}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors text-xs font-medium"
+                                  title="Deschide WhatsApp"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                >
+                                  WA
+                                </a>
                               </div>
                             ) : (
                               <div className="text-gray-500">—</div>
@@ -520,12 +670,15 @@ export default function JurnalistiPage() {
                             )}
                           </td>
                           <td className="px-4 py-3">
+                            <div className="text-gray-700">{x.lastAcreditareNumar || "—"}</div>
+                          </td>
+                          <td className="px-4 py-3">
                             <span
                               className={`inline-flex items-center px-2 py-1 rounded-lg text-xs font-medium ${
-                                isCurrent ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"
+                                isCurrent ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
                               }`}
                             >
-                              {isCurrent ? "Actual" : x.lastAcreditareYear || "Vechi"}
+                              {isCurrent ? "Acreditat" : x.lastAcreditareYear ? `Neacreditat (${x.lastAcreditareYear})` : "Neacreditat"}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -638,9 +791,9 @@ export default function JurnalistiPage() {
                       <div className={`px-2 py-1 rounded-lg text-xs font-medium ${
                         isCurrent 
                           ? "bg-green-200 text-green-800" 
-                          : "bg-yellow-200 text-yellow-800"
+                          : "bg-gray-200 text-gray-800"
                       }`}>
-                        {isCurrent ? "Actual" : x.lastAcreditareYear || "Vechi"}
+                        {isCurrent ? "Acreditat" : x.lastAcreditareYear ? `Neacreditat (${x.lastAcreditareYear})` : "Neacreditat"}
                       </div>
                     </div>
                     
@@ -667,12 +820,28 @@ export default function JurnalistiPage() {
                             <Phone size={12} />
                             Apelează
                           </a>
+                          <a
+                            href={`https://wa.me/${normalizePhoneForTel(x.telefon)}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors text-xs font-medium"
+                            title="Deschide WhatsApp"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            WA
+                          </a>
                         </div>
                       )}
                       {x.legit && (
                         <div className="flex items-center gap-2 text-sm text-gray-700">
                           <IdCard size={14} className="text-gray-400" />
                           <span>Legitimație: {x.legit}</span>
+                        </div>
+                      )}
+                      {x.lastAcreditareNumar && (
+                        <div className="flex items-center gap-2 text-sm text-gray-700">
+                          <IdCard size={14} className="text-gray-400" />
+                          <span>Nr. acreditare: {x.lastAcreditareNumar}</span>
                         </div>
                       )}
                       {x.redactie && (

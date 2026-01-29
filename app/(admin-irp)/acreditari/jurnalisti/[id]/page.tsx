@@ -69,6 +69,26 @@ function normalizePhoneForTel(v?: string): string {
   return s.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "");
 }
 
+function normalizeIdFromValue(value: string) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+}
+
+function normalizeJurnalistId(nume: string, redactie: string, email?: string, telefon?: string, legit?: string) {
+  const l = normalizeIdFromValue(legit || "");
+  if (l) return l;
+  const em = normalizeIdFromValue(String(email || "").toLowerCase());
+  if (em) return em;
+  const tel = normalizeIdFromValue(String(telefon || "").replace(/[^\d+]/g, ""));
+  if (tel) return tel;
+  const nr = normalizeIdFromValue(`${nume || ""} ${redactie || ""}`);
+  return nr || `J_${Date.now()}`;
+}
+
 export default function JurnalistDetaliiPage() {
   const { db } = initFirebase();
   const router = useRouter();
@@ -243,8 +263,30 @@ export default function JurnalistDetaliiPage() {
     setSaving(true);
     try {
       const { judetId, structuraId } = getTenantContext();
-      const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jurnalist.id}`);
-      await setDoc(ref, { ...editDraft, updatedAt: serverTimestamp() }, { merge: true });
+      const fromId = jurnalist.id;
+      const toId = normalizeJurnalistId(editDraft.nume, editDraft.redactie || "", editDraft.email, editDraft.telefon, editDraft.legit);
+      const updatedAt = serverTimestamp();
+
+      if (toId && toId !== fromId) {
+        const okMove = confirm("Ai schimbat câmpuri care afectează identificarea (legitimație/email/telefon). Vrei să mut jurnalistul pe un ID nou (recomandat) ca să evităm dubluri?");
+        if (!okMove) return;
+        const fromRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${fromId}`);
+        const toRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${toId}`);
+        const exists = await getDoc(toRef);
+        if (exists.exists()) {
+          alert("Există deja un jurnalist cu acest ID (probabil legitimație/email/telefon identic). Selectează-l din listă și actualizează-l pe acela.");
+          return;
+        }
+        await setDoc(toRef, { ...editDraft, updatedAt, createdAt: updatedAt }, { merge: true });
+        await deleteDoc(fromRef);
+        setJurnalist((prev) => (prev ? ({ ...prev, id: toId, ...editDraft } as any) : prev));
+        setEditing(false);
+        router.replace(`/acreditari/jurnalisti/${encodeURIComponent(toId)}`);
+        return;
+      }
+
+      const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${fromId}`);
+      await setDoc(ref, { ...editDraft, updatedAt }, { merge: true });
       setJurnalist((prev) => (prev ? { ...prev, ...editDraft } : prev));
       setEditing(false);
     } catch {
@@ -270,6 +312,11 @@ export default function JurnalistDetaliiPage() {
   const telHref = useMemo(() => {
     const t = normalizePhoneForTel(jurnalist?.telefon);
     return t ? `tel:${t}` : "";
+  }, [jurnalist?.telefon]);
+
+  const waHref = useMemo(() => {
+    const t = normalizePhoneForTel(jurnalist?.telefon);
+    return t ? `https://wa.me/${t}` : "";
   }, [jurnalist?.telefon]);
 
   return (
@@ -440,6 +487,17 @@ export default function JurnalistDetaliiPage() {
                         Apelează
                       </a>
                     )}
+                    {waHref && (
+                      <a
+                        href={waHref}
+                        className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors text-xs font-medium"
+                        title="Deschide WhatsApp"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        WA
+                      </a>
+                    )}
                   </div>
                 ) : (
                   <div className="text-sm text-gray-800">—</div>
@@ -539,4 +597,3 @@ export default function JurnalistDetaliiPage() {
     </div>
   );
 }
-
