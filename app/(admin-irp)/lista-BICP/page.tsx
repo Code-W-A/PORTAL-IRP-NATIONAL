@@ -99,7 +99,10 @@ export default function ListaBicpPage() {
   const { loading, error, filters, setFilters, items, total, availableYears, reload } = useBicpData();
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [view, setView] = useState<string>(() => localStorage.getItem("bicpViewMode") || "card");
+  const [view, setView] = useState<string>(() => {
+    if (typeof window === "undefined") return "card";
+    return localStorage.getItem("bicpViewMode") || "card";
+  });
   const [showFilters, setShowFilters] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printingId, setPrintingId] = useState<string | null>(null);
@@ -390,25 +393,25 @@ export default function ListaBicpPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-screen-2xl mx-auto px-3 md:px-5 py-6">
         <div className="mb-8">
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center shadow-xl">
-                <FileText size={24} className="text-white" />
-              </div>
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Lista Documente BI/CP</h1>
-                <div className="flex items-center gap-4 mt-1">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <p className="text-lg text-gray-600">Anul</p>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center shadow-xl shrink-0">
+                  <FileText size={24} className="text-white" />
+                </div>
+                <div className="space-y-2">
+                  <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Lista Documente BI/CP</h1>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-sm font-semibold text-gray-700">Anul</p>
                     <select
                       value={selectedYear}
                       onChange={(e) => setFilters({ ...filters, year: Number(e.target.value), page: 1 })}
                       className="bg-white border border-gray-300 rounded-xl px-3 py-2 text-sm font-semibold text-gray-900 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                       title="Selectează anul (arhivă)"
                     >
-                      {(availableYears?.length ? availableYears : [new Date().getFullYear()]).map((y: number) => (
+                      {(availableYears?.length ? [...new Set(availableYears)].sort((a,b)=>b-a) : [new Date().getFullYear()]).map((y: number) => (
                         <option key={y} value={y}>{y}</option>
                       ))}
                     </select>
@@ -438,63 +441,63 @@ export default function ListaBicpPage() {
                         Arhivă
                       </button>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Total: <span className="font-semibold text-gray-900">{total}</span> documente</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <span className="text-sm text-gray-700">Total: <span className="font-semibold text-gray-900">{total}</span> documente</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            <div className="flex items-center gap-3 flex-wrap w-full md:w-auto">
-              <Link 
-                href="/creaza-BICP"
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-200"
-              >
-                <FilePlus2 size={16} /> Creează BI/CP
-              </Link>
-              <button 
-                onClick={reload} 
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-colors"
-              >
-                <RefreshCw size={16} /> Actualizează
-              </button>
-              <div className="inline-flex rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
-                <button
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                    view === "card" 
-                      ? "bg-blue-600 text-white shadow-lg" 
-                      : "text-gray-700 hover:bg-gray-50"
-                  }`}
-                  onClick={() => { setView("card"); localStorage.setItem("bicpViewMode", "card"); }}
+              <div className="flex items-center gap-3 flex-wrap w-full xl:w-auto justify-start xl:justify-end">
+                <Link 
+                  href="/creaza-BICP"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-200"
                 >
-                  <Grid2X2 size={16} /> Carduri
+                  <FilePlus2 size={16} /> Creează BI/CP
+                </Link>
+                <button 
+                  onClick={reload} 
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-colors"
+                >
+                  <RefreshCw size={16} /> Actualizează
                 </button>
-                <button
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-l border-gray-200 transition-colors ${
-                    view === "table" 
-                      ? "bg-blue-600 text-white shadow-lg" 
-                      : "text-gray-700 hover:bg-gray-50"
+                <div className="inline-flex rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
+                  <button
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                      view === "card" 
+                        ? "bg-blue-600 text-white shadow-lg" 
+                        : "text-gray-700 hover:bg-gray-50"
+                    }`}
+                    onClick={() => { setView("card"); localStorage.setItem("bicpViewMode", "card"); }}
+                  >
+                    <Grid2X2 size={16} /> Carduri
+                  </button>
+                  <button
+                    className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-l border-gray-200 transition-colors ${
+                      view === "table" 
+                        ? "bg-blue-600 text-white shadow-lg" 
+                        : "text-gray-700 hover:bg-gray-50"
+                    }`}
+                    onClick={() => { setView("table"); localStorage.setItem("bicpViewMode", "table"); }}
+                  >
+                    <Rows2 size={16} /> Tabel
+                  </button>
+                </div>
+                <button 
+                  onClick={() => {
+                    setSelectMode((s) => !s);
+                    if (selectMode) setSelected({});
+                  }} 
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 ${
+                    selectMode 
+                      ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/25" 
+                      : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm"
                   }`}
-                  onClick={() => { setView("table"); localStorage.setItem("bicpViewMode", "table"); }}
                 >
-                  <Rows2 size={16} /> Tabel
+                  <CheckSquare size={16} />
+                  {selectMode ? "Anulează selecția" : "Selectează documente"}
                 </button>
               </div>
-              <button 
-                onClick={() => {
-                  setSelectMode((s) => !s);
-                  if (selectMode) setSelected({});
-                }} 
-                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 ${
-                  selectMode 
-                    ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/25" 
-                    : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm"
-                }`}
-              >
-                <CheckSquare size={16} />
-                {selectMode ? "Anulează selecția" : "Selectează documente"}
-              </button>
             </div>
           </div>
         </div>
@@ -601,58 +604,61 @@ export default function ListaBicpPage() {
 
         {/* Search */}
         <div className="mb-8">
-          <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center">
-            <div className="relative flex-1 w-full">
-              <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                placeholder="Caută în titlu, conținut sau nume afișare..."
-                className="w-full pl-12 pr-4 py-4 border border-gray-300 rounded-2xl bg-white text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-sm transition-colors text-base"
-                value={filters.search}
-                onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
-              />
-            </div>
-            <button 
-              onClick={() => setShowFilters(true)}
-              className="inline-flex items-center gap-2 px-6 py-4 bg-white border border-gray-300 rounded-2xl text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-400 shadow-sm transition-colors whitespace-nowrap w-full md:w-auto justify-center"
-            >
-              <Filter size={18} /> Filtre avansate
-            </button>
-          </div>
-          {/* Active filter chips */}
-          {(() => {
-            const chips: { key: string; label: string; onClear: () => void }[] = [];
-            if (filters.tipDocument) chips.push({ key: `tipDocument:${filters.tipDocument}`, label: `Tip: ${filters.tipDocument}`, onClear: () => setFilters({ ...filters, tipDocument: "", page: 1 }) });
-            if (filters.semnatarCat) chips.push({ key: `semnatar:${filters.semnatarCat}`, label: `Semnatar: ${filters.semnatarCat}`, onClear: () => setFilters({ ...filters, semnatarCat: "", page: 1 }) });
-            if (filters.numeSemnatar) chips.push({ key: `numeSemnatar:${filters.numeSemnatar}`, label: `Nume semnatar: ${filters.numeSemnatar}`, onClear: () => setFilters({ ...filters, numeSemnatar: "", page: 1 }) });
-            if (filters.grad) chips.push({ key: `grad:${filters.grad}`, label: `Grad: ${filters.grad}`, onClear: () => setFilters({ ...filters, grad: "", page: 1 }) });
-            if (filters.functia) chips.push({ key: `functia:${filters.functia}`, label: `Funcția: ${filters.functia}`, onClear: () => setFilters({ ...filters, functia: "", page: 1 }) });
-            if (filters.pentru) chips.push({ key: `pentru:${filters.pentru}`, label: `Pentru: ${filters.pentru}`, onClear: () => setFilters({ ...filters, pentru: "", page: 1 }) });
-            if (filters.purtatorCuvant) chips.push({ key: `purtator:${filters.purtatorCuvant}`, label: `Purtător: ${filters.purtatorCuvant}`, onClear: () => setFilters({ ...filters, purtatorCuvant: "", page: 1 }) });
-            if (filters.numarMin != null) chips.push({ key: `min:${filters.numarMin}`, label: `Nr ≥ ${filters.numarMin}`, onClear: () => setFilters({ ...filters, numarMin: undefined, page: 1 }) });
-            if (filters.numarMax != null) chips.push({ key: `max:${filters.numarMax}`, label: `Nr ≤ ${filters.numarMax}`, onClear: () => setFilters({ ...filters, numarMax: undefined, page: 1 }) });
-            if (filters.dataStart) chips.push({ key: `start:${filters.dataStart}`, label: `De la: ${filters.dataStart}`, onClear: () => setFilters({ ...filters, dataStart: undefined, page: 1 }) });
-            if (filters.dataEnd) chips.push({ key: `end:${filters.dataEnd}`, label: `Până la: ${filters.dataEnd}`, onClear: () => setFilters({ ...filters, dataEnd: undefined, page: 1 }) });
-            if (filters.search) chips.push({ key: `search:${filters.search}`, label: `Căutare: ${filters.search}`, onClear: () => setFilters({ ...filters, search: "", page: 1 }) });
-            return chips.length ? (
-              <div className="flex flex-wrap gap-2 mt-3">
-                {chips.map((c) => (
-                  <span key={c.key} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                    {c.label}
-                    <button onClick={c.onClear} className="inline-flex items-center justify-center w-5 h-5 rounded-full hover:bg-blue-100">
-                      <X size={12} />
-                    </button>
-                  </span>
-                ))}
-                <button
-                  onClick={() => setFilters({ ...filters, tipDocument: "", semnatarCat: "", numeSemnatar: "", grad: "", functia: "", pentru: "", purtatorCuvant: "", numarMin: undefined, numarMax: undefined, dataStart: undefined, dataEnd: undefined, search: "", page: 1 })}
-                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
-                  title="Resetează toate filtrele"
-                >
-                  Curăță filtrele
-                </button>
+          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
+            <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+              <div className="relative flex-1 w-full">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  placeholder="Caută în titlu, conținut sau nume afișare..."
+                  className="w-full pl-10 pr-3 h-11 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors text-sm"
+                  value={filters.search}
+                  onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
+                />
               </div>
-            ) : null;
-          })()}
+              <button
+                onClick={() => setShowFilters(true)}
+                className="inline-flex items-center gap-2 px-4 h-11 bg-white border border-gray-300 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 shadow-sm transition-colors whitespace-nowrap w-full md:w-auto justify-center"
+              >
+                <Filter size={16} /> Filtre avansate
+              </button>
+            </div>
+
+            {/* Active filter chips */}
+            {(() => {
+              const chips: { key: string; label: string; onClear: () => void }[] = [];
+              if (filters.tipDocument) chips.push({ key: `tipDocument:${filters.tipDocument}`, label: `Tip: ${filters.tipDocument}`, onClear: () => setFilters({ ...filters, tipDocument: "", page: 1 }) });
+              if (filters.semnatarCat) chips.push({ key: `semnatar:${filters.semnatarCat}`, label: `Semnatar: ${filters.semnatarCat}`, onClear: () => setFilters({ ...filters, semnatarCat: "", page: 1 }) });
+              if (filters.numeSemnatar) chips.push({ key: `numeSemnatar:${filters.numeSemnatar}`, label: `Nume semnatar: ${filters.numeSemnatar}`, onClear: () => setFilters({ ...filters, numeSemnatar: "", page: 1 }) });
+              if (filters.grad) chips.push({ key: `grad:${filters.grad}`, label: `Grad: ${filters.grad}`, onClear: () => setFilters({ ...filters, grad: "", page: 1 }) });
+              if (filters.functia) chips.push({ key: `functia:${filters.functia}`, label: `Funcția: ${filters.functia}`, onClear: () => setFilters({ ...filters, functia: "", page: 1 }) });
+              if (filters.pentru) chips.push({ key: `pentru:${filters.pentru}`, label: `Pentru: ${filters.pentru}`, onClear: () => setFilters({ ...filters, pentru: "", page: 1 }) });
+              if (filters.purtatorCuvant) chips.push({ key: `purtator:${filters.purtatorCuvant}`, label: `Purtător: ${filters.purtatorCuvant}`, onClear: () => setFilters({ ...filters, purtatorCuvant: "", page: 1 }) });
+              if (filters.numarMin != null) chips.push({ key: `min:${filters.numarMin}`, label: `Nr ≥ ${filters.numarMin}`, onClear: () => setFilters({ ...filters, numarMin: undefined, page: 1 }) });
+              if (filters.numarMax != null) chips.push({ key: `max:${filters.numarMax}`, label: `Nr ≤ ${filters.numarMax}`, onClear: () => setFilters({ ...filters, numarMax: undefined, page: 1 }) });
+              if (filters.dataStart) chips.push({ key: `start:${filters.dataStart}`, label: `De la: ${filters.dataStart}`, onClear: () => setFilters({ ...filters, dataStart: undefined, page: 1 }) });
+              if (filters.dataEnd) chips.push({ key: `end:${filters.dataEnd}`, label: `Până la: ${filters.dataEnd}`, onClear: () => setFilters({ ...filters, dataEnd: undefined, page: 1 }) });
+              if (filters.search) chips.push({ key: `search:${filters.search}`, label: `Căutare: ${filters.search}`, onClear: () => setFilters({ ...filters, search: "", page: 1 }) });
+              return chips.length ? (
+                <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                  {chips.map((c) => (
+                    <span key={c.key} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      {c.label}
+                      <button onClick={c.onClear} className="inline-flex items-center justify-center w-5 h-5 rounded-full hover:bg-blue-100">
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                  <button
+                    onClick={() => setFilters({ ...filters, tipDocument: "", semnatarCat: "", numeSemnatar: "", grad: "", functia: "", pentru: "", purtatorCuvant: "", numarMin: undefined, numarMax: undefined, dataStart: undefined, dataEnd: undefined, search: "", page: 1 })}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
+                    title="Resetează toate filtrele"
+                  >
+                    Curăță filtrele
+                  </button>
+                </div>
+              ) : null;
+            })()}
+          </div>
         </div>
 
         {error && (
@@ -891,41 +897,41 @@ function TableSkeletons() {
         <table className="w-full">
           <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
             <tr>
-              <th className="p-4 text-left font-semibold text-gray-700 w-12" />
-              <th className="p-4 text-left font-semibold text-gray-700 w-24">Număr</th>
-              <th className="p-4 text-left font-semibold text-gray-700 w-80">Document</th>
-              <th className="p-4 text-left font-semibold text-gray-700 w-28">Data</th>
-              <th className="p-4 text-left font-semibold text-gray-700 w-40">Tip Document</th>
-              <th className="p-4 text-left font-semibold text-gray-700">Acțiuni</th>
+              <th className="p-3 text-left font-semibold text-gray-700 w-12" />
+              <th className="p-3 text-left font-semibold text-gray-700 w-20">Număr</th>
+              <th className="p-3 text-left font-semibold text-gray-700 w-80">Document</th>
+              <th className="p-3 text-left font-semibold text-gray-700 w-28">Data</th>
+              <th className="p-3 text-left font-semibold text-gray-700 w-40">Tip Document</th>
+              <th className="p-3 text-left font-semibold text-gray-700">Acțiuni</th>
             </tr>
           </thead>
           <tbody>
             {Array.from({ length: 8 }).map((_, i) => (
               <tr key={i} className="border-t">
-                <td className="p-4" />
-                <td className="p-4">
+                <td className="p-3" />
+                <td className="p-3">
                   <div className="h-4 w-10 rounded bg-gray-200 animate-pulse" />
                 </td>
-                <td className="p-4">
+                <td className="p-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gray-200 animate-pulse" />
+                    <div className="w-8 h-8 rounded-lg bg-gray-200 animate-pulse" />
                     <div className="flex-1 min-w-0">
-                      <div className="h-4 w-56 rounded bg-gray-200 animate-pulse mb-2" />
+                      <div className="h-4 w-56 rounded bg-gray-200 animate-pulse mb-1.5" />
                       <div className="h-4 w-28 rounded bg-gray-200 animate-pulse" />
                     </div>
                   </div>
                 </td>
-                <td className="p-4">
+                <td className="p-3">
                   <div className="h-4 w-20 rounded bg-gray-200 animate-pulse" />
                 </td>
-                <td className="p-4">
+                <td className="p-3">
                   <div className="h-6 w-36 rounded-lg bg-gray-200 animate-pulse" />
                 </td>
-                <td className="p-4">
-                  <div className="flex gap-2">
-                    <div className="h-7 w-16 rounded-lg bg-gray-200 animate-pulse" />
-                    <div className="h-7 w-16 rounded-lg bg-gray-200 animate-pulse" />
-                    <div className="h-7 w-20 rounded-lg bg-gray-200 animate-pulse" />
+                <td className="p-3">
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <div className="h-6 w-16 rounded-lg bg-gray-200 animate-pulse" />
+                    <div className="h-6 w-16 rounded-lg bg-gray-200 animate-pulse" />
+                    <div className="h-6 w-20 rounded-lg bg-gray-200 animate-pulse" />
                   </div>
                 </td>
               </tr>
@@ -983,7 +989,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
         <table className="w-full">
           <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
             <tr>
-              <th className="p-4 text-left font-semibold text-gray-700 w-12">
+              <th className="p-3 text-left font-semibold text-gray-700 w-12">
                 {selectMode && (
                   <input 
                     type="checkbox" 
@@ -993,11 +999,11 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                   />
                 )}
               </th>
-              <SortableHeader column="numarComunicat" className="w-24">Număr</SortableHeader>
+              <SortableHeader column="numarComunicat" className="w-20">Număr</SortableHeader>
               <SortableHeader column="titlu" className="w-80">Document</SortableHeader>
               <SortableHeader column="data" className="w-28">Data</SortableHeader>
               <SortableHeader column="nume" className="w-40">Tip Document</SortableHeader>
-              <th className="p-4 text-left font-semibold text-gray-700">Acțiuni</th>
+              <th className="p-3 text-left font-semibold text-gray-700 w-64">Acțiuni</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -1019,7 +1025,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                   className={`group transition-colors ${isSelected ? "bg-blue-50" : idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} ${selectMode ? "cursor-pointer hover:bg-blue-50/30" : "hover:bg-blue-50/30"}`}
                   onClick={toggleSelection}
                 >
-                  <td className="p-4 w-12" onClick={(e) => e.stopPropagation()}>
+                  <td className="p-3 w-12" onClick={(e) => e.stopPropagation()}>
                     {selectMode && (
                       <input 
                         type="checkbox" 
@@ -1029,28 +1035,28 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                       />
                     )}
                   </td>
-                  <td className="p-4 w-24 font-bold text-lg text-gray-900">{x.numarComunicat ?? x.numar}</td>
-                  <td className="p-4 w-80">
+                  <td className="p-3 w-20 font-semibold text-base text-gray-900">{x.numarComunicat ?? x.numar}</td>
+                  <td className="p-3 w-80">
                     <div className="flex items-center gap-3">
                       <div className="flex-shrink-0">
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl flex items-center justify-center">
-                          <FileText size={18} className="text-blue-600" />
+                        <div className="w-8 h-8 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
+                          <FileText size={16} className="text-blue-600" />
                         </div>
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 truncate">{x.titlu || "Fără titlu"}</p>
-                        <p className="text-sm text-gray-500 truncate">
+                        <p className="font-medium text-gray-900 truncate text-sm">{x.titlu || "Fără titlu"}</p>
+                        <p className="text-xs text-gray-500 truncate">
                           {getDocumentBadge(x.nume || x.tip || "")}
                         </p>
                       </div>
                     </div>
                   </td>
-                  <td className="p-4 w-28 text-gray-700">{formatDate(x)}</td>
-                  <td className="p-4 w-40">{getDocumentBadge(x.nume || x.tip || "")}</td>
-                  <td className="p-4">
-                    <div className="flex flex-wrap gap-1.5">
+                  <td className="p-3 w-28 text-gray-700 text-sm">{formatDate(x)}</td>
+                  <td className="p-3 w-40">{getDocumentBadge(x.nume || x.tip || "")}</td>
+                  <td className="p-3 align-top w-64">
+                    <div className="grid grid-cols-3 gap-1.5">
                       <a 
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm" 
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm" 
                         href={`/api/comunicate/${x.id}/pdf?variant=signed&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
                         target="_blank" 
                         rel="noreferrer"
@@ -1059,7 +1065,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                         <FileDown size={12}/> PDF semnat
                       </a>
                       <a 
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm" 
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm" 
                         href={`/api/comunicate/${x.id}/pdf?variant=public&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
                         target="_blank" 
                         rel="noreferrer"
@@ -1068,7 +1074,7 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                         <FileText size={12}/> PDF fără semnături
                       </a>
                       <a 
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
                         href={`/api/comunicate/${x.id}/docx?judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}`} 
                         title="Descarcă DOCX"
                       >
@@ -1077,13 +1083,13 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                       <button 
                         onClick={() => printSingle(x.id, "signed")} 
                         disabled={isPrinting}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded-lg transition-colors shadow-sm ${isPrinting ? "border-gray-200 text-gray-500 cursor-not-allowed bg-gray-50" : "border-gray-300 hover:bg-gray-50"}`} 
+                        className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] border rounded-lg transition-colors shadow-sm ${isPrinting ? "border-gray-200 text-gray-500 cursor-not-allowed bg-gray-50" : "border-gray-300 hover:bg-gray-50"}`} 
                         title="Printează"
                       >
                         {printingId === x.id ? <Loader2 className="animate-spin" size={12}/> : <Printer size={12}/>} {printingId === x.id ? "Se pregătește..." : "Printează"}
                       </button>
                       <a 
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm" 
+                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm" 
                         href={`/creaza-BICP?id=${x.id}`}
                         title="Editează"
                       >

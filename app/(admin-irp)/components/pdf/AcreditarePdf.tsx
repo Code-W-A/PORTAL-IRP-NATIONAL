@@ -54,6 +54,8 @@ export type AcreditarePdfSettings = {
   assetBaseUrl?: string;
   acreditareSemnatarStanga?: AcreditareSemnatar;
   acreditareSemnatarDreapta?: AcreditareSemnatar;
+  acreditareSemnatarStangaImg?: string;
+  acreditareSemnatarDreaptaImg?: string;
 };
 
 export type AcreditarePdfVariant = "signed" | "public";
@@ -103,6 +105,8 @@ export function AcreditarePdfDoc({
 
   const st = s.acreditareSemnatarStanga || {};
   const dr = s.acreditareSemnatarDreapta || {};
+  const stImg = s.acreditareSemnatarStangaImg;
+  const drImg = s.acreditareSemnatarDreaptaImg;
   const footerLines = Array.isArray(s.footerLines) ? s.footerLines : [];
   const footerLinesCount = footerLines.length;
   // keep tricolor above footer even when there are many footer lines (same logic as BICP)
@@ -164,6 +168,7 @@ export function AcreditarePdfDoc({
             <View style={{ flexGrow: 1 }} />
             <View style={styles.signArea}>
             <View style={styles.signCol}>
+              {stImg ? <Image src={stImg} style={{ width: 140, height: 70, objectFit: "contain" }} /> : null}
               {linesOf(st.functia).length ? (
                 <>
                   {linesOf(st.functia).map((l, i) => (
@@ -178,6 +183,7 @@ export function AcreditarePdfDoc({
             </View>
 
             <View style={styles.signCol}>
+              {drImg ? <Image src={drImg} style={{ width: 140, height: 70, objectFit: "contain" }} /> : null}
               {linesOf(dr.functia).length ? (
                 <>
                   {linesOf(dr.functia).map((l, i) => (
@@ -212,5 +218,4 @@ export function AcreditarePdfDoc({
     </Document>
   );
 }
-
 

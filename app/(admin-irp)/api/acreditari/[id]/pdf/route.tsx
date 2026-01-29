@@ -64,6 +64,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
         footerLines: settings?.footerLines || [],
         acreditareSemnatarStanga: settings?.acreditareSemnatarStanga,
         acreditareSemnatarDreapta: settings?.acreditareSemnatarDreapta,
+        acreditareSemnatarStangaImg: settings?.acreditareSemnatarStangaImg,
+        acreditareSemnatarDreaptaImg: settings?.acreditareSemnatarDreaptaImg,
         assetBaseUrl: origin,
       }}
       variant={variant as any}
@@ -86,5 +88,4 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     },
   });
 }
-
 
