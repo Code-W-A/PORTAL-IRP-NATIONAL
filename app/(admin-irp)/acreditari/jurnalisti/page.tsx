@@ -311,7 +311,7 @@ export default function JurnalistiPage() {
     try {
       const { judetId, structuraId } = getTenantContext();
       const fromId = id;
-      const toId = normalizeId(editDraft.nume, editDraft.redactie, editDraft.email, editDraft.telefon, editDraft.legit);
+      const toId = normalizeId(editDraft.nume, editDraft.redactie || "", editDraft.email, editDraft.telefon, editDraft.legit);
       const updatedAt = serverTimestamp();
 
       if (toId && toId !== fromId) {
