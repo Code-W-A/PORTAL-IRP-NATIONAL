@@ -79,6 +79,7 @@ function SimpleForm({
   prefill,
   prefillKey,
   existingAcreditareId,
+  existingCerereId,
 }: {
   db: ReturnType<typeof initFirebase>["db"];
   auth: ReturnType<typeof initFirebase>["auth"];
@@ -86,6 +87,7 @@ function SimpleForm({
   prefill: { nume?: string; legit?: string; redactie?: string; email?: string; telefon?: string; sex?: "F" | "M"; dataIso?: string; numar?: string } | null;
   prefillKey: number;
   existingAcreditareId?: string | null;
+  existingCerereId?: string | null;
 }) {
   const [nume, setNume] = useState("");
   const [sex, setSex] = useState<"F" | "M">("F");
@@ -226,22 +228,32 @@ function SimpleForm({
 
     try {
       setSaving(true);
-      // Allocate next number atomically (Settings/general.acreditareLastNumar)
-      const settingsRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
-      const allocated = await runTransaction(db, async (tx) => {
-        await tx.get(settingsRef);
-        // user-controlled numbering: set counter to whatever is in the input (can go up/down)
-        tx.set(settingsRef, { acreditareLastNumar: chosenNumar }, { merge: true });
-        return chosenNumar;
-      });
-      setNextNumar(allocated + 1);
-      const numarFormatted = String(allocated);
-      setNumarText(String(allocated + 1));
+      // If editing an existing cerere, update it instead of creating a new one.
+      if (existingCerereId) {
+        const okEdit = confirm("Sigur vrei să actualizezi această cerere?");
+        if (!okEdit) return;
+        const cerereRef = doc(db, "CereriAcreditare", existingCerereId);
+        const numarFormatted = String(chosenNumar);
+        await updateDoc(cerereRef, {
+          "acreditare.numar": numarFormatted,
+          "acreditare.data": dataLabel || null,
+          "media.denumire": rd,
+          "jurnalist.numePrenume": nn,
+          "jurnalist.sex": sx,
+          "jurnalist.legitimatie.numar": lg,
+          "jurnalist.email": em,
+          "jurnalist.telefon.mobil": tel,
+          updatedAt: nowTs,
+        } as any);
+        setMsg("Cererea a fost actualizată.");
+        return;
+      }
 
       if (loadedAcreditareId) {
         const ok = confirm("Sigur vrei să actualizezi această acreditare? Modificările vor actualiza și datele jurnalistului.");
         if (!ok) return;
         // Edit existing Acreditare (already approved / issued)
+        const numarFormatted = String(chosenNumar);
         const acrRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Acreditari/${loadedAcreditareId}`);
         await updateDoc(acrRef, {
           numar: numarFormatted,
@@ -285,6 +297,18 @@ function SimpleForm({
         setMsg("Acreditarea a fost actualizată. Datele jurnalistului au fost sincronizate.");
         return;
       }
+
+      // Allocate next number atomically (Settings/general.acreditareLastNumar)
+      const settingsRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
+      const allocated = await runTransaction(db, async (tx) => {
+        await tx.get(settingsRef);
+        // user-controlled numbering: set counter to whatever is in the input (can go up/down)
+        tx.set(settingsRef, { acreditareLastNumar: chosenNumar }, { merge: true });
+        return chosenNumar;
+      });
+      setNextNumar(allocated + 1);
+      const numarFormatted = String(allocated);
+      setNumarText(String(allocated + 1));
 
       const okCreate = confirm("Sigur vrei să salvezi această cerere de acreditare?");
       if (!okCreate) return;
@@ -439,7 +463,7 @@ function SimpleForm({
             className="inline-flex items-center gap-2 bg-blue-600 text-white px-5 py-3 rounded-xl hover:bg-blue-700 transition-colors font-medium disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {saving ? <Loader2 className="animate-spin" size={16} /> : <FileText size={16} />}
-            {saving ? "Se salvează..." : loadedAcreditareId ? "Actualizează acreditarea" : "Salvează cererea"}
+            {saving ? "Se salvează..." : loadedAcreditareId ? "Actualizează acreditarea" : existingCerereId ? "Actualizează cererea" : "Salvează cererea"}
           </button>
 
           {lastCerereId && (
@@ -491,7 +515,7 @@ export default function CreeazaAcreditarePage() {
     if (typeof window === "undefined") return;
     try {
       const url = new URL(window.location.href);
-      const cerereId = (url.searchParams.get("cerereId") || "").trim(); 
+      const cerereId = (url.searchParams.get("cerereId") || "").trim();
       const acreditareId = (url.searchParams.get("edit") || "").trim();
       const tab = (url.searchParams.get("tab") || "").trim();
       if (tab === "simplu") setActiveTab("simplu");
@@ -597,25 +621,25 @@ export default function CreeazaAcreditarePage() {
           {/* Temporar ascuns (cerut): Link cerere acreditare jurnalist / Deschide formular cerere */}
           {false && (
             <>
-              <button
-                type="button"
-                onClick={copyCereriLink}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
-                title="Copiază link-ul public pentru cereri de acreditare (cu structura curentă preselectată)"
-              >
-                {copiedLink ? <Check size={16} className="text-emerald-600" /> : <Link2 size={16} />}
-                {copiedLink ? "Link copiat" : "Link cerere acreditare jurnalist"}
-                {!copiedLink && <Copy size={14} className="opacity-70" />}
-              </button>
-              <button
-                type="button"
-                onClick={openCereriForm}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
-                title="Deschide formular jurnalist"
-              >
-                <ExternalLink size={16} />
-                Deschide formular cerere
-              </button>
+          <button
+            type="button"
+            onClick={copyCereriLink}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
+            title="Copiază link-ul public pentru cereri de acreditare (cu structura curentă preselectată)"
+          >
+            {copiedLink ? <Check size={16} className="text-emerald-600" /> : <Link2 size={16} />}
+            {copiedLink ? "Link copiat" : "Link cerere acreditare jurnalist"}
+            {!copiedLink && <Copy size={14} className="opacity-70" />}
+          </button>
+        <button 
+            type="button"
+            onClick={openCereriForm}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 transition-colors"
+            title="Deschide formular jurnalist"
+        >
+            <ExternalLink size={16} />
+            Deschide formular cerere
+        </button>
             </>
           )}
         </div>
@@ -626,17 +650,17 @@ export default function CreeazaAcreditarePage() {
         <div className="flex items-center gap-2 flex-wrap">
           {/* Temporar ascuns (cerut): Cerere (formular complex) */}
           {false && (
-            <button
-              type="button"
-              onClick={() => setActiveTab("cerere")}
-              className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
-                activeTab === "cerere"
-                  ? "border-blue-600 bg-blue-50 text-blue-800"
-                  : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              Cerere (formular complex)
-            </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("cerere")}
+            className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+              activeTab === "cerere"
+                ? "border-blue-600 bg-blue-50 text-blue-800"
+                : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            Cerere (formular complex)
+          </button>
           )}
           <button
             type="button"
@@ -649,7 +673,7 @@ export default function CreeazaAcreditarePage() {
           >
             Completare simplă
           </button>
-              </div>
+          </div>
 
         {activeTab === "cerere" ? (
           <CerereAcreditareForm
@@ -669,6 +693,7 @@ export default function CreeazaAcreditarePage() {
             prefill={simplePrefill}
             prefillKey={simplePrefillKey}
             existingAcreditareId={editAcreditareId}
+            existingCerereId={editCerereId}
             onContinueComplex={(cerereId) => {
               setEditCerereId(cerereId);
               setActiveTab("cerere");

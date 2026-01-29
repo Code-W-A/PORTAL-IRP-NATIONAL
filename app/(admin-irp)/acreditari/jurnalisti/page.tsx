@@ -1,13 +1,14 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X, LayoutGrid, Table, ChevronLeft, ChevronRight, Phone } from "lucide-react";
+import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X, LayoutGrid, Table, ChevronLeft, ChevronRight, Phone, Upload, Loader2 } from "lucide-react";
 
-type Journalist = { id: string; nume: string; email?: string; telefon?: string; legit?: string; redactie?: string; lastAcreditareYear?: number };
+type Journalist = { id: string; nume: string; email?: string; telefon?: string; legit?: string; redactie?: string; adresaRedactie?: string; lastAcreditareYear?: number };
+type ImportRow = { redactie: string; adresaRedactie: string; numeJurnalist: string; telefon: string; email: string; legit: string };
 
 export default function JurnalistiPage() {
   const { db } = initFirebase();
@@ -28,6 +29,146 @@ export default function JurnalistiPage() {
     legit: "",
     redactie: "",
   });
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  function normalizeId(nume: string, redactie: string) {
+    return `${nume || ""} ${redactie || ""}`
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 80) || `J_${Date.now()}`;
+  }
+
+  function normalizeHeader(h: string) {
+    return String(h || "").trim().toLowerCase();
+  }
+
+  function mapRowFromColumns(headers: string[], cols: string[]): ImportRow {
+    const idx = (name: string) => headers.indexOf(name);
+    const val = (name: string) => (idx(name) >= 0 ? String(cols[idx(name)] || "").trim() : "");
+    return {
+      redactie: val("redactie"),
+      adresaRedactie: val("adresaredactie"),
+      numeJurnalist: val("numejurnalist"),
+      telefon: val("telefon"),
+      email: val("email"),
+      legit: val("legitimatie"),
+    };
+  }
+
+  function parseCsv(text: string): ImportRow[] {
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (!lines.length) return [] as any[];
+    const delimiter = lines[0].includes(";") && !lines[0].includes(",") ? ";" : ",";
+    const headers = lines[0]
+      .split(delimiter)
+      .map((h) => normalizeHeader(h));
+    const rows = lines.slice(1).map((line) => line.split(delimiter));
+    return rows.map((cols) => mapRowFromColumns(headers, cols));
+  }
+
+  async function parseXlsx(file: File): Promise<ImportRow[]> {
+    const XLSX = await import("xlsx");
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array" });
+    const firstSheet = wb.SheetNames[0];
+    const ws = wb.Sheets[firstSheet];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false }) as string[][];
+    if (!rows.length) return [];
+    const headers = (rows[0] || []).map((h) => normalizeHeader(String(h || "")));
+    return rows.slice(1).map((cols) => mapRowFromColumns(headers, cols.map((c) => String(c ?? ""))));
+  }
+
+  async function parseFile(file: File): Promise<ImportRow[]> {
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+      return await parseXlsx(file);
+    }
+    const text = await file.text();
+    return parseCsv(text);
+  }
+
+  async function handleImport(files: FileList | null) {
+    const file = files?.[0];
+    if (!file) return;
+    try {
+      setImporting(true);
+      const parsed = await parseFile(file);
+      const cleaned = parsed.filter((r) => r.numeJurnalist);
+      if (!cleaned.length) {
+        alert("Fișierul nu conține rânduri valide (coloane așteptate: redactie, adresaRedactie, numeJurnalist, telefon, email, legitimatie).");
+        return;
+      }
+      const { judetId, structuraId } = getTenantContext();
+      if (!judetId || !structuraId) {
+        alert("Profil incomplet (judetId/structuraId).");
+        return;
+      }
+      const batch = writeBatch(db);
+      let count = 0;
+      cleaned.forEach((r) => {
+        const id = normalizeId(r.numeJurnalist, r.redactie);
+        const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`);
+        batch.set(
+          ref,
+          {
+            nume: r.numeJurnalist,
+            email: r.email,
+            telefon: r.telefon,
+            legit: r.legit || "",
+            redactie: r.redactie,
+            adresaRedactie: r.adresaRedactie,
+            lastAcreditareYear: null,
+            updatedAt: serverTimestamp(),
+            createdAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        count += 1;
+      });
+      await batch.commit();
+      await load();
+      alert(`Import complet: ${count} înregistrări salvate în ${structuraId} ${judetId}.`);
+    } catch {
+      alert("Nu am putut importa fișierul. Încearcă din nou cu un CSV simplu sau un XLSX standard.");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function PaginationControls() {
+    return (
+      <div className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg">
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.max(1, p - 1))}
+          disabled={safePage <= 1}
+          className="p-1 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Pagina anterioară"
+        >
+          <ChevronLeft size={16} className="text-gray-600" />
+        </button>
+        <div className="text-sm text-gray-700">
+          Pagina <span className="font-semibold">{safePage}</span>/<span className="font-semibold">{totalPages}</span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+          disabled={safePage >= totalPages}
+          className="p-1 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Pagina următoare"
+        >
+          <ChevronRight size={16} className="text-gray-600" />
+        </button>
+      </div>
+    );
+  }
 
   async function load() {
       try {
@@ -195,29 +336,24 @@ export default function JurnalistiPage() {
           </select>
         </div>
 
-        <div className="inline-flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={safePage <= 1}
-            className="p-1 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Pagina anterioară"
-          >
-            <ChevronLeft size={16} className="text-gray-600" />
-          </button>
-          <div className="text-sm text-gray-700">
-            Pagina <span className="font-semibold">{safePage}</span>/<span className="font-semibold">{totalPages}</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={safePage >= totalPages}
-            className="p-1 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Pagina următoare"
-          >
-            <ChevronRight size={16} className="text-gray-600" />
-          </button>
-        </div>
+        <PaginationControls />
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+          className="hidden"
+          onChange={(e) => handleImport(e.target.files)}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={importing}
+          className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {importing ? <Loader2 className="animate-spin" size={16} /> : <Upload size={16} />}
+          {importing ? "Se importă..." : "Import CSV/Excel jurnaliști"}
+        </button>
       </div>
 
       {loading ? (
@@ -642,10 +778,11 @@ export default function JurnalistiPage() {
               })}
             </div>
           )}
+          <div className="flex justify-end mt-4">
+            <PaginationControls />
+          </div>
         </>
       )}
     </div>
   );
 }
-
-

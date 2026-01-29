@@ -180,6 +180,18 @@ export default function CereriAcreditareAdminPage() {
     });
   }, [rows, search, filterStatus, currentKey]);
 
+  const statusCounts = useMemo(() => {
+    const counts = { all: 0, pending: 0, approved: 0, rejected: 0 } as Record<"all" | CerereStatus, number>;
+    for (const r of rows) {
+      const s = (r.data.statusByStructura as any)?.[currentKey]?.status || "pending";
+      counts.all += 1;
+      if (s === "approved") counts.approved += 1;
+      else if (s === "rejected") counts.rejected += 1;
+      else counts.pending += 1;
+    }
+    return counts;
+  }, [rows, currentKey]);
+
   async function downloadStorage(path: string, nameHint?: string) {
     const key = `storage:${path}`;
     setDownloadingKey(key);
@@ -416,7 +428,7 @@ export default function CereriAcreditareAdminPage() {
                 filterStatus === v ? "bg-white border-indigo-300 text-indigo-800 shadow-sm" : "bg-white/60 border-gray-200 text-gray-700 hover:bg-white"
               }`}
             >
-              {v === "all" ? "Toate" : statusLabel(v)}
+              {v === "all" ? `Toate (${statusCounts.all})` : `${statusLabel(v)} (${statusCounts[v]})`}
             </button>
           ))}
           <div className="text-sm text-gray-600 ml-2">
