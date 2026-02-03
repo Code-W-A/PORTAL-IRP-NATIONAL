@@ -46,6 +46,10 @@ function normalizeEmailValue(s: string) {
   return String(s || "").trim().toLowerCase();
 }
 
+function normalizeRedactieValue(s: string) {
+  return normalizeIdFromValue(String(s || "").toLowerCase());
+}
+
 function ddmmyyyySlashFromIso(iso: string) {
   const s = String(iso || "").trim();
   const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -125,15 +129,14 @@ function SimpleForm({
   const [selectedJurnalistId, setSelectedJurnalistId] = useState<string | null>(null);
 
   function computeJurnalistId() {
-    const l = normalizeLegitId(legit);
-    if (l) return l;
     if (selectedJurnalistId) return selectedJurnalistId;
-    const em = normalizeIdFromValue(String(email || "").toLowerCase());
-    if (em) return em;
-    const tel = normalizeIdFromValue(normalizePhoneValue(telefon));
-    if (tel) return tel;
-    const nr = normalizeIdFromValue(`${nume || ""} ${redactie || ""}`);
-    return nr || selectedJurnalistId || `J_${Date.now()}`;
+    const l = normalizeLegitId(legit);
+    const n = normalizeIdFromValue(String(nume || "").toLowerCase());
+    const r = normalizeRedactieValue(redactie);
+    const t = normalizeIdFromValue(normalizePhoneValue(telefon));
+    const base = [l, n, r, t].filter(Boolean).join("_");
+    const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return normalizeLegitId(`${base}_${suffix}`) || `J_${suffix}`;
   }
 
   async function loadJurnalisti() {
@@ -163,15 +166,13 @@ function SimpleForm({
 
   const jurnalistiMatches = useMemo(() => {
     const l = normalizeLegitId(legit);
-    const em = normalizeEmailValue(email);
-    const tel = normalizePhoneValue(telefon);
+    const r = normalizeRedactieValue(redactie);
     return jurnalisti.filter((j) => {
       const jl = normalizeLegitId(String(j.legit || ""));
-      const je = normalizeEmailValue(String(j.email || ""));
-      const jt = normalizePhoneValue(String(j.telefon || ""));
-      return (l && jl === l) || (em && je === em) || (tel && jt === tel);
+      const jr = normalizeRedactieValue(String(j.redactie || ""));
+      return l && r && jl === l && jr === r;
     });
-  }, [jurnalisti, legit, email, telefon]);
+  }, [jurnalisti, legit, redactie]);
 
   function applyJurnalist(j: JurnalistRecord) {
     setSelectedJurnalistId(j.id);
@@ -294,8 +295,7 @@ function SimpleForm({
     if (jurnalistiMatches.length > 0) {
       const matchIds = new Set(jurnalistiMatches.map((j) => j.id));
       if (!selectedJurnalistId || !matchIds.has(selectedJurnalistId)) {
-        alert("Există jurnalist(e) în baza de date cu aceeași legitimație/email/telefon. Te rog selectează jurnalistul corect din listă înainte de salvare.");
-        return;
+        setMsg("Atenție: există jurnaliști care se potrivesc după legitimație + redacție. Dacă vrei să actualizezi un jurnalist existent, selectează-l din listă.");
       }
     }
 
@@ -346,11 +346,6 @@ function SimpleForm({
             },
             { merge: true }
           );
-          if (selectedJurnalistId && jurnalistId !== selectedJurnalistId) {
-            try {
-              await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${selectedJurnalistId}`));
-            } catch {}
-          }
         } catch {}
         setMsg("Cererea a fost actualizată.");
         return;
@@ -376,9 +371,8 @@ function SimpleForm({
         } as any);
 
         // Keep Jurnalisti in sync (including phone)
-        const prevJId = normalizeLegitId(originalLegit) || loadedAcreditareId;
-        const nextJId = normalizeLegitId(lg) || loadedAcreditareId;
-        const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${nextJId}`);
+        const jurnalistId = computeJurnalistId();
+        const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jurnalistId}`);
         await setDoc(
           jurnalistRef,
           {
@@ -394,13 +388,6 @@ function SimpleForm({
           },
           { merge: true }
         );
-        if (prevJId && prevJId !== nextJId) {
-          // best-effort: remove old id if legit changed
-          try {
-            await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${prevJId}`));
-          } catch {}
-          setOriginalLegit(lg);
-        }
 
         setMsg("Acreditarea a fost actualizată. Datele jurnalistului au fost sincronizate.");
         return;
@@ -440,11 +427,6 @@ function SimpleForm({
           },
           { merge: true }
         );
-        if (selectedJurnalistId && jurnalistId !== selectedJurnalistId) {
-          try {
-            await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${selectedJurnalistId}`));
-          } catch {}
-        }
       } catch {}
 
       // Create CereriAcreditare in the SAME schema as complex form (minimal fields)
@@ -566,7 +548,7 @@ function SimpleForm({
           )}
           {!selectedJurnalistId && jurnalistiMatches.length > 0 && (
             <div className="mt-3 text-xs text-amber-700">
-              Atenție: există jurnalist(e) care se potrivesc după legitimație/email/telefon. Selectează jurnalistul corect înainte de salvare.
+              Atenție: există jurnalist(e) care se potrivesc după legitimație + redacție. Selectează jurnalistul corect înainte de salvare.
               <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-auto pr-1">
                 {jurnalistiMatches.slice(0, 8).map((j) => (
                   <div key={j.id} className="px-2 py-1 rounded border border-amber-200 bg-amber-50 flex items-center justify-between gap-2">
