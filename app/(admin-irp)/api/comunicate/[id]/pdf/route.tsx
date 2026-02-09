@@ -6,6 +6,7 @@ import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { JUDETE } from "@/lib/judete";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
+import { buildPurtatorSignatureUrl, normalizePurtatorSignatureKey } from "@/lib/pdf/purtatorSignatures";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -92,6 +93,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   // Ensure logo URL is absolute to avoid FS resolution like C:\\sigle\\...
   const origin = new URL(_req.url).origin;
   const logoAbs = meta?.logoUrlPublic ? new URL(String(meta.logoUrlPublic), origin).toString() : undefined;
+  let structuraIsAdmin = false;
+  if (effectiveJudetId && effectiveStructuraId) {
+    try {
+      const structuraRef = doc(db, `Judete/${effectiveJudetId}/Structuri/${effectiveStructuraId}`);
+      const structuraSnap = await getDoc(structuraRef);
+      structuraIsAdmin = structuraSnap.exists() && (structuraSnap.data() as any)?.isAdmin === true;
+    } catch {}
+  }
+
+  const purtatorSemnaturaKey = normalizePurtatorSignatureKey(d?.purtatorSemnaturaKey);
+  const purtatorSemnaturaUrl =
+    variant === "signed" && structuraIsAdmin
+      ? buildPurtatorSignatureUrl(purtatorSemnaturaKey, origin)
+      : undefined;
 
   // Compute structure display explicitly (avoid server default DB/ISU)
   const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
@@ -141,6 +156,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         numar: chosenNumar,
         dateLabel: ddmmyyyyWithDots(d?.data),
         purtator: d?.["purtator-cuvant"] || "",
+        purtatorSemnaturaUrl,
         tipDocument: d?.nume || d?.tip || "",
         titlu: d?.titlu || "",
         continut: content,
@@ -152,7 +168,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   // If a local PDF template is configured in settings, fill its fields
   const templateKey = meta?.pdfTemplateKey as string | undefined; // e.g., "BICP-standard.pdf"
-  if (templateKey) {
+  const forceRendererForSignedSignature = variant === "signed" && !!purtatorSemnaturaUrl;
+  if (templateKey && !forceRendererForSignedSignature) {
     try {
       // @ts-ignore - module will be present at build time
       const mod: any = await import("pdf-lib");
@@ -237,5 +254,4 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     },
   });
 }
-
 

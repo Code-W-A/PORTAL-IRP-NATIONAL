@@ -23,8 +23,24 @@ export const styles = StyleSheet.create({
   footer: { position: "absolute", left: 72, right: 72, bottom: 16 },
   footerLine: { fontSize: 9, textAlign: "center", fontFamily: "NotoSerif" },
   unitInline: { fontSize: 14, fontWeight: 600, marginTop: 28, textAlign: "left" },
-  spokespersonBlock: { marginTop: 28 },
+  spokespersonBlock: { marginTop: 28, position: "relative" as any },
   spLabel: { fontSize: 11, fontWeight: 700, fontFamily: "NotoSerif" },
+  // Signature image (supports square exports like 500x500). Keep "contain" to preserve aspect ratio.
+  signatureWrap: {
+    position: "absolute" as any,
+    left: 0,
+    top: -18,
+    width: 190,
+    height: 92,
+  },
+  signatureWrapRadu: {
+    position: "absolute" as any,
+    left: -8,
+    top: -26,
+    width: 220,
+    height: 112,
+  },
+  signatureImage: { width: "100%", height: "100%", objectFit: "contain" as any },
   spLine: { fontSize: 10, marginTop: 2, fontFamily: "NotoSerif", fontWeight: 700 },
   // Tricolor bars
   tricolorFooter: { position: "absolute", left: 72, right: 72, bottom: 40, height: 6, flexDirection: "row" },
@@ -64,6 +80,7 @@ export type BicpPdfData = {
   numar: string;
   dateLabel: string; // DD/MM/YYYY sau similar
   purtator: string;
+  purtatorSemnaturaUrl?: string;
   tipDocument: string;
   titlu: string;
   continut: string;
@@ -73,7 +90,7 @@ export type BicpPdfData = {
 
 export type BicpPdfVariant = "signed" | "public";
 
-function registerNoto(assetBaseUrl?: string) {
+export function registerNoto(assetBaseUrl?: string) {
   try {
     const makeUrl = (p: string) => {
       if (p.startsWith("http://") || p.startsWith("https://")) return p;
@@ -89,6 +106,94 @@ function registerNoto(assetBaseUrl?: string) {
     Font.register({ family: "NotoSerif", src: nserItalic, fontStyle: "italic" });
     Font.register({ family: "NotoSerif", src: nserBoldItalic, fontStyle: "italic", fontWeight: "bold" });
   } catch {}
+}
+
+function getHeaderLines(s: BicpPdfSettings) {
+  return s.headerLines && s.headerLines.length ? s.headerLines : [
+    "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
+    "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
+  ];
+}
+
+export function getBicpFooterMeta(s?: BicpPdfSettings) {
+  const footerLines = Array.isArray(s?.footerLines) ? s!.footerLines! : [];
+  const footerLinesCount = footerLines.length;
+  const tricolorBottom = 40 + Math.max(0, footerLinesCount - 1) * 12;
+  return { footerLines, footerLinesCount, tricolorBottom };
+}
+
+export function BicpPdfHeader({
+  settings,
+  data,
+  variant = "signed",
+}: {
+  settings?: BicpPdfSettings;
+  data: { numar: string; dateLabel: string };
+  variant?: BicpPdfVariant;
+}) {
+  const s = settings || {};
+  const headerLines = getHeaderLines(s);
+  return (
+    <>
+      <View style={styles.fixedHeaderContainer} fixed>
+        <View style={styles.row}>
+          <View style={styles.headerCol}>
+            {headerLines.map((l, idx) => (
+              <Text key={idx} style={styles.headerLine}>{l}</Text>
+            ))}
+            {s.logoUrlPublic ? <Image src={s.logoUrlPublic} style={styles.logo} /> : null}
+          </View>
+          <View style={styles.metaCol}>
+            {variant === "signed" && (
+              <>
+                <Text style={styles.secrecy}>{s.secrecyLabel || "NESECRET"}</Text>
+                <Text style={styles.meta}>Exemplar unic</Text>
+              </>
+            )}
+            <Text style={styles.meta}>Nr. {data.numar || "____"}</Text>
+            <Text style={styles.meta}>{(s.city ? s.city + ", " : "") + (data.dateLabel || "")}</Text>
+          </View>
+        </View>
+        {(s.showHeaderTricolor !== false) && (
+          <View style={styles.headerTriFull}>
+            <View style={styles.triBlue} />
+            <View style={styles.triYellow} />
+            <View style={styles.triRed} />
+          </View>
+        )}
+      </View>
+
+      <View>
+        <Text style={styles.strapLeftTitle}>{s.unitLabel || "COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE"}</Text>
+        {!!s.phone && <Text style={styles.strapLeftLine}>Telefon: {s.phone}</Text>}
+        {!!s.email && <Text style={styles.strapLeftLine}>E-mail: {s.email}</Text>}
+      </View>
+    </>
+  );
+}
+
+export function BicpPdfFooter({ settings }: { settings?: BicpPdfSettings }) {
+  const s = settings || {};
+  const { footerLines, tricolorBottom } = getBicpFooterMeta(s);
+  return (
+    <>
+      {(s.showTricolorFooter !== false) && (
+        <View style={[styles.tricolorFooter, { bottom: tricolorBottom }]} fixed>
+          <View style={styles.triBlue} />
+          <View style={styles.triYellow} />
+          <View style={styles.triRed} />
+        </View>
+      )}
+
+      {footerLines.length > 0 ? (
+        <View style={styles.footer} fixed>
+          {footerLines.map((l, i) => (
+            <Text key={i} style={styles.footerLine}>{l}</Text>
+          ))}
+        </View>
+      ) : null}
+    </>
+  );
 }
 
 function renderHtmlContent(html: string) {
@@ -171,51 +276,10 @@ function renderHtmlContent(html: string) {
 export function createBicpPage({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
   registerNoto(settings?.assetBaseUrl);
   const s = settings || {};
-  const footerLinesCount = Array.isArray(s.footerLines) ? s.footerLines.length : 0;
-  // Move tricolor higher when there are more footer lines to avoid overlap
-  const tricolorBottom = 40 + Math.max(0, footerLinesCount - 1) * 12; // base 40 + ~12pt per extra line
-  const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
-    "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
-    "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
-  ];
+  const isRaduSignature = (data.purtatorSemnaturaUrl || "").toUpperCase().includes("RADU.PNG");
   return (
     <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif" }]}> 
-      {/* Fixed header block (repeats on all pages) */}
-      <View style={styles.fixedHeaderContainer} fixed>
-        <View style={styles.row}>
-          <View style={styles.headerCol}>
-            {headerLines.map((l, idx) => (
-              <Text key={idx} style={styles.headerLine}>{l}</Text>
-            ))}
-            {s.logoUrlPublic ? <Image src={s.logoUrlPublic} style={styles.logo} /> : null}
-          </View>
-          <View style={styles.metaCol}>
-            {variant === "signed" && (
-              <>
-                <Text style={styles.secrecy}>{s.secrecyLabel || "NESECRET"}</Text>
-                <Text style={styles.meta}>Exemplar unic</Text>
-              </>
-            )}
-            <Text style={styles.meta}>Nr. {data.numar || "____"}</Text>
-            <Text style={styles.meta}>{(s.city ? s.city + ", " : "") + (data.dateLabel || "")}</Text>
-          </View>
-        </View>
-        {(s.showHeaderTricolor !== false) && (
-          <View style={styles.headerTriFull}>
-            <View style={styles.triBlue} />
-            <View style={styles.triYellow} />
-            <View style={styles.triRed} />
-          </View>
-        )}
-      </View>
-
-      {/* Spacer removed; top padding on page ensures content never overlaps header on any page */}
-      {/* First-page only contact block placed in flow so it appears once at top of content */}
-      <View>
-        <Text style={styles.strapLeftTitle}>{s.unitLabel || "COMPARTIMENT INFORMARE ȘI RELAȚII PUBLICE"}</Text>
-        {!!s.phone && <Text style={styles.strapLeftLine}>Telefon: {s.phone}</Text>}
-        {!!s.email && <Text style={styles.strapLeftLine}>E-mail: {s.email}</Text>}
-      </View>
+      <BicpPdfHeader settings={s} data={{ numar: data.numar, dateLabel: data.dateLabel }} variant={variant} />
 
       {variant === "signed" && (
         <View style={styles.approveRow}>
@@ -241,24 +305,15 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
         <View style={styles.spokespersonBlock}>
           {!!data.purtator && <Text style={styles.spLine}>{data.purtator}</Text>}
           <Text style={styles.spLine}>Purtător de cuvânt {s.structureDisplay || s.unitLabel || ""}</Text>
+          {variant === "signed" && data.purtatorSemnaturaUrl ? (
+            <View style={isRaduSignature ? styles.signatureWrapRadu : styles.signatureWrap}>
+              <Image src={data.purtatorSemnaturaUrl} style={styles.signatureImage} />
+            </View>
+          ) : null}
         </View>
       )}
 
-      {(s.showTricolorFooter !== false) && (
-        <View style={[styles.tricolorFooter, { bottom: tricolorBottom }]} fixed>
-          <View style={styles.triBlue} />
-          <View style={styles.triYellow} />
-          <View style={styles.triRed} />
-        </View>
-      )}
-
-      {s.footerLines && s.footerLines.length > 0 ? (
-        <View style={styles.footer} fixed>
-          {s.footerLines.map((l, i) => (
-            <Text key={i} style={styles.footerLine}>{l}</Text>
-          ))}
-        </View>
-      ) : null}
+      <BicpPdfFooter settings={s} />
     </Page>
   );
 }
@@ -290,5 +345,3 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
     </Document>
   );
 }
-
-

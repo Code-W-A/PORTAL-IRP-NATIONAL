@@ -25,6 +25,7 @@ export type Bicp = {
   grad?: string;
   numeSemnatar?: string;
   ["purtator-cuvant"]?: string;
+  purtatorSemnaturaKey?: string | null;
   pdfLink?: string;
   wordLink?: string;
   categorie?: string; // categoria incidentului/evenimentului
@@ -257,5 +258,4 @@ export function useBicpData() {
 
   return { loading, error, filters, setFilters, items: paged.items, total: paged.total, availableYears, reload };
 }
-
 

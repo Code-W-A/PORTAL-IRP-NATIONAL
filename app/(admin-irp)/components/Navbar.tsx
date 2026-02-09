@@ -5,6 +5,7 @@ import { Plus, List, CalendarDays, LogOut, BarChart3, ChevronDown, Users, Newspa
 import { signOut } from "firebase/auth";
 import { initFirebase } from "@/lib/firebase";
 import { useState, useRef, useEffect } from "react";
+import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 
 // Dropdown component
 function NavDropdown({ 
@@ -69,6 +70,7 @@ export function TopNavbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { auth } = initFirebase();
+  const { isAdmin } = useAuth();
 
   async function handleLogout() {
     try {
@@ -133,22 +135,28 @@ export function TopNavbar() {
             isActive={isBicpActive}
           />
 
-          {/* Dropdown pentru Acreditări */}
-          <NavDropdown 
-            label="Acreditări" 
-            icon={<Users size={18} />}
-            items={acreditariItems}
-            isActive={isAcreditariActive}
-          />
-
-          {/* Dropdown pentru Monitorizare */}
-          {/* <NavDropdown 
-            label="Monitorizare" 
-            icon={<Newspaper size={18} />}
-            items={monitorizareItems}
-            isActive={isMonitorizareActive}
-          /> */}
-
+          {isAdmin && (
+            <>
+              <NavDropdown
+                label="Acreditări"
+                icon={<Users size={18} />}
+                items={acreditariItems}
+                isActive={isAcreditariActive}
+              />
+              <NavDropdown
+                label="Monitorizare"
+                icon={<Newspaper size={18} />}
+                items={monitorizareItems}
+                isActive={isMonitorizareActive}
+              />
+              <Link className={linkCls("/proceduri-lucru")} href="/proceduri-lucru">
+                <CalendarDays size={18} className="mr-1" /> Proceduri
+              </Link>
+              <Link className={linkCls("/dashboard/raportari")} href="/dashboard/raportari">
+                <BarChart3 size={18} className="mr-1" /> Raportări
+              </Link>
+            </>
+          )}
           {/* Setări - link direct */}
           <Link className={linkCls("/setari-structura")} href="/setari-structura">
             <Settings size={18} className="mr-1" /> Setări
@@ -169,8 +177,10 @@ export function BottomNavbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { auth } = initFirebase();
+  const { isAdmin } = useAuth();
   const [bicpOpen, setBicpOpen] = useState(false);
   const [acreditariOpen, setAcreditariOpen] = useState(false);
+  const [monitorizareOpen, setMonitorizareOpen] = useState(false);
 
   async function handleLogout() {
     try {
@@ -203,6 +213,7 @@ export function BottomNavbar() {
       <div className="relative flex-1">
         <button
           onClick={() => {
+            setMonitorizareOpen(false);
             setAcreditariOpen(false);
             setBicpOpen((v) => !v);
           }}
@@ -218,22 +229,44 @@ export function BottomNavbar() {
         </button>
         {/* Modal handled outside of nav */}
       </div>
-      <div className="relative flex-1">
-        <button
-          onClick={() => {
-            setBicpOpen(false);
-            setAcreditariOpen((v) => !v);
-          }}
-          className={`flex flex-col items-center justify-center w-full py-2 ${
-            pathname.startsWith("/acreditari") ? "text-blue-700" : "text-gray-700"
-          }`}
-          aria-label="Acreditări"
-        >
-          <Users size={18} />
-          <span className="text-xs mt-1">Acreditări</span>
-        </button>
-      </div>
-      {/* {item("/monitorizare/lista", "Monitorizare", <Newspaper size={18} />)} */}
+      {isAdmin && (
+        <div className="relative flex-1">
+          <button
+            onClick={() => {
+              setMonitorizareOpen(false);
+              setBicpOpen(false);
+              setAcreditariOpen((v) => !v);
+            }}
+            className={`flex flex-col items-center justify-center w-full py-2 ${
+              pathname.startsWith("/acreditari") ? "text-blue-700" : "text-gray-700"
+            }`}
+            aria-label="Acreditări"
+          >
+            <Users size={18} />
+            <span className="text-xs mt-1">Acreditări</span>
+          </button>
+        </div>
+      )}
+      {isAdmin && (
+        <div className="relative flex-1">
+          <button
+            onClick={() => {
+              setAcreditariOpen(false);
+              setBicpOpen(false);
+              setMonitorizareOpen((v) => !v);
+            }}
+            className={`flex flex-col items-center justify-center w-full py-2 ${
+              pathname.startsWith("/monitorizare") ? "text-blue-700" : "text-gray-700"
+            }`}
+            aria-label="Monitorizare"
+          >
+            <Newspaper size={18} />
+            <span className="text-xs mt-1">Monitorizare</span>
+          </button>
+        </div>
+      )}
+      {isAdmin && item("/proceduri-lucru", "Proceduri", <CalendarDays size={18} />)}
+      {isAdmin && item("/dashboard/raportari", "Raportări", <BarChart3 size={18} />)}
       {item("/setari-structura", "Setări", <Settings size={18} />)}
       <button aria-label="Logout" onClick={handleLogout} className="flex flex-col items-center justify-center flex-1 py-2 text-red-600">
         <LogOut size={18} />
@@ -267,6 +300,43 @@ export function BottomNavbar() {
           </div>
           <div className="mt-2 text-center">
             <button onClick={() => setBicpOpen(false)} className="text-sm text-gray-500 hover:text-gray-700">Închide</button>
+          </div>
+        </div>
+      </div>
+    )}
+    {monitorizareOpen && (
+      <div className="fixed inset-0 z-50">
+        <div className="absolute inset-0 bg-black/40" onClick={() => setMonitorizareOpen(false)} />
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white rounded-2xl shadow-2xl border border-gray-200 p-4">
+          <div className="text-center mb-2 font-semibold text-gray-900">Monitorizare</div>
+          <div className="flex flex-col">
+            <button
+              onClick={() => { setMonitorizareOpen(false); router.push("/monitorizare/creaza"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <Plus size={16} /> Adaugă material
+            </button>
+            <button
+              onClick={() => { setMonitorizareOpen(false); router.push("/monitorizare/lista"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <List size={16} /> Lista materiale
+            </button>
+            <button
+              onClick={() => { setMonitorizareOpen(false); router.push("/monitorizare/statistici"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <BarChart3 size={16} /> Statistici
+            </button>
+            <button
+              onClick={() => { setMonitorizareOpen(false); router.push("/monitorizare/revista"); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-800 hover:bg-gray-50 rounded-lg"
+            >
+              <FileText size={16} /> Revista presei
+            </button>
+          </div>
+          <div className="mt-2 text-center">
+            <button onClick={() => setMonitorizareOpen(false)} className="text-sm text-gray-500 hover:text-gray-700">Închide</button>
           </div>
         </div>
       </div>
@@ -323,5 +393,3 @@ export function BottomNavbar() {
     </>
   );
 }
-
-

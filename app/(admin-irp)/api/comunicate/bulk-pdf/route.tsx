@@ -6,6 +6,7 @@ import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { JUDETE } from "@/lib/judete";
 import { createBicpPage } from "@/app/(admin-irp)/components/pdf/BicpPdf";
+import { buildPurtatorSignatureUrl, normalizePurtatorSignatureKey } from "@/lib/pdf/purtatorSignatures";
 
 export async function POST(req: Request) {
   try {
@@ -28,6 +29,22 @@ export async function POST(req: Request) {
 
     const origin = new URL(req.url).origin;
     const logoAbs = meta?.logoUrlPublic ? new URL(String(meta.logoUrlPublic), origin).toString() : undefined;
+    const structuraAdminCache = new Map<string, boolean>();
+    async function resolveStructuraIsAdmin(judetId?: string, structuraId?: string) {
+      if (!judetId || !structuraId) return false;
+      const cacheKey = `${judetId}::${structuraId}`;
+      if (structuraAdminCache.has(cacheKey)) return structuraAdminCache.get(cacheKey)!;
+      try {
+        const structuraRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}`);
+        const structuraSnap = await getDoc(structuraRef);
+        const isAdmin = structuraSnap.exists() && (structuraSnap.data() as any)?.isAdmin === true;
+        structuraAdminCache.set(cacheKey, isAdmin);
+        return isAdmin;
+      } catch {
+        structuraAdminCache.set(cacheKey, false);
+        return false;
+      }
+    }
 
     for (const id of ids) {
       let snap = await (async () => {
@@ -62,6 +79,11 @@ export async function POST(req: Request) {
       }
       const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
       const structureDisplay = (effectiveStructuraId && judName) ? `${effectiveStructuraId} ${judName}` : undefined;
+      const structuraIsAdmin = await resolveStructuraIsAdmin(effectiveJudetId, effectiveStructuraId);
+      const purtatorSemnaturaUrl =
+        v === "signed" && structuraIsAdmin
+          ? buildPurtatorSignatureUrl(normalizePurtatorSignatureKey(d?.purtatorSemnaturaKey), origin)
+          : undefined;
       function toDDMMYYYYDots(str?: string): string {
         const s = String(str || "").trim();
         if (!s) return "";
@@ -89,6 +111,7 @@ export async function POST(req: Request) {
             numar: chosenNumar,
             dateLabel: toDDMMYYYYDots(d?.data),
             purtator: d?.["purtator-cuvant"] || "",
+            purtatorSemnaturaUrl,
             tipDocument: d?.nume || d?.tip || "",
             titlu: d?.titlu || "",
             continut: content,
@@ -115,5 +138,4 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
-
 

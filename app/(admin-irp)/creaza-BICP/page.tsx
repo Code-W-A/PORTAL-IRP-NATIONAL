@@ -7,6 +7,14 @@ import { useRouter } from "next/navigation";
 import { getTenantContext } from "@/lib/tenant";
 import { pdf } from "@react-pdf/renderer";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
+import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
+import {
+  DEFAULT_PURTATOR_SIGNATURE_KEY,
+  PURTATOR_SIGNATURE_OPTIONS,
+  buildPurtatorSignatureUrl,
+  normalizePurtatorSignatureKey,
+  type PurtatorSignatureKey,
+} from "@/lib/pdf/purtatorSignatures";
 import { FileText, UserCheck, FilePlus2, Link as LinkIcon } from "lucide-react";
 
 type Semnatar = {
@@ -84,6 +92,7 @@ function tipToShort(tip: string): "BI" | "PC" | "CI" {
 export default function CreateBicpPage() {
   const { db, app } = initFirebase();
   const router = useRouter();
+  const { isAdmin } = useAuth();
   
   // Detect edit mode from URL query param
   const [editMode, setEditMode] = useState(false);
@@ -98,6 +107,7 @@ export default function CreateBicpPage() {
   const [semnatarKey, setSemnatarKey] = useState<string>("");
   const [purtatoriSettings, setPurtatoriSettings] = useState<string[]>([]);
   const [purtatorCuvant, setPurtatorCuvant] = useState<string>(PURTATORI_FALLBACK[0]);
+  const [purtatorSemnaturaKey, setPurtatorSemnaturaKey] = useState<PurtatorSignatureKey>(DEFAULT_PURTATOR_SIGNATURE_KEY);
   const [categorie, setCategorie] = useState<string>("");
   const [categorieSearchOpen, setCategorieSearchOpen] = useState<boolean>(false);
   const [categorieSearchTerm, setCategorieSearchTerm] = useState<string>("");
@@ -238,6 +248,7 @@ export default function CreateBicpPage() {
         setComunicat(String(d.comunicat || ""));
         setComunicatHtml(String(d.comunicatHtml || ""));
         setPurtatorCuvant(String(d["purtator-cuvant"] || PURTATORI_FALLBACK[0]));
+        setPurtatorSemnaturaKey(normalizePurtatorSignatureKey(d?.purtatorSemnaturaKey));
         setCategorie(String(d.categorie || ""));
         
         // Try to match semnatar from settings
@@ -419,6 +430,9 @@ export default function CreateBicpPage() {
     let url: string | null = null;
     const timeout = setTimeout(async () => {
       try {
+        const previewSignatureUrl = isAdmin
+          ? buildPurtatorSignatureUrl(purtatorSemnaturaKey, window.location.origin)
+          : undefined;
         const docEl = (
           <BicpPdfDoc
             settings={{
@@ -435,6 +449,7 @@ export default function CreateBicpPage() {
               numar: (numarRegistru && numarRegistru.trim()) ? numarRegistru.trim() : (numarComunicat || "__"),
               dateLabel: data ? data.split("-").reverse().join(".") : "__.__.____",
               purtator: purtatorCuvant || "",
+              purtatorSemnaturaUrl: previewSignatureUrl,
               tipDocument: selectedItem || "",
               titlu: titlu || "",
               continut: comunicat || "",
@@ -456,7 +471,7 @@ export default function CreateBicpPage() {
       }
     }, 200);
     return () => { clearTimeout(timeout); if (url) URL.revokeObjectURL(url); };
-  }, [showPreview, settings, numarComunicat, data, purtatorCuvant, selectedItem, titlu, comunicat, comunicatHtml, semnatar]);
+  }, [showPreview, settings, numarComunicat, data, purtatorCuvant, purtatorSemnaturaKey, isAdmin, selectedItem, titlu, comunicat, comunicatHtml, semnatar]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -484,6 +499,7 @@ export default function CreateBicpPage() {
         grad: semnatar?.grad || "",
         numeSemnatar: semnatar?.numeSemnatar || "",
         ["purtator-cuvant"]: purtatorCuvant,
+        purtatorSemnaturaKey: isAdmin ? normalizePurtatorSignatureKey(purtatorSemnaturaKey) : null,
         categorie: categorie.trim() || null,
         // compat cu listă existentă
         tip: tipToShort(selectedItem),
@@ -646,6 +662,23 @@ export default function CreateBicpPage() {
                   ))}
                 </select>
               </div>
+              {isAdmin && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Semnătură imagine purtător (PDF semnat)</label>
+                  <select
+                    value={purtatorSemnaturaKey}
+                    onChange={(e) => setPurtatorSemnaturaKey(normalizePurtatorSignatureKey(e.target.value))}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                  >
+                    {PURTATOR_SIGNATURE_OPTIONS.map((opt) => (
+                      <option key={opt.key} value={opt.key}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-sm text-gray-500">Semnătura se aplică doar în varianta PDF cu semnături.</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -898,5 +931,4 @@ export default function CreateBicpPage() {
     </div>
   );
 }
-
 
