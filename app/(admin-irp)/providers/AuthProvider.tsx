@@ -37,21 +37,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const tc = getTenantContext();
         const profileJudetId = String(prof?.judetId || "");
         const profileStructuraId = String(prof?.structuraId || "");
-        const activeJudetId = profileJudetId || tc.judetId;
-        const activeStructuraId = profileStructuraId || tc.structuraId;
+        const hasProfileTenant = Boolean(profileJudetId && profileStructuraId);
         const shouldHydrateTenant =
           !tc.judetId ||
           !tc.structuraId ||
           (tc.judetId === "DB" && tc.structuraId === "ISU");
-        if (profileJudetId && profileStructuraId && (shouldHydrateTenant || tc.judetId !== profileJudetId || tc.structuraId !== profileStructuraId)) {
+        if (hasProfileTenant && (shouldHydrateTenant || tc.judetId !== profileJudetId || tc.structuraId !== profileStructuraId)) {
           setTenantContext({ judetId: profileJudetId, structuraId: profileStructuraId });
         }
 
-        if (activeJudetId && activeStructuraId) {
-          const structuraRef = doc(db, `Judete/${activeJudetId}/Structuri/${activeStructuraId}`);
+        if (hasProfileTenant) {
+          const structuraRef = doc(db, `Judete/${profileJudetId}/Structuri/${profileStructuraId}`);
           const structuraSnap = await getDoc(structuraRef);
           const structuraData = structuraSnap.exists() ? (structuraSnap.data() as any) : null;
           setIsAdmin(structuraData?.isAdmin === true);
+        } else {
+          // Do not infer admin rights from stale tenant localStorage values.
+          setIsAdmin(false);
         }
       } catch {}
       finally {

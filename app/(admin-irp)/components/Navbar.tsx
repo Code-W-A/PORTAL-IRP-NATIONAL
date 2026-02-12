@@ -105,7 +105,7 @@ const SIDEBAR_LINKS: NavItem[] = [
   },
   { href: "/activitate-zilnica", label: "Activitate zilnică", icon: ClipboardList, adminOnly: true },
   { href: "/calendar-activitati", label: "Calendar activități", icon: CalendarDays, adminOnly: true },
-  { href: "/setari-structura", label: "Setări", icon: Settings },
+  { href: "/setari-structura", label: "Setări", icon: Settings, adminOnly: true },
 ];
 
 function canAccess(item: { adminOnly?: boolean }, isAdmin: boolean) {
