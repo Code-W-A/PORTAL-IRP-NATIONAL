@@ -6,6 +6,7 @@ import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, Download, Mail, MoreVertical } from "lucide-react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { FiltersDialog } from "./FiltersDialog";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import { SendPublicPdfEmailDialog } from "./SendPublicPdfEmailDialog";
@@ -101,6 +102,8 @@ type ToastType = "info" | "success" | "error";
 type ToastState = { type: ToastType; message: string } | null;
 
 export default function ListaBicpPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { db } = initFirebase();
   const { isAdmin } = useAuth();
   const { loading, error, filters, setFilters, items, total, availableYears, reload } = useBicpData();
@@ -119,6 +122,7 @@ export default function ListaBicpPage() {
   const [sendDialogDoc, setSendDialogDoc] = useState<Bicp | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const deniedHandledRef = useRef(false);
 
   const allSelectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
   const currentPageIds = useMemo(() => items.map((x) => x.id), [items]);
@@ -145,6 +149,17 @@ export default function ListaBicpPage() {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (deniedHandledRef.current) return;
+    if (searchParams.get("accessDenied") !== "1") return;
+    deniedHandledRef.current = true;
+    showToast("Nu ai acces", "error");
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("accessDenied");
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `/lista-BICP?${nextQuery}` : "/lista-BICP");
+  }, [router, searchParams]);
 
   async function downloadBulkPdfsAsZip(variant: "signed" | "public") {
     if (!allSelectedIds.length || downloadingZipType) return;

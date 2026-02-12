@@ -19,3 +19,20 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.fc .fc-toolbar-title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.fc .fc-daygrid-event {
+  border-radius: 0.5rem;
+}
+
+.fc .fc-timegrid-event {
+  border-radius: 0.5rem;
+}
+
+.fc .fc-list-event-title {
+  font-weight: 500;
+}

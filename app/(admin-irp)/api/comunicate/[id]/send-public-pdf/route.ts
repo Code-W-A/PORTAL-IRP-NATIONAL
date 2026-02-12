@@ -198,7 +198,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       subject,
       text:
         `Bună ziua,\n\n` +
-        `Atasat regasiti ${tip} ${nume}\n` +
+        `Atasat regasiti ${tip} ${nume}\n\n` +
+        `Dacă nu mai doriți să primiți comunicatele noastre în viitor, vă rugăm să ne transmiteți acest lucru răspunzând la acest email.\n\n` +
         `Cu stimă,\n` +
         `Compartiment Informare Relații Publice - ${structureLabel}`,
       replyTo,
