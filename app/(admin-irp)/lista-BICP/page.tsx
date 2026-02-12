@@ -1,12 +1,15 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBicpData, type Bicp } from "@/app/(admin-irp)/lista-BICP/hooks/useBicpData";
 import { deleteDoc, doc, collection } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
-import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, MoreVertical, Download, Clock } from "lucide-react";
+import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, Download, Mail, MoreVertical } from "lucide-react";
 import Link from "next/link";
 import { FiltersDialog } from "./FiltersDialog";
+import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
+import { SendPublicPdfEmailDialog } from "./SendPublicPdfEmailDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 // Helper function to format date consistently as DD/MM/YYYY
 function formatDate(doc: any): string {
@@ -94,8 +97,12 @@ function getDocumentBadge(tipDocument: string) {
   );
 }
 
+type ToastType = "info" | "success" | "error";
+type ToastState = { type: ToastType; message: string } | null;
+
 export default function ListaBicpPage() {
   const { db } = initFirebase();
+  const { isAdmin } = useAuth();
   const { loading, error, filters, setFilters, items, total, availableYears, reload } = useBicpData();
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -108,6 +115,10 @@ export default function ListaBicpPage() {
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [downloadingZipType, setDownloadingZipType] = useState<"signed" | "public" | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; ids: string[]; isBulk: boolean }>({ show: false, ids: [], isBulk: false });
+  const [sendDialogOpen, setSendDialogOpen] = useState(false);
+  const [sendDialogDoc, setSendDialogDoc] = useState<Bicp | null>(null);
+  const [toast, setToast] = useState<ToastState>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const allSelectedIds = useMemo(() => Object.keys(selected).filter((k) => selected[k]), [selected]);
   const currentPageIds = useMemo(() => items.map((x) => x.id), [items]);
@@ -123,10 +134,29 @@ export default function ListaBicpPage() {
     : new Date().getFullYear();
   const currentYear = new Date().getFullYear();
 
+  function showToast(message: string, type: ToastType = "info", durationMs = 3200) {
+    setToast({ type, message });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), durationMs);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
+
   async function downloadBulkPdfsAsZip(variant: "signed" | "public") {
     if (!allSelectedIds.length || downloadingZipType) return;
     
     setDownloadingZipType(variant);
+    showToast(
+      variant === "signed"
+        ? "Se pregătește arhiva ZIP cu PDF-urile semnate..."
+        : "Se pregătește arhiva ZIP cu PDF-urile fără semnături...",
+      "info",
+      2800
+    );
     try {
       // Dynamically import JSZip
       const JSZip = (await import('jszip')).default;
@@ -195,7 +225,7 @@ export default function ListaBicpPage() {
       }
       
       if (successCount === 0) {
-        alert("Nu s-a putut descărca niciun PDF");
+        showToast("Nu s-a putut descărca niciun PDF.", "error");
         return;
       }
       
@@ -212,10 +242,10 @@ export default function ListaBicpPage() {
       document.body.removeChild(link);
       URL.revokeObjectURL(downloadUrl);
       
-      alert(`Au fost descărcate ${successCount} din ${allSelectedIds.length} documente în arhiva ZIP`);
+      showToast(`Au fost descărcate ${successCount} din ${allSelectedIds.length} documente în arhiva ZIP.`, "success", 4500);
     } catch (err) {
       console.error("Error creating ZIP:", err);
-      alert("Eroare la crearea arhivei ZIP. Verificați consola pentru detalii.");
+      showToast("Eroare la crearea arhivei ZIP.", "error");
     } finally {
       setDownloadingZipType(null);
     }
@@ -279,6 +309,7 @@ export default function ListaBicpPage() {
   async function startBulkPrint(variant: "signed" | "public") {
     if (!allSelectedIds.length || isPrinting) return;
     setIsPrinting(true);
+    showToast("Se pregătește PDF-ul combinat pentru tipărire...", "info", 2800);
     try {
       const res = await fetch(`/api/comunicate/bulk-pdf`, {
         method: "POST",
@@ -325,8 +356,9 @@ export default function ListaBicpPage() {
       try { win?.print(); } catch {}
       await afterPrintPromise;
       cleanup();
+      showToast("PDF-ul combinat a fost trimis către dialogul de tipărire.", "success");
     } catch (e) {
-      alert("Eroare la generarea PDF-ului combinat");
+      showToast("Eroare la generarea PDF-ului combinat.", "error");
     }
     setIsPrinting(false);
   }
@@ -335,6 +367,7 @@ export default function ListaBicpPage() {
     if (isPrinting) return;
     setIsPrinting(true);
     setPrintingId(id);
+    showToast("Se pregătește documentul pentru tipărire...", "info", 2400);
     try {
       const { judetId, structuraId } = getTenantContext();
       const url = `/api/comunicate/${id}/pdf?variant=${variant}&disposition=inline&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
@@ -364,8 +397,9 @@ export default function ListaBicpPage() {
       try { win?.print(); } catch {}
       await afterPrintPromise;
       try { document.body.removeChild(iframe); } catch {}
+      showToast("Document deschis pentru tipărire.", "success");
     } catch (e) {
-      alert("Eroare la tipărirea documentului");
+      showToast("Eroare la tipărirea documentului.", "error");
     }
     setIsPrinting(false);
     setPrintingId(null);
@@ -373,6 +407,16 @@ export default function ListaBicpPage() {
 
   function showDeleteConfirmation(ids: string[], isBulk: boolean = false) {
     setDeleteConfirm({ show: true, ids, isBulk });
+  }
+
+  function openSendDialog(item: Bicp) {
+    setSendDialogDoc(item);
+    setSendDialogOpen(true);
+  }
+
+  function handleSendDialogOpenChange(nextOpen: boolean) {
+    setSendDialogOpen(nextOpen);
+    if (!nextOpen) setSendDialogDoc(null);
   }
 
   async function executeDelete() {
@@ -385,9 +429,10 @@ export default function ListaBicpPage() {
       await Promise.all(ids.map((id) => deleteDoc(doc(collectionPath, id))));
       if (isBulk) setSelected({});
       reload();
+      showToast(ids.length === 1 ? "Document șters cu succes." : `${ids.length} documente au fost șterse.`, "success");
     } catch (error) {
       console.error("Eroare la ștergerea documentelor:", error);
-      alert("Eroare la ștergerea documentelor. Verificați consola pentru detalii.");
+      showToast("Eroare la ștergerea documentelor.", "error");
     }
   }
 
@@ -681,9 +726,35 @@ export default function ListaBicpPage() {
 
         {!loading && (
           view === "card" ? (
-            <CardView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} onDelete={(id) => showDeleteConfirmation([id], false)} />
+            <CardView
+              items={items}
+              selectMode={selectMode}
+              selected={selected}
+              setSelected={setSelected}
+              printSingle={printSingle}
+              isPrinting={isPrinting}
+              printingId={printingId}
+              onDelete={(id) => showDeleteConfirmation([id], false)}
+              canSendEmail={isAdmin}
+              onSendPublicPdf={openSendDialog}
+              showToast={showToast}
+            />
           ) : (
-            <TableView items={items} selectMode={selectMode} selected={selected} setSelected={setSelected} filters={filters} setFilters={setFilters} printSingle={printSingle} isPrinting={isPrinting} printingId={printingId} onDelete={(id) => showDeleteConfirmation([id], false)} />
+            <TableView
+              items={items}
+              selectMode={selectMode}
+              selected={selected}
+              setSelected={setSelected}
+              filters={filters}
+              setFilters={setFilters}
+              printSingle={printSingle}
+              isPrinting={isPrinting}
+              printingId={printingId}
+              onDelete={(id) => showDeleteConfirmation([id], false)}
+              canSendEmail={isAdmin}
+              onSendPublicPdf={openSendDialog}
+              showToast={showToast}
+            />
           )
         )}
 
@@ -749,12 +820,58 @@ export default function ListaBicpPage() {
         >
           <FilePlus2 size={24} strokeWidth={2.5} />
         </Link>
+
+        {toast && (
+          <div className="fixed right-4 bottom-4 z-[70] animate-in slide-in-from-right-4 fade-in duration-300">
+            <div
+              className={`max-w-sm rounded-xl border px-4 py-3 shadow-xl ${
+                toast.type === "success"
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  : toast.type === "error"
+                    ? "border-red-200 bg-red-50 text-red-900"
+                    : "border-blue-200 bg-blue-50 text-blue-900"
+              }`}
+            >
+              <div className="text-sm font-medium">{toast.message}</div>
+            </div>
+          </div>
+        )}
+
+        <SendPublicPdfEmailDialog
+          open={sendDialogOpen}
+          onOpenChange={handleSendDialogOpenChange}
+          documentItem={sendDialogDoc}
+        />
       </div>
     </div>
   );
 }
 
-function CardView({ items, selectMode, selected, setSelected, printSingle, isPrinting, printingId, onDelete }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null; onDelete: (id: string) => void }) {
+function CardView({
+  items,
+  selectMode,
+  selected,
+  setSelected,
+  printSingle,
+  isPrinting,
+  printingId,
+  onDelete,
+  canSendEmail,
+  onSendPublicPdf,
+  showToast,
+}: {
+  items: Bicp[];
+  selectMode: boolean;
+  selected: Record<string, boolean>;
+  setSelected: (m: Record<string, boolean>) => void;
+  printSingle: (id: string, variant?: "signed" | "public") => void;
+  isPrinting: boolean;
+  printingId: string | null;
+  onDelete: (id: string) => void;
+  canSendEmail: boolean;
+  onSendPublicPdf: (item: Bicp) => void;
+  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+}) {
   // if (!items.length) return (
   //   <div className="text-center py-12">
   //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
@@ -814,50 +931,18 @@ function CardView({ items, selectMode, selected, setSelected, printSingle, isPri
               </div>
             </div>
             
-            <div className="flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
-              <a 
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm" 
-                href={`/api/comunicate/${x.id}/pdf?variant=signed&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
-                target="_blank" 
-                rel="noreferrer"
-                title="PDF cu semnături"
-              >
-                <FileDown size={14}/> PDF cu semnături
-              </a>
-              <a 
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm" 
-                href={`/api/comunicate/${x.id}/pdf?variant=public&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
-                target="_blank" 
-                rel="noreferrer"
-                title="PDF fără semnături"
-              >
-                <FileText size={14}/> PDF fără semnături
-              </a>
-              <a 
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
-                href={`/api/comunicate/${x.id}/docx?judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}`}
-                title="Descarcă DOCX (Word)"
-              >
-                <FileText size={14}/> DOCX
-              </a>
-              <button
-                onClick={() => printSingle(x.id, "signed")}
-                disabled={isPrinting}
-                className={`inline-flex items-center gap-2 px-3 py-2 text-sm border rounded-lg transition-colors shadow-sm ${isPrinting ? "border-gray-200 text-gray-500 cursor-not-allowed bg-gray-50" : "border-gray-300 hover:bg-gray-50"}`}
-                title="Printează document"
-              >
-                {printingId === x.id ? <Loader2 className="animate-spin" size={14}/> : <Printer size={14}/>} {printingId === x.id ? "Se pregătește..." : "Printează"}
-              </button>
-              <a
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
-                href={`/creaza-BICP?id=${x.id}`}
-                title="Editează document"
-              >
-                <Pencil size={14}/> Editează
-              </a>
-              <CopyButton label="Titlu" value={x.titlu} />
-              <CopyButton label="Conținut" value={x.comunicat || ""} />
-              {!selectMode && (<DeleteButton id={x.id} onDelete={onDelete} />)}
+            <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+              <DocumentActionsMenu
+                item={x}
+                canSendEmail={canSendEmail}
+                onSendPublicPdf={onSendPublicPdf}
+                onDelete={onDelete}
+                onPrint={(id) => printSingle(id, "signed")}
+                isPrinting={isPrinting}
+                printingId={printingId}
+                hideDelete={selectMode}
+                showToast={showToast}
+              />
             </div>
           </div>
         );
@@ -943,7 +1028,35 @@ function TableSkeletons() {
   );
 }
 
-function TableView({ items, selectMode, selected, setSelected, filters, setFilters, printSingle, isPrinting, printingId, onDelete }: { items: Bicp[]; selectMode: boolean; selected: Record<string, boolean>; setSelected: (m: Record<string, boolean>) => void; filters: any; setFilters: (f: any) => void; printSingle: (id: string, variant?: "signed" | "public") => void; isPrinting: boolean; printingId: string | null; onDelete: (id: string) => void }) {
+function TableView({
+  items,
+  selectMode,
+  selected,
+  setSelected,
+  filters,
+  setFilters,
+  printSingle,
+  isPrinting,
+  printingId,
+  onDelete,
+  canSendEmail,
+  onSendPublicPdf,
+  showToast,
+}: {
+  items: Bicp[];
+  selectMode: boolean;
+  selected: Record<string, boolean>;
+  setSelected: (m: Record<string, boolean>) => void;
+  filters: any;
+  setFilters: (f: any) => void;
+  printSingle: (id: string, variant?: "signed" | "public") => void;
+  isPrinting: boolean;
+  printingId: string | null;
+  onDelete: (id: string) => void;
+  canSendEmail: boolean;
+  onSendPublicPdf: (item: Bicp) => void;
+  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+}) {
   // if (!items.length) return (
   //   <div className="text-center py-12">
   //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
@@ -1054,50 +1167,19 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
                   <td className="p-3 w-28 text-gray-700 text-sm">{formatDate(x)}</td>
                   <td className="p-3 w-40">{getDocumentBadge(x.nume || x.tip || "")}</td>
                   <td className="p-3 align-top w-64">
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <a 
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm" 
-                        href={`/api/comunicate/${x.id}/pdf?variant=signed&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        title="PDF cu semnături"
-                      >
-                        <FileDown size={12}/> PDF semnat
-                      </a>
-                      <a 
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm" 
-                        href={`/api/comunicate/${x.id}/pdf?variant=public&judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}&debug=1`} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        title="PDF fără semnături"
-                      >
-                        <FileText size={12}/> PDF fără semnături
-                      </a>
-                      <a 
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors shadow-sm" 
-                        href={`/api/comunicate/${x.id}/docx?judetId=${encodeURIComponent(getTenantContext().judetId)}&structuraId=${encodeURIComponent(getTenantContext().structuraId)}`} 
-                        title="Descarcă DOCX"
-                      >
-                        <FileText size={12}/> DOCX
-                      </a>
-                      <button 
-                        onClick={() => printSingle(x.id, "signed")} 
-                        disabled={isPrinting}
-                        className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] border rounded-lg transition-colors shadow-sm ${isPrinting ? "border-gray-200 text-gray-500 cursor-not-allowed bg-gray-50" : "border-gray-300 hover:bg-gray-50"}`} 
-                        title="Printează"
-                      >
-                        {printingId === x.id ? <Loader2 className="animate-spin" size={12}/> : <Printer size={12}/>} {printingId === x.id ? "Se pregătește..." : "Printează"}
-                      </button>
-                      <a 
-                        className="inline-flex items-center gap-1 px-2 py-1 text-[11px] border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm" 
-                        href={`/creaza-BICP?id=${x.id}`}
-                        title="Editează"
-                      >
-                        <Pencil size={12}/> Editează
-                      </a>
-                      <CopyButton label="Titlu" value={x.titlu} small />
-                      <CopyButton label="Conținut" value={x.comunicat || ""} small />
-                      {!selectMode && <DeleteButton id={x.id} small onDelete={onDelete} />}
+                    <div className="flex justify-end">
+                      <DocumentActionsMenu
+                        item={x}
+                        canSendEmail={canSendEmail}
+                        onSendPublicPdf={onSendPublicPdf}
+                        onDelete={onDelete}
+                        onPrint={(id) => printSingle(id, "signed")}
+                        isPrinting={isPrinting}
+                        printingId={printingId}
+                        hideDelete={selectMode}
+                        compact
+                        showToast={showToast}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -1110,76 +1192,153 @@ function TableView({ items, selectMode, selected, setSelected, filters, setFilte
   );
 }
 
-function CopyButton({ label, value, small }: { label: string; value: string; small?: boolean }) {
-  const [copied, setCopied] = useState(false);
-  
-  async function copy() {
-    try {
-      if (!value || value.trim() === "") {
-        alert(`Nu există conținut de copiat pentru ${label}`);
-        return;
-      }
-
-      const textToCopy = value.trim();
-      
-      // Încearcă să folosească Clipboard API modern
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(textToCopy);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-        console.log(`✅ Copiat în clipboard (${label}):`, textToCopy.substring(0, 50) + (textToCopy.length > 50 ? '...' : ''));
-        return;
-      }
-
-      // Fallback pentru browsere mai vechi sau HTTP (non-HTTPS)
-      const textArea = document.createElement('textarea');
-      textArea.value = textToCopy;
-      textArea.style.position = 'fixed';
-      textArea.style.left = '-9999px';
-      textArea.style.top = '-9999px';
-      textArea.style.opacity = '0';
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
-      
-      const successful = document.execCommand('copy');
-      document.body.removeChild(textArea);
-      
-      if (successful) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-        console.log(`✅ Copiat cu fallback (${label}):`, textToCopy.substring(0, 50) + (textToCopy.length > 50 ? '...' : ''));
-      } else {
-        throw new Error("Clipboard copy failed");
-      }
-    } catch (error) {
-      console.error("❌ Eroare la copiere:", error);
-      alert(`Eroare la copiere pentru ${label}. Verificați dacă site-ul rulează pe HTTPS sau încercați din nou.`);
+function openInNewTab(url: string, showToast: (message: string, type?: ToastType, durationMs?: number) => void) {
+  try {
+    const w = window.open(url, "_blank", "noopener,noreferrer");
+    if (!w) {
+      showToast("Pop-up blocat. Permite pop-up-urile pentru a deschide documentul.", "error");
+      return false;
     }
+    return true;
+  } catch {
+    showToast("Nu am putut deschide documentul în alt tab.", "error");
+    return false;
   }
-  
-  return (
-    <button 
-      onClick={copy} 
-      className={`inline-flex items-center gap-1.5 rounded-lg border transition-colors ${
-        copied 
-          ? "border-green-200 bg-green-50 text-green-700" 
-          : "border-gray-200 hover:bg-gray-50 hover:border-gray-300"
-      } ${small ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm"}`}
-    >
-      <CopyIcon size={small ? 12 : 14} /> {copied ? "Copiat!" : label}
-    </button>
-  );
 }
 
-function DeleteButton({ id, small, onDelete }: { id: string; small?: boolean; onDelete: (id: string) => void }) {
+async function copyText(label: string, value: string, showToast: (message: string, type?: ToastType, durationMs?: number) => void) {
+  try {
+    const textToCopy = String(value || "").trim();
+    if (!textToCopy) {
+      showToast(`Nu există conținut de copiat pentru ${label}.`, "error");
+      return;
+    }
+
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(textToCopy);
+      showToast(`${label} copiat în clipboard.`, "success");
+      return;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = textToCopy;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "-9999px";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+
+    const successful = document.execCommand("copy");
+    document.body.removeChild(textArea);
+    if (!successful) throw new Error("copy_failed");
+    showToast(`${label} copiat în clipboard.`, "success");
+  } catch {
+    showToast(`Eroare la copiere pentru ${label}.`, "error");
+  }
+}
+
+function DocumentActionsMenu({
+  item,
+  canSendEmail,
+  onSendPublicPdf,
+  onDelete,
+  onPrint,
+  isPrinting,
+  printingId,
+  showToast,
+  hideDelete = false,
+  compact = false,
+}: {
+  item: Bicp;
+  canSendEmail: boolean;
+  onSendPublicPdf: (item: Bicp) => void;
+  onDelete: (id: string) => void;
+  onPrint: (id: string) => void;
+  isPrinting: boolean;
+  printingId: string | null;
+  showToast: (message: string, type?: ToastType, durationMs?: number) => void;
+  hideDelete?: boolean;
+  compact?: boolean;
+}) {
+  const { judetId, structuraId } = getTenantContext();
+  const signedPdfUrl = `/api/comunicate/${item.id}/pdf?variant=signed&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
+  const publicPdfUrl = `/api/comunicate/${item.id}/pdf?variant=public&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
+  const docxUrl = `/api/comunicate/${item.id}/docx?judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}`;
+  const editUrl = `/creaza-BICP?id=${item.id}`;
+  const isCurrentPrinting = printingId === item.id;
+
   return (
-    <button 
-      onClick={() => onDelete(id)} 
-      className={`inline-flex items-center gap-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-colors ${small ? "px-2 py-1 text-xs" : "px-3 py-2 text-sm"}`}
-    >
-      <Trash2 size={small ? 12 : 14} /> {small ? "Șterge" : "Șterge Document"}
-    </button>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={`inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors ${
+          compact ? "h-8 w-8" : "h-9 w-9"
+        }`}
+        title="Acțiuni document"
+      >
+        <MoreVertical size={compact ? 14 : 16} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-64">
+        <DropdownMenuLabel>Acțiuni document</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          className="inline-flex items-center gap-2"
+          onClick={() => {
+            if (openInNewTab(signedPdfUrl, showToast)) showToast("Se deschide PDF-ul semnat...", "info");
+          }}
+        >
+          <FileDown size={14} /> PDF cu semnături
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="inline-flex items-center gap-2"
+          onClick={() => {
+            if (openInNewTab(publicPdfUrl, showToast)) showToast("Se deschide PDF-ul fără semnături...", "info");
+          }}
+        >
+          <FileText size={14} /> PDF fără semnături
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="inline-flex items-center gap-2"
+          onClick={() => {
+            if (openInNewTab(docxUrl, showToast)) showToast("Se deschide fișierul DOCX...", "info");
+          }}
+        >
+          <FileText size={14} /> DOCX
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="inline-flex items-center gap-2"
+          onClick={() => onPrint(item.id)}
+          disabled={isPrinting}
+        >
+          {isCurrentPrinting ? <Loader2 className="animate-spin" size={14} /> : <Printer size={14} />}
+          {isCurrentPrinting ? "Se pregătește..." : "Printează"}
+        </DropdownMenuItem>
+        <DropdownMenuItem className="inline-flex items-center gap-2" onClick={() => { window.location.href = editUrl; }}>
+          <Pencil size={14} /> Editează
+        </DropdownMenuItem>
+        {canSendEmail && (
+          <DropdownMenuItem className="inline-flex items-center gap-2" onClick={() => onSendPublicPdf(item)}>
+            <Mail size={14} /> Trimite email PDF nesemnat
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem className="inline-flex items-center gap-2" onClick={() => copyText("Titlu", item.titlu || "", showToast)}>
+          <CopyIcon size={14} /> Copiază titlu
+        </DropdownMenuItem>
+        <DropdownMenuItem className="inline-flex items-center gap-2" onClick={() => copyText("Conținut", item.comunicat || "", showToast)}>
+          <CopyIcon size={14} /> Copiază conținut
+        </DropdownMenuItem>
+        {!hideDelete && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="inline-flex items-center gap-2 text-red-700 hover:bg-red-50" onClick={() => onDelete(item.id)}>
+              <Trash2 size={14} /> Șterge document
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

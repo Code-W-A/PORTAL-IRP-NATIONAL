@@ -198,6 +198,136 @@ Aplicabilitate începând cu data de 01.02.2026.`,
       { id: "includere-la-plata", title: "Includere la plată" },
     ],
   },
+  {
+    slug: "comunicare-publica-incendii-potential-litigios",
+    title: "Comunicare publică în cazul incendiilor cu potențial litigios",
+    summary:
+      "Procedură generală pentru comunicarea operativă, fără antepronunțări și fără expunere juridică.",
+    category: "Comunicare publică",
+    status: "active",
+    updatedAt: "2026-02-10",
+    tags: ["incendiu", "comunicare", "purtător de cuvânt", "litigios", "ro-alert"],
+    contentMarkdown: `## Scop
+Procedura asigură informarea corectă a publicului fără afectarea cercetărilor ulterioare, fără antepronunțări și fără expunerea instituției sau a personalului la riscuri juridice.
+
+## Domeniu de aplicare
+Se aplică în cazul incendiilor produse la:
+- hale industriale
+- spații de producție
+- depozite
+- operatori economici
+
+Se aplică cu prioritate în situații cu:
+- pagube materiale semnificative
+- intervenții interjudețene
+- transmitere RO-ALERT
+- suspiciuni de natură penală
+- potențial litigios (victime, angajați, asigurări, anchete)
+
+## Principii de bază ale comunicării
+Purtătorul de cuvânt comunică exclusiv:
+- fapte constatate operativ
+- măsuri întreprinse de forțele de intervenție
+- informații de interes public imediat
+
+Nu se comunică:
+- cauze
+- vinovății
+- ipoteze
+- elemente tehnice ce țin de expertiză
+- detalii ce pot influența anchete sau litigii
+
+## Structura standard a comunicatului (obligatorie)
+### A. Date factuale minime
+- data și ora intervenției
+- localitatea și județul
+- tipul obiectivului (hală, depozit etc.)
+
+### B. Forțe și mijloace
+- numărul de autospeciale de stingere
+- menționarea ambulanțelor separat
+- alte instituții implicate (fără detalii operative)
+
+Regulă:
+- separare clară între autospeciale de stingere, ambulanțe și alte structuri
+
+### C. Situația la sosirea echipajelor
+- stadiul incendiului (localizat / generalizat)
+- degajări de fum și risc de propagare
+- măsuri de protecție pentru zonele învecinate
+
+### D. Măsuri pentru protecția populației
+- menționarea RO-ALERT, dacă a fost emis
+- recomandări generale de autoprotecție și evitare a zonei
+
+### E. Stadiul intervenției
+- "incendiul a fost lichidat" sau
+- "se acționează pentru localizare și lichidare"
+
+### F. Victime
+- "Nu au fost identificate victime." sau
+- date strict medicale confirmate, după caz
+
+## Reguli speciale privind conținutul sensibil
+### Materiale, substanțe, produse
+Nu se menționează explicit:
+- vopsele
+- diluanți
+- combustibili
+- substanțe inflamabile
+- gaze
+- solvenți
+- denumiri comerciale
+
+Se utilizează formularea neutră:
+> "au fost identificate materiale combustibile specifice activității desfășurate"
+
+### Cauza incendiului
+Sunt interzise formulări de tipul:
+- "incendiul a fost provocat de..."
+- "a izbucnit din cauza..."
+- "se presupune că..."
+
+Formulare corectă:
+> "Cauza incendiului urmează a fi stabilită de structurile abilitate."
+
+### Responsabilități și vinovății
+Nu se menționează:
+- operatorul economic ca vinovat
+- sugestii privind nerespectarea normelor
+- corelări cu autorizații sau avize
+
+## Corelarea cu investigațiile ulterioare
+În situații cu solicitări ulterioare de documente, cereri ale persoanelor implicate sau acțiuni în instanță:
+- comunicarea publică nu se completează retroactiv
+- comunicatul rămâne act de informare operativă, distinct de documentele tehnice
+
+## Principiul protecției purtătorului de cuvânt
+Purtătorul de cuvânt:
+- comunică instituțional, nu personal
+- se limitează la informații confirmate
+- respectă separația dintre informare publică și cercetare tehnică
+
+Această abordare:
+- protejează instituția
+- protejează purtătorul de cuvânt
+- protejează ancheta
+- respectă dreptul la informare
+
+## Formulă de siguranță (recomandată)
+În caz de dubiu:
+> "Pentru informarea publicului, comunicăm datele operative privind intervenția. Aspectele tehnice și cauza incendiului fac obiectul unor proceduri distincte, potrivit legii."`,
+    steps: [
+      { id: "incadrare-caz-litigios", title: "Încadrarea cazului cu potențial litigios" },
+      { id: "colectare-date-factuale-minime", title: "Colectarea datelor factuale minime" },
+      { id: "separare-forte-si-mijloace", title: "Separarea clară a forțelor și mijloacelor" },
+      { id: "redactare-situatie-operativa", title: "Redactarea situației operative și a măsurilor pentru populație" },
+      { id: "validare-fara-cauze-si-vinovatii", title: "Validarea comunicatului fără cauze, ipoteze sau vinovății" },
+      { id: "introducere-formulari-standard", title: "Introducerea formulărilor standard pentru stadiu și victime" },
+      { id: "publicare-informare-institutionala", title: "Publicarea informării instituționale" },
+      { id: "mentinere-fara-completari-retroactive", title: "Menținerea comunicatului fără completări retroactive" },
+    ],
+  },
 ];
 
 export function getAllProcedures() {

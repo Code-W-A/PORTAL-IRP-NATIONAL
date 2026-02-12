@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Plus, List, CalendarDays, LogOut, BarChart3, ChevronDown, Users, Newspaper, FileText, Settings } from "lucide-react";
+import { Plus, List, CalendarDays, LogOut, BarChart3, ChevronDown, Users, Newspaper, FileText, Settings, ClipboardList } from "lucide-react";
 import { signOut } from "firebase/auth";
 import { initFirebase } from "@/lib/firebase";
 import { useState, useRef, useEffect } from "react";
@@ -155,6 +155,9 @@ export function TopNavbar() {
               <Link className={linkCls("/dashboard/raportari")} href="/dashboard/raportari">
                 <BarChart3 size={18} className="mr-1" /> Raportări
               </Link>
+              <Link className={linkCls("/activitate-zilnica")} href="/activitate-zilnica">
+                <ClipboardList size={18} className="mr-1" /> Activitate zilnică
+              </Link>
             </>
           )}
           {/* Setări - link direct */}
@@ -267,6 +270,7 @@ export function BottomNavbar() {
       )}
       {isAdmin && item("/proceduri-lucru", "Proceduri", <CalendarDays size={18} />)}
       {isAdmin && item("/dashboard/raportari", "Raportări", <BarChart3 size={18} />)}
+      {isAdmin && item("/activitate-zilnica", "Activități", <ClipboardList size={18} />)}
       {item("/setari-structura", "Setări", <Settings size={18} />)}
       <button aria-label="Logout" onClick={handleLogout} className="flex flex-col items-center justify-center flex-1 py-2 text-red-600">
         <LogOut size={18} />

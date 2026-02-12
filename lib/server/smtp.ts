@@ -4,6 +4,8 @@ type SendMailArgs = {
   smtpUser: string;
   smtpPass: string;
   to: string;
+  bcc?: string[];
+  toHeader?: string;
   subject: string;
   text: string;
   replyTo?: string;
@@ -90,7 +92,7 @@ function readResponse(socket: tls.TLSSocket): Promise<{ code: number; lines: str
 }
 
 export async function sendMailGmailSmtp(args: SendMailArgs): Promise<void> {
-  const { smtpUser, smtpPass, to, subject, text, replyTo, attachments } = args;
+  const { smtpUser, smtpPass, to, bcc, toHeader, subject, text, replyTo, attachments } = args;
 
   const socket = tls.connect({
     host: "smtp.gmail.com",
@@ -118,15 +120,27 @@ export async function sendMailGmailSmtp(args: SendMailArgs): Promise<void> {
 
   const fromCmd = await smtpDialogue(socket, `MAIL FROM:<${smtpUser}>`);
   if (fromCmd.code !== 250) throw new Error("smtp_mailfrom_failed");
-  const rcptCmd = await smtpDialogue(socket, `RCPT TO:<${to}>`);
-  if (rcptCmd.code !== 250 && rcptCmd.code !== 251) throw new Error("smtp_rcpt_failed");
+  const rcptList = [to, ...(Array.isArray(bcc) ? bcc : [])]
+    .map((x) => String(x || "").trim())
+    .filter(Boolean);
+  const seen = new Set<string>();
+  let acceptedRcpt = 0;
+  for (const rcpt of rcptList) {
+    const key = rcpt.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rcptCmd = await smtpDialogue(socket, `RCPT TO:<${rcpt}>`);
+    if (rcptCmd.code !== 250 && rcptCmd.code !== 251) throw new Error("smtp_rcpt_failed");
+    acceptedRcpt += 1;
+  }
+  if (acceptedRcpt === 0) throw new Error("smtp_no_recipients");
 
   const dataCmd = await smtpDialogue(socket, "DATA");
   if (dataCmd.code !== 354) throw new Error("smtp_data_failed");
 
   const headers: string[] = [];
   headers.push(`From: Portal IRP <${smtpUser}>`);
-  headers.push(`To: <${to}>`);
+  headers.push(toHeader ? `To: ${toHeader}` : `To: <${to}>`);
   headers.push(`Subject: ${subject}`);
   headers.push("MIME-Version: 1.0");
   if (replyTo) headers.push(`Reply-To: ${replyTo}`);
@@ -178,5 +192,4 @@ export async function sendMailGmailSmtp(args: SendMailArgs): Promise<void> {
     socket.end();
   } catch {}
 }
-
 

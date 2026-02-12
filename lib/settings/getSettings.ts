@@ -11,6 +11,7 @@ export type StructuraSettings = {
   phone?: string;
   footerLines?: string[];
   unitLabel?: string;
+  structureDisplay?: string;
   pdfTemplateKey?: string;
   semnatari?: { functia: string; grad: string; nume: string }[];
   semnatarIndex?: number;
