@@ -328,6 +328,67 @@ Această abordare:
       { id: "mentinere-fara-completari-retroactive", title: "Menținerea comunicatului fără completări retroactive" },
     ],
   },
+  {
+    slug: "moderari-ceremonie-oficialitati-si-alocutiuni",
+    title: "Moderări ceremonie - oficialități participante și alocuțiuni",
+    summary:
+      "Procedură de moderare pentru identificarea oficialităților care participă la ceremonie și a celor care susțin mesaje/alocuțiuni.",
+    category: "Protocol și ceremonii",
+    status: "active",
+    updatedAt: "2026-02-17",
+    tags: ["moderari", "ceremonie", "oficialitati", "alocutiuni", "protocol"],
+    contentMarkdown: `## Scop
+Procedura stabilește pașii minimi pentru moderator înainte de ceremonie, astfel încât să existe claritate asupra oficialităților participante și a intervențiilor publice.
+
+## Întrebări obligatorii
+- Ce oficialități ajung la ceremonie?
+- Care dintre oficialitățile confirmate doresc să prezinte mesaje/alocuțiuni?
+
+## Colectare și validare
+- lista oficialităților se actualizează continuu până la confirmarea finală
+- pentru fiecare oficialitate se notează explicit: participare fără intervenție / mesaj scurt / alocuțiune
+- se validează durata estimată pentru fiecare intervenție
+
+## Livrabile pentru moderare
+- listă finală oficialități participante
+- ordinea intervențiilor (mesaj/alocuțiune)
+- text de introducere și formule de tranziție pentru moderator`,
+    steps: [
+      {
+        id: "colectare-oficialitati-invitate",
+        title: "Colectarea oficialităților invitate",
+        details: "Întrebare: Ce oficialități ajung la ceremonie?",
+        mustDo: true,
+      },
+      {
+        id: "confirmare-prezenta-oficialitati",
+        title: "Confirmarea oficialităților participante",
+        details: "Se marchează separat: confirmat, în așteptare, indisponibil.",
+        mustDo: true,
+      },
+      {
+        id: "identificare-interventii-publice",
+        title: "Identificarea mesajelor și alocuțiunilor",
+        details: "Întrebare: Care dintre oficialitățile confirmate vor să prezinte mesaje/alocuțiuni?",
+        mustDo: true,
+      },
+      {
+        id: "stabilire-ordine-interventii",
+        title: "Stabilirea ordinii intervențiilor",
+        details: "Se setează ordinea de luare a cuvântului și durata orientativă pentru fiecare intervenție.",
+      },
+      {
+        id: "validare-program-moderare",
+        title: "Validarea programului de moderare",
+        details: "Programul final se confirmă cu responsabilul de protocol și conducerea evenimentului.",
+      },
+      {
+        id: "pregatire-script-moderator",
+        title: "Pregătirea scriptului moderatorului",
+        details: "Se pregătesc formulele de introducere, tranziție și închidere pentru fiecare intervenție.",
+      },
+    ],
+  },
 ];
 
 export function getAllProcedures() {
