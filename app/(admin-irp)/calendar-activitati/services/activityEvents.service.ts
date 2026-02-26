@@ -53,37 +53,60 @@ function normalizeFrequency(value: unknown): RecurrenceFrequency {
   return "none";
 }
 
+function sanitizeIsoList(values: unknown, fallback: string) {
+  if (!Array.isArray(values)) return undefined;
+  const normalized = values
+    .map((value) => normalizeUnknownToIso(value, fallback))
+    .filter(Boolean);
+  return normalized.length ? Array.from(new Set(normalized)) : undefined;
+}
+
 function sanitizeRecurrence(raw: unknown, startDateTime: string): ActivityRecurrence | undefined {
   if (!raw || typeof raw !== "object") return undefined;
 
-  const freq = normalizeFrequency((raw as { freq?: unknown }).freq);
-  if (freq === "none") return { freq: "none" };
+  const source = raw as Record<string, unknown>;
 
-  const interval = Math.max(1, Number((raw as { interval?: unknown }).interval || 1));
-  const byWeekDays = Array.isArray((raw as { byWeekDays?: unknown[] }).byWeekDays)
+  const timezoneRaw = typeof source.timezone === "string" ? source.timezone.trim() : "";
+  const timezone = timezoneRaw || undefined;
+
+  const rruleRaw = typeof source.rrule === "string" ? source.rrule.trim() : "";
+  const rrule = rruleRaw || undefined;
+
+  const exdate = sanitizeIsoList(source.exdate, startDateTime);
+  const rdate = sanitizeIsoList(source.rdate, startDateTime);
+
+  const freq = normalizeFrequency(source.freq);
+  if (freq === "none" && !rrule && !exdate && !rdate && !timezone) return { freq: "none" };
+
+  const interval = Math.max(1, Number(source.interval || 1));
+  const byWeekDays = Array.isArray((source as { byWeekDays?: unknown[] }).byWeekDays)
     ? Array.from(
         new Set(
-          ((raw as { byWeekDays?: unknown[] }).byWeekDays || [])
+          ((source as { byWeekDays?: unknown[] }).byWeekDays || [])
             .map((value) => Number(value))
             .filter((value) => Number.isInteger(value) && value >= 0 && value <= 6)
         )
       )
     : undefined;
 
-  const byMonthDayRaw = Number((raw as { byMonthDay?: unknown }).byMonthDay);
+  const byMonthDayRaw = Number(source.byMonthDay);
   const byMonthDay = Number.isInteger(byMonthDayRaw)
     ? Math.max(1, Math.min(31, byMonthDayRaw))
     : undefined;
 
-  const countRaw = Number((raw as { count?: unknown }).count);
+  const countRaw = Number(source.count);
   const count = Number.isInteger(countRaw) && countRaw > 0 ? countRaw : undefined;
 
-  const untilRaw = (raw as { until?: unknown }).until;
+  const untilRaw = source.until;
   const until = untilRaw ? normalizeUnknownToIso(untilRaw, startDateTime) : undefined;
 
   const normalized: ActivityRecurrence = {
     freq,
     interval,
+    timezone,
+    rrule,
+    exdate,
+    rdate,
   };
 
   if (freq === "weekly" && byWeekDays && byWeekDays.length > 0) {

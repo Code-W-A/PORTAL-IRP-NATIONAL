@@ -31,10 +31,13 @@ Routes:
 - `/creaza-BICP` (protected)
 - `/lista-BICP` (protected, default landing)
 - `/panou-principal` (protected)
+- `/mape-presa/creeaza` (protected, admin only)
+- `/mape-presa/lista` (protected, admin only)
 
 APIs for document generation:
 - POST `/api/generate/docx` { title, content }
 - POST `/api/generate/pdf` { title, content }
+- POST `/api/press-kit` (admin only, `Authorization: Bearer <idToken>`)
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

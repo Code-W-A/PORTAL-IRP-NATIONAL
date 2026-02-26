@@ -7,6 +7,10 @@ export type ActivityRecurrence = {
   byMonthDay?: number;
   count?: number;
   until?: string;
+  rrule?: string;
+  exdate?: string[];
+  rdate?: string[];
+  timezone?: string;
 };
 
 export type ActivityEvent = {
@@ -38,6 +42,7 @@ export type ActivityOccurrence = {
   description?: string;
   startDateTime: string;
   endDateTime: string;
+  originalStartDateTime: string;
   allDay: boolean;
   location?: string;
   category?: string;

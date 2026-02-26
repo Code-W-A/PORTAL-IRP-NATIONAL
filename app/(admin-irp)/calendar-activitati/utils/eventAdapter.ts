@@ -5,6 +5,7 @@ import type { ActivityOccurrence } from "@/app/(admin-irp)/calendar-activitati/t
 type CalendarExtendedProps = {
   masterEventId: string;
   occurrenceId: string;
+  originalStartDateTime: string;
   isRecurring: boolean;
   category?: string;
   location?: string;
@@ -13,10 +14,17 @@ type CalendarExtendedProps = {
 
 export function mapOccurrencesToCalendarEvents(occurrences: ActivityOccurrence[]) {
   return occurrences.map((occurrence): EventInput => {
+    const recurrence = occurrence.recurrence;
+    const isRecurring = Boolean(
+      recurrence
+        && ((recurrence.freq || "none") !== "none" || (recurrence.rrule && recurrence.rrule.trim()))
+    );
+
     const extendedProps: CalendarExtendedProps = {
       masterEventId: occurrence.masterEventId,
       occurrenceId: occurrence.occurrenceId,
-      isRecurring: (occurrence.recurrence?.freq || "none") !== "none",
+      originalStartDateTime: occurrence.originalStartDateTime,
+      isRecurring,
       category: occurrence.category,
       location: occurrence.location,
       description: occurrence.description,
@@ -31,8 +39,8 @@ export function mapOccurrencesToCalendarEvents(occurrences: ActivityOccurrence[]
       backgroundColor: occurrence.color || undefined,
       borderColor: occurrence.color || undefined,
       extendedProps,
-      editable: !extendedProps.isRecurring,
-      durationEditable: !extendedProps.isRecurring,
+      editable: true,
+      durationEditable: true,
     };
   });
 }

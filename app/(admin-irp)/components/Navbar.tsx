@@ -14,6 +14,7 @@ import {
   Settings,
   ClipboardList,
   Menu,
+  FolderOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { signOut } from "firebase/auth";
@@ -76,6 +77,17 @@ const MONITORIZARE_ITEMS: NavItem[] = [
   { href: "/monitorizare/revista", label: "Revista presei", icon: FileText, adminOnly: true },
 ];
 
+const MAPE_PRESA_ITEMS: NavItem[] = [
+  { href: "/mape-presa/creeaza", label: "Creează", icon: Plus, adminOnly: true },
+  {
+    href: "/mape-presa/lista",
+    label: "Lista mape de presă",
+    icon: List,
+    adminOnly: true,
+    matchPrefixes: ["/mape-presa/lista"],
+  },
+];
+
 const SIDEBAR_GROUPS: NavGroup[] = [
   { id: "bicp", label: "BICP", icon: FileText, items: BICP_ITEMS },
   {
@@ -91,6 +103,13 @@ const SIDEBAR_GROUPS: NavGroup[] = [
     icon: Newspaper,
     adminOnly: true,
     items: MONITORIZARE_ITEMS,
+  },
+  {
+    id: "mape-presa",
+    label: "Mape de presă",
+    icon: FolderOpen,
+    adminOnly: true,
+    items: MAPE_PRESA_ITEMS,
   },
 ];
 
@@ -118,8 +137,10 @@ function isPathActive(pathname: string, item: NavItem) {
     return true;
   }
 
-  const segment = item.href.split("/").filter(Boolean)[0];
+  const segments = item.href.split("/").filter(Boolean);
+  const segment = segments[0];
   if (!segment) return pathname === "/";
+  if (segments.length > 1) return false;
   return pathname.startsWith(`/${segment}`) && item.href !== "/setari-structura";
 }
 
@@ -127,6 +148,10 @@ function isGroupActive(pathname: string, group: NavGroup, isAdmin: boolean) {
   return group.items
     .filter((item) => canAccess(item, isAdmin))
     .some((item) => isPathActive(pathname, item));
+}
+
+function groupById(groupId: string) {
+  return SIDEBAR_GROUPS.find((group) => group.id === groupId) || null;
 }
 
 export function TopNavbar() {
@@ -325,6 +350,11 @@ export function BottomNavbar() {
   const [bicpOpen, setBicpOpen] = useState(false);
   const [acreditariOpen, setAcreditariOpen] = useState(false);
   const [monitorizareOpen, setMonitorizareOpen] = useState(false);
+  const [mapePresaOpen, setMapePresaOpen] = useState(false);
+  const bicpGroup = groupById("bicp");
+  const acreditariGroup = groupById("acreditari");
+  const monitorizareGroup = groupById("monitorizare");
+  const mapePresaGroup = groupById("mape-presa");
 
   async function handleLogout() {
     try {
@@ -359,6 +389,7 @@ export function BottomNavbar() {
 
   const showAcreditari = isAdmin;
   const showMonitorizare = isAdmin;
+  const showMapePresa = isAdmin;
 
   return (
     <>
@@ -368,10 +399,11 @@ export function BottomNavbar() {
             onClick={() => {
               setMonitorizareOpen(false);
               setAcreditariOpen(false);
+              setMapePresaOpen(false);
               setBicpOpen((value) => !value);
             }}
             className={`flex w-full flex-col items-center justify-center py-2 ${
-              isGroupActive(pathname, SIDEBAR_GROUPS[0], isAdmin) ? "text-blue-700" : "text-gray-700"
+              bicpGroup && isGroupActive(pathname, bicpGroup, isAdmin) ? "text-blue-700" : "text-gray-700"
             }`}
             aria-label="BICP"
           >
@@ -386,10 +418,13 @@ export function BottomNavbar() {
               onClick={() => {
                 setMonitorizareOpen(false);
                 setBicpOpen(false);
+                setMapePresaOpen(false);
                 setAcreditariOpen((value) => !value);
               }}
               className={`flex w-full flex-col items-center justify-center py-2 ${
-                isGroupActive(pathname, SIDEBAR_GROUPS[1], isAdmin) ? "text-blue-700" : "text-gray-700"
+                acreditariGroup && isGroupActive(pathname, acreditariGroup, isAdmin)
+                  ? "text-blue-700"
+                  : "text-gray-700"
               }`}
               aria-label="Acreditări"
             >
@@ -405,15 +440,40 @@ export function BottomNavbar() {
               onClick={() => {
                 setAcreditariOpen(false);
                 setBicpOpen(false);
+                setMapePresaOpen(false);
                 setMonitorizareOpen((value) => !value);
               }}
               className={`flex w-full flex-col items-center justify-center py-2 ${
-                isGroupActive(pathname, SIDEBAR_GROUPS[2], isAdmin) ? "text-blue-700" : "text-gray-700"
+                monitorizareGroup && isGroupActive(pathname, monitorizareGroup, isAdmin)
+                  ? "text-blue-700"
+                  : "text-gray-700"
               }`}
               aria-label="Monitorizare"
             >
               <Newspaper size={18} />
               <span className="mt-1 text-xs">Monitorizare</span>
+            </button>
+          </div>
+        )}
+
+        {showMapePresa && (
+          <div className="relative flex-1">
+            <button
+              onClick={() => {
+                setAcreditariOpen(false);
+                setBicpOpen(false);
+                setMonitorizareOpen(false);
+                setMapePresaOpen((value) => !value);
+              }}
+              className={`flex w-full flex-col items-center justify-center py-2 ${
+                mapePresaGroup && isGroupActive(pathname, mapePresaGroup, isAdmin)
+                  ? "text-blue-700"
+                  : "text-gray-700"
+              }`}
+              aria-label="Mape de presă"
+            >
+              <FolderOpen size={18} />
+              <span className="mt-1 text-xs">Mape</span>
             </button>
           </div>
         )}
@@ -449,6 +509,18 @@ export function BottomNavbar() {
           onClose={() => setMonitorizareOpen(false)}
           onNavigate={(href) => {
             setMonitorizareOpen(false);
+            router.push(href);
+          }}
+        />
+      )}
+
+      {mapePresaOpen && showMapePresa && (
+        <GroupModal
+          title="Mape de presă"
+          items={MAPE_PRESA_ITEMS.filter((item) => canAccess(item, isAdmin))}
+          onClose={() => setMapePresaOpen(false)}
+          onNavigate={(href) => {
+            setMapePresaOpen(false);
             router.push(href);
           }}
         />

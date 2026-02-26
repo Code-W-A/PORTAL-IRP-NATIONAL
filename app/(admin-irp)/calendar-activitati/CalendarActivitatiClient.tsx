@@ -40,6 +40,7 @@ import CalendarToolbar from "@/app/(admin-irp)/calendar-activitati/components/Ca
 import ActivityModal, {
   type ActivityModalSeed,
 } from "@/app/(admin-irp)/calendar-activitati/components/ActivityModal";
+import ImportIcsDialog from "@/app/(admin-irp)/calendar-activitati/components/ImportIcsDialog";
 
 type ToastState = {
   type: "success" | "info" | "error";
@@ -78,6 +79,8 @@ export default function CalendarActivitatiClient() {
   const [modalMode, setModalMode] = useState<"create" | "edit">("create");
   const [editingEvent, setEditingEvent] = useState<ActivityEvent | null>(null);
   const [modalSeed, setModalSeed] = useState<ActivityModalSeed | null>(null);
+
+  const [importOpen, setImportOpen] = useState(false);
 
   function showToast(message: string, type: ToastType = "info") {
     setToast({ message, type });
@@ -315,6 +318,7 @@ export default function CalendarActivitatiClient() {
         onNext={() => navigateCalendar("next")}
         onViewChange={changeView}
         onAddActivity={openCreateModalNow}
+        onImportIcs={() => setImportOpen(true)}
         onFiltersChange={(patch) =>
           setFilters((prev) => ({
             ...prev,
@@ -394,6 +398,12 @@ export default function CalendarActivitatiClient() {
         }}
         onSave={handleModalSave}
         onDelete={modalMode === "edit" ? handleModalDelete : undefined}
+      />
+
+      <ImportIcsDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={reload}
       />
 
       {toast && (

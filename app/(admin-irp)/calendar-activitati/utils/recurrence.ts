@@ -1,6 +1,12 @@
 import { DateTime } from "luxon";
+import { rrulestr } from "rrule";
 
-import type { ActivityEvent, ActivityOccurrence, CalendarDateRange, RecurrenceFrequency } from "@/app/(admin-irp)/calendar-activitati/types";
+import type {
+  ActivityEvent,
+  ActivityOccurrence,
+  CalendarDateRange,
+  RecurrenceFrequency,
+} from "@/app/(admin-irp)/calendar-activitati/types";
 import { BUCHAREST_TIMEZONE } from "@/app/(admin-irp)/calendar-activitati/utils/datetime";
 
 const MAX_ITERATIONS_PER_EVENT = 50000;
@@ -28,13 +34,17 @@ function overlaps(occurrenceStart: DateTime, occurrenceEnd: DateTime, rangeStart
   return occurrenceStart < rangeEnd && occurrenceEnd > rangeStart;
 }
 
+function asUtcIso(value: DateTime) {
+  return value.toUTC().toISO({ suppressMilliseconds: true }) || value.toUTC().toISO() || new Date().toISOString();
+}
+
 function toOccurrence(
   masterEvent: ActivityEvent,
   occurrenceStart: DateTime,
   occurrenceEnd: DateTime
 ): ActivityOccurrence {
-  const startIso = occurrenceStart.toUTC().toISO({ suppressMilliseconds: true }) || occurrenceStart.toUTC().toISO() || new Date().toISOString();
-  const endIso = occurrenceEnd.toUTC().toISO({ suppressMilliseconds: true }) || occurrenceEnd.toUTC().toISO() || new Date().toISOString();
+  const startIso = asUtcIso(occurrenceStart);
+  const endIso = asUtcIso(occurrenceEnd);
 
   return {
     occurrenceId: `${masterEvent.id}__${occurrenceStart.toUTC().toMillis()}`,
@@ -43,6 +53,7 @@ function toOccurrence(
     description: masterEvent.description,
     startDateTime: startIso,
     endDateTime: endIso,
+    originalStartDateTime: startIso,
     allDay: masterEvent.allDay === true,
     location: masterEvent.location,
     category: masterEvent.category,
@@ -87,6 +98,84 @@ function appendIfVisible(
   }
 }
 
+function formatIsoForRfc(value: string, allDay: boolean) {
+  const dt = DateTime.fromISO(value, { setZone: true });
+  if (!dt.isValid) return null;
+
+  if (allDay) {
+    return dt.setZone(BUCHAREST_TIMEZONE).toFormat("yyyyLLdd");
+  }
+
+  return dt.toUTC().toFormat("yyyyLLdd'T'HHmmss'Z'");
+}
+
+function expandByRRule(
+  masterEvent: ActivityEvent,
+  rangeStart: DateTime,
+  rangeEnd: DateTime
+) {
+  const recurrence = masterEvent.recurrence;
+  if (!recurrence?.rrule) return null;
+
+  const start = DateTime.fromISO(masterEvent.startDateTime, { setZone: true });
+  let end = DateTime.fromISO(masterEvent.endDateTime, { setZone: true });
+
+  if (!start.isValid) return null;
+  if (!end.isValid || end <= start) {
+    end = masterEvent.allDay ? start.plus({ days: 1 }) : start.plus({ hours: 1 });
+  }
+
+  const allDay = masterEvent.allDay === true;
+  const durationDays = allDay
+    ? Math.max(Math.round(end.startOf("day").diff(start.startOf("day"), "days").days), 1)
+    : 0;
+  const durationMs = allDay
+    ? 0
+    : Math.max(end.toMillis() - start.toMillis(), 60 * 1000);
+
+  const rule = recurrence.rrule.startsWith("RRULE:")
+    ? recurrence.rrule
+    : `RRULE:${recurrence.rrule}`;
+
+  const lines = [rule];
+
+  if (recurrence.exdate?.length) {
+    const values = recurrence.exdate
+      .map((item) => formatIsoForRfc(item, allDay))
+      .filter(Boolean) as string[];
+    if (values.length) lines.push(`EXDATE:${values.join(",")}`);
+  }
+
+  if (recurrence.rdate?.length) {
+    const values = recurrence.rdate
+      .map((item) => formatIsoForRfc(item, allDay))
+      .filter(Boolean) as string[];
+    if (values.length) lines.push(`RDATE:${values.join(",")}`);
+  }
+
+  const set = rrulestr(lines.join("\n"), {
+    forceset: true,
+    dtstart: start.toJSDate(),
+  });
+
+  const starts = set.between(rangeStart.toJSDate(), rangeEnd.toJSDate(), true);
+
+  return starts.map((item) => {
+    const candidate = DateTime.fromJSDate(item, { zone: "utc" });
+    const occurrenceStart = allDay
+      ? candidate.setZone(BUCHAREST_TIMEZONE).startOf("day")
+      : candidate;
+    const occurrenceEnd = allDay
+      ? occurrenceStart.plus({ days: durationDays })
+      : occurrenceStart.plus({ milliseconds: durationMs });
+
+    return {
+      occurrenceStart,
+      occurrenceEnd,
+    };
+  });
+}
+
 export function expandEventsForRange(
   masterEvents: ActivityEvent[],
   range: CalendarDateRange,
@@ -103,6 +192,17 @@ export function expandEventsForRange(
 
   for (const masterEvent of masterEvents) {
     const recurrence = masterEvent.recurrence;
+
+    const expandedByRRule = expandByRRule(masterEvent, rangeStart, rangeEnd);
+    if (expandedByRRule) {
+      for (const bounds of expandedByRRule) {
+        if (overlaps(bounds.occurrenceStart, bounds.occurrenceEnd, rangeStart, rangeEnd)) {
+          occurrences.push(toOccurrence(masterEvent, bounds.occurrenceStart, bounds.occurrenceEnd));
+        }
+      }
+      continue;
+    }
+
     const frequency = normalizeFrequency(recurrence?.freq);
 
     const start = DateTime.fromISO(masterEvent.startDateTime, { setZone: true }).setZone(timezone);
@@ -243,7 +343,6 @@ export function expandEventsForRange(
         const currentMonth = monthAnchor.plus({ months: monthOffset * interval });
 
         if (!until && !countLimit && currentMonth > rangeEnd.endOf("month")) break;
-
         if (monthDay > currentMonth.daysInMonth) continue;
 
         const dayCandidate = currentMonth.set({ day: monthDay });

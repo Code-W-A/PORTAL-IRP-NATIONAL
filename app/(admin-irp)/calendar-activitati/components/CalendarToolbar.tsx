@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, CalendarPlus2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, CalendarPlus2, ChevronLeft, ChevronRight, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ type CalendarToolbarProps = {
   onNext: () => void;
   onViewChange: (view: CalendarView) => void;
   onAddActivity: () => void;
+  onImportIcs: () => void;
   onFiltersChange: (patch: Partial<ActivityFilters>) => void;
 };
 
@@ -38,6 +39,7 @@ export default function CalendarToolbar({
   onNext,
   onViewChange,
   onAddActivity,
+  onImportIcs,
   onFiltersChange,
 }: CalendarToolbarProps) {
   return (
@@ -48,10 +50,17 @@ export default function CalendarToolbar({
           <div className="text-lg font-semibold text-gray-900">{currentTitle}</div>
         </div>
 
-        <Button onClick={onAddActivity}>
-          <CalendarPlus2 className="h-4 w-4" />
-          Adaugă activitate
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" onClick={onImportIcs}>
+            <Upload className="h-4 w-4" />
+            Import .ics
+          </Button>
+
+          <Button onClick={onAddActivity}>
+            <CalendarPlus2 className="h-4 w-4" />
+            Adaugă activitate
+          </Button>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[1.1fr_1fr_1fr]">

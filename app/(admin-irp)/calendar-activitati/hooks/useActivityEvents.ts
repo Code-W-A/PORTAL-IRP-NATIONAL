@@ -61,7 +61,9 @@ export function useActivityEvents(): UseActivityEventsResult {
       try {
         const userId = getUserId();
         const created = await createActivityEvent(db, draft, userId);
-        setEvents((prev) => [...prev, created].sort((a, b) => a.startDateTime.localeCompare(b.startDateTime)));
+        setEvents((prev) =>
+          [...prev, created].sort((a, b) => a.startDateTime.localeCompare(b.startDateTime))
+        );
         return created;
       } catch (err) {
         console.error(err);
