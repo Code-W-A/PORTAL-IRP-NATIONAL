@@ -751,6 +751,7 @@ export default function ListaBicpPage() {
               printingId={printingId}
               onDelete={(id) => showDeleteConfirmation([id], false)}
               canSendEmail={isAdmin}
+              canDownloadCompactPdf={isAdmin}
               onSendPublicPdf={openSendDialog}
               showToast={showToast}
             />
@@ -767,6 +768,7 @@ export default function ListaBicpPage() {
               printingId={printingId}
               onDelete={(id) => showDeleteConfirmation([id], false)}
               canSendEmail={isAdmin}
+              canDownloadCompactPdf={isAdmin}
               onSendPublicPdf={openSendDialog}
               showToast={showToast}
             />
@@ -872,6 +874,7 @@ function CardView({
   printingId,
   onDelete,
   canSendEmail,
+  canDownloadCompactPdf,
   onSendPublicPdf,
   showToast,
 }: {
@@ -884,6 +887,7 @@ function CardView({
   printingId: string | null;
   onDelete: (id: string) => void;
   canSendEmail: boolean;
+  canDownloadCompactPdf: boolean;
   onSendPublicPdf: (item: Bicp) => void;
   showToast: (message: string, type?: ToastType, durationMs?: number) => void;
 }) {
@@ -970,6 +974,7 @@ function CardView({
               <DocumentActionsMenu
                 item={x}
                 canSendEmail={canSendEmail}
+                canDownloadCompactPdf={canDownloadCompactPdf}
                 onSendPublicPdf={onSendPublicPdf}
                 onDelete={onDelete}
                 onPrint={(id) => printSingle(id, "signed")}
@@ -1075,6 +1080,7 @@ function TableView({
   printingId,
   onDelete,
   canSendEmail,
+  canDownloadCompactPdf,
   onSendPublicPdf,
   showToast,
 }: {
@@ -1089,6 +1095,7 @@ function TableView({
   printingId: string | null;
   onDelete: (id: string) => void;
   canSendEmail: boolean;
+  canDownloadCompactPdf: boolean;
   onSendPublicPdf: (item: Bicp) => void;
   showToast: (message: string, type?: ToastType, durationMs?: number) => void;
 }) {
@@ -1206,6 +1213,7 @@ function TableView({
                       <DocumentActionsMenu
                         item={x}
                         canSendEmail={canSendEmail}
+                        canDownloadCompactPdf={canDownloadCompactPdf}
                         onSendPublicPdf={onSendPublicPdf}
                         onDelete={onDelete}
                         onPrint={(id) => printSingle(id, "signed")}
@@ -1238,6 +1246,54 @@ function openInNewTab(url: string, showToast: (message: string, type?: ToastType
   } catch {
     showToast("Nu am putut deschide documentul în alt tab.", "error");
     return false;
+  }
+}
+
+async function openCompactBicpPdfInNewTab(
+  itemId: string,
+  judetId: string,
+  structuraId: string,
+  showToast: (message: string, type?: ToastType, durationMs?: number) => void,
+) {
+  const { auth } = initFirebase();
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) {
+    showToast("Trebuie să fii autentificat.", "error");
+    return;
+  }
+  const previewWin = window.open("about:blank", "_blank");
+  if (!previewWin) {
+    showToast("Pop-up blocat. Permite pop-up-urile pentru a deschide PDF-ul.", "error");
+    return;
+  }
+  try {
+    const url = `/api/comunicate/${encodeURIComponent(itemId)}/pdf?variant=public&compact=1&disposition=inline&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (res.status === 401) {
+      previewWin.close();
+      showToast("Sesiune expirată sau neautentificat.", "error");
+      return;
+    }
+    if (res.status === 403) {
+      previewWin.close();
+      showToast("Nu ai drepturi pentru PDF-ul fără antet (doar admin structură).", "error");
+      return;
+    }
+    if (!res.ok) {
+      previewWin.close();
+      showToast("Eroare la generarea PDF-ului compact.", "error");
+      return;
+    }
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    previewWin.location.href = objUrl;
+    setTimeout(() => URL.revokeObjectURL(objUrl), 120_000);
+    showToast("PDF fără antet deschis în tab nou.", "success", 2200);
+  } catch {
+    try {
+      previewWin.close();
+    } catch {}
+    showToast("Eroare la generarea PDF-ului compact.", "error");
   }
 }
 
@@ -1277,6 +1333,7 @@ async function copyText(label: string, value: string, showToast: (message: strin
 function DocumentActionsMenu({
   item,
   canSendEmail,
+  canDownloadCompactPdf,
   onSendPublicPdf,
   onDelete,
   onPrint,
@@ -1288,6 +1345,7 @@ function DocumentActionsMenu({
 }: {
   item: Bicp;
   canSendEmail: boolean;
+  canDownloadCompactPdf: boolean;
   onSendPublicPdf: (item: Bicp) => void;
   onDelete: (id: string) => void;
   onPrint: (id: string) => void;
@@ -1333,6 +1391,20 @@ function DocumentActionsMenu({
         >
           <FileText size={14} /> PDF fără semnături
         </DropdownMenuItem>
+        {canDownloadCompactPdf && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="inline-flex items-center gap-2"
+              onClick={() => {
+                showToast("Se pregătește PDF-ul fără antet...", "info");
+                void openCompactBicpPdfInNewTab(item.id, judetId, structuraId, showToast);
+              }}
+            >
+              <FileText size={14} /> PDF fără antet
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuItem
           className="inline-flex items-center gap-2"
           onClick={() => {

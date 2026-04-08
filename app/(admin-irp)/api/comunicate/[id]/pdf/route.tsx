@@ -7,6 +7,8 @@ import { getTenantContext } from "@/lib/tenant";
 import { JUDETE } from "@/lib/judete";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
 import { buildPurtatorSignatureUrl, normalizePurtatorSignatureKey } from "@/lib/pdf/purtatorSignatures";
+import { getBearerToken } from "@/lib/server/auth";
+import { getStructuraSettings } from "@/lib/settings/getSettings";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -18,11 +20,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   const disposition = url.searchParams.get("disposition") === "inline" ? "inline" : "attachment";
   const qpJudet = url.searchParams.get("judetId") || undefined;
   const qpStruct = url.searchParams.get("structuraId") || undefined;
+  const compactLetterhead = url.searchParams.get("compact") === "1";
+  const originEarly = new URL(_req.url).origin;
   const debug = url.searchParams.get("debug") === "1" || process.env.NODE_ENV !== "production";
   const { db } = initFirebase();
   const tried: string[] = [];
   if (debug) {
-    console.log("[PDF] request", { id, variant, disposition, qpJudet, qpStruct, url: _req.url });
+    console.log("[PDF] request", { id, variant, disposition, qpJudet, qpStruct, compactLetterhead, url: _req.url });
   }
   // Try tenant-scoped first, fallback to root collection for older docs, and finally collection group
   const snap = await (async () => {
@@ -90,8 +94,30 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     }
   } catch {}
 
+  if (compactLetterhead) {
+    const token = getBearerToken(_req);
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    try {
+      const { tenant, structura } = await getStructuraSettings(token, originEarly);
+      if (!structura?.isAdmin) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      const tj = String(tenant.judetId || "").toUpperCase();
+      const ts = String(tenant.structuraId || "").toUpperCase();
+      const ej = String(effectiveJudetId || "").toUpperCase();
+      const es = String(effectiveStructuraId || "").toUpperCase();
+      if (!ej || !es || tj !== ej || ts !== es) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+    } catch {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   // Ensure logo URL is absolute to avoid FS resolution like C:\\sigle\\...
-  const origin = new URL(_req.url).origin;
+  const origin = originEarly;
   const logoAbs = meta?.logoUrlPublic ? new URL(String(meta.logoUrlPublic), origin).toString() : undefined;
   let structuraIsAdmin = false;
   if (effectiveJudetId && effectiveStructuraId) {
@@ -102,9 +128,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     } catch {}
   }
 
+  // Compact „fără antet”: întotdeauna fără semnătură și fără bloc purtător (echivalent public la randare).
+  const pdfVariant: "signed" | "public" = compactLetterhead ? "public" : variant;
+
   const purtatorSemnaturaKey = normalizePurtatorSignatureKey(d?.purtatorSemnaturaKey);
   const purtatorSemnaturaUrl =
-    variant === "signed" && structuraIsAdmin
+    pdfVariant === "signed" && structuraIsAdmin
       ? buildPurtatorSignatureUrl(purtatorSemnaturaKey, origin)
       : undefined;
 
@@ -117,7 +146,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   } catch {}
 
   // Choose displayed number: use registry number only for signed variant
-  const chosenNumar = (variant === "signed" && String(d?.numarRegistru || "").trim())
+  const chosenNumar = (pdfVariant === "signed" && String(d?.numarRegistru || "").trim())
     ? String(d.numarRegistru).trim()
     : String(d?.numarComunicat ?? d?.numar ?? "");
 
@@ -162,14 +191,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
         continut: content,
         semnatar: { pentru: d?.pentru || "", functia: d?.functia || "", grad: d?.grad || "", nume: d?.numeSemnatar || "" },
       }}
-      variant={variant as any}
+      variant={pdfVariant as any}
+      compactLetterhead={compactLetterhead}
     />
   );
 
   // If a local PDF template is configured in settings, fill its fields
   const templateKey = meta?.pdfTemplateKey as string | undefined; // e.g., "BICP-standard.pdf"
-  const forceRendererForSignedSignature = variant === "signed" && !!purtatorSemnaturaUrl;
-  if (templateKey && !forceRendererForSignedSignature) {
+  const forceRendererForSignedSignature = pdfVariant === "signed" && !!purtatorSemnaturaUrl;
+  const forceRenderer = forceRendererForSignedSignature || compactLetterhead;
+  if (templateKey && !forceRenderer) {
     try {
       // @ts-ignore - module will be present at build time
       const mod: any = await import("pdf-lib");
@@ -246,7 +277,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     data: ddmmyyyyWithDots(d?.data),
   });
   const filenameBase = slugifyFilename(orderedBase || String(title));
-  const suffix = ""; // remove public suffix as requested
+  const suffix = compactLetterhead ? "_fara_antet" : "";
   return new NextResponse(blob, {
     headers: {
       "Content-Type": "application/pdf",

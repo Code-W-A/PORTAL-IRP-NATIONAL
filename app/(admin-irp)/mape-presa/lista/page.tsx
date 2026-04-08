@@ -7,6 +7,7 @@ import {
   CalendarClock,
   ChevronDown,
   ChevronUp,
+  Copy as CopyIcon,
   Edit,
   FileDown,
   FileText,
@@ -28,7 +29,11 @@ import {
   normalizePressKitDoc,
   sortPressKitsByUpdatedAtDesc,
 } from "@/app/(admin-irp)/mape-presa/_core/firestore";
-import type { PressKitDoc, PressKitPayload } from "@/app/(admin-irp)/mape-presa/_core/types";
+import {
+  buildDefaultConferenceMaterialTitle,
+  type PressKitDoc,
+  type PressKitPayload,
+} from "@/app/(admin-irp)/mape-presa/_core/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -199,6 +204,44 @@ function getSortValue(item: PressKitDoc, key: SortKey): number | string {
 function getInitialSortDirection(key: SortKey): SortDirection {
   if (key === "contactName") return "asc";
   return "desc";
+}
+
+function getMaterialTitle(item: PressKitDoc) {
+  const value = String(item.conferenceMaterial?.title || "").trim();
+  if (value) return value;
+  return buildDefaultConferenceMaterialTitle(item.conference.year);
+}
+
+function getMaterialContent(item: PressKitDoc) {
+  return String(item.conferenceMaterial?.content || "").trim();
+}
+
+async function copyText(label: string, value: string) {
+  const textToCopy = String(value || "").trim();
+  if (!textToCopy) {
+    throw new Error(`Nu există conținut de copiat pentru ${label}.`);
+  }
+
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(textToCopy);
+    return;
+  }
+
+  const textArea = document.createElement("textarea");
+  textArea.value = textToCopy;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  textArea.style.top = "-9999px";
+  textArea.style.opacity = "0";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+
+  const success = document.execCommand("copy");
+  document.body.removeChild(textArea);
+  if (!success) {
+    throw new Error(`Eroare la copiere pentru ${label}.`);
+  }
 }
 
 async function downloadPressKitPdf(auth: ReturnType<typeof initFirebase>["auth"], payload: PressKitPayload) {
@@ -460,12 +503,23 @@ type PressKitCardProps = {
   onEdit: (item: PressKitDoc) => void;
   onDownload: (item: PressKitDoc) => void;
   onDelete: (item: PressKitDoc) => void;
+  onCopyTitle: (item: PressKitDoc) => void;
+  onCopyContent: (item: PressKitDoc) => void;
 };
 
-function PressKitCard({ item, actionId, onEdit, onDownload, onDelete }: PressKitCardProps) {
+function PressKitCard({
+  item,
+  actionId,
+  onEdit,
+  onDownload,
+  onDelete,
+  onCopyTitle,
+  onCopyContent,
+}: PressKitCardProps) {
   const busy = actionId === item.id;
   const conferenceDate = String(item.conference.date || "").trim() || "Dată necompletată";
   const conferenceTime = String(item.conference.time || "").trim() || "Ora necompletată";
+  const materialTitle = getMaterialTitle(item);
   const contactName = String(item.contact.name || "").trim() || "Contact necompletat";
   const spokesperson = String(item.spokesperson.name || "").trim() || "Purtător necompletat";
   const intocmit = String(item.intocmit.name || "").trim() || "Întocmit necompletat";
@@ -496,6 +550,17 @@ function PressKitCard({ item, actionId, onEdit, onDownload, onDelete }: PressKit
               </span>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onCopyTitle(item)} disabled={busy}>
+              <span className="inline-flex items-center gap-2">
+                <CopyIcon size={14} /> Copiază titlu
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onCopyContent(item)} disabled={busy}>
+              <span className="inline-flex items-center gap-2">
+                <CopyIcon size={14} /> Copiază conținut
+              </span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => onDelete(item)}
               disabled={busy}
@@ -521,6 +586,15 @@ function PressKitCard({ item, actionId, onEdit, onDownload, onDelete }: PressKit
           <Users2 size={12} />
           {item.journalists.length} jurnaliști
         </span>
+      </div>
+
+      <div className="mt-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          Titlu material conferință
+        </div>
+        <div className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-slate-900">
+          {materialTitle}
+        </div>
       </div>
 
       <div className="mt-4 space-y-3 text-sm">
@@ -551,6 +625,28 @@ function PressKitCard({ item, actionId, onEdit, onDownload, onDelete }: PressKit
       </div>
 
       <div className="mt-4 hidden items-center gap-2 md:flex">
+        <button
+          type="button"
+          onClick={() => onCopyTitle(item)}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          title="Copiază titlu"
+          aria-label="Copiază titlu"
+        >
+          <CopyIcon size={13} />
+          Titlu
+        </button>
+        <button
+          type="button"
+          onClick={() => onCopyContent(item)}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+          title="Copiază conținut"
+          aria-label="Copiază conținut"
+        >
+          <CopyIcon size={13} />
+          Conținut
+        </button>
         <button
           type="button"
           onClick={() => onEdit(item)}
@@ -621,6 +717,8 @@ type PressKitTableProps = {
   onEdit: (item: PressKitDoc) => void;
   onDownload: (item: PressKitDoc) => void;
   onDelete: (item: PressKitDoc) => void;
+  onCopyTitle: (item: PressKitDoc) => void;
+  onCopyContent: (item: PressKitDoc) => void;
 };
 
 function PressKitTable({
@@ -631,6 +729,8 @@ function PressKitTable({
   onEdit,
   onDownload,
   onDelete,
+  onCopyTitle,
+  onCopyContent,
 }: PressKitTableProps) {
   return (
     <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -687,6 +787,7 @@ function PressKitTable({
                 <td className="p-3 text-sm text-slate-800">
                   <div className="font-medium text-slate-900">{item.conference.date || "-"}</div>
                   <div className="text-slate-600">Ora {item.conference.time || "-"}</div>
+                  <div className="mt-1 line-clamp-1 text-xs text-slate-600">{getMaterialTitle(item)}</div>
                 </td>
                 <td className="p-3 text-sm">
                   <div className="font-medium text-slate-900">{item.contact.name || "-"}</div>
@@ -721,6 +822,28 @@ function PressKitTable({
                     </button>
                     <button
                       type="button"
+                      onClick={() => onCopyTitle(item)}
+                      disabled={busy}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      title="Copiază titlu"
+                      aria-label="Copiază titlu"
+                    >
+                      <CopyIcon size={13} />
+                      Titlu
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onCopyContent(item)}
+                      disabled={busy}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      title="Copiază conținut"
+                      aria-label="Copiază conținut"
+                    >
+                      <CopyIcon size={13} />
+                      Conținut
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => onDelete(item)}
                       disabled={busy}
                       className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -750,6 +873,17 @@ function PressKitTable({
                         <DropdownMenuItem onClick={() => onDownload(item)} disabled={busy}>
                           <span className="inline-flex items-center gap-2">
                             <FileDown size={14} /> PDF
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => onCopyTitle(item)} disabled={busy}>
+                          <span className="inline-flex items-center gap-2">
+                            <CopyIcon size={14} /> Copiază titlu
+                          </span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onCopyContent(item)} disabled={busy}>
+                          <span className="inline-flex items-center gap-2">
+                            <CopyIcon size={14} /> Copiază conținut
                           </span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
@@ -1088,6 +1222,24 @@ export default function ListaMapePresaPage() {
     }
   }
 
+  async function handleCopyTitle(item: PressKitDoc) {
+    setError(null);
+    try {
+      await copyText("Titlu", getMaterialTitle(item));
+    } catch (err: any) {
+      setError(err?.message || "Eroare la copiere pentru titlu.");
+    }
+  }
+
+  async function handleCopyContent(item: PressKitDoc) {
+    setError(null);
+    try {
+      await copyText("Conținut", getMaterialContent(item));
+    } catch (err: any) {
+      setError(err?.message || "Eroare la copiere pentru conținut.");
+    }
+  }
+
   return (
     <div className="space-y-6">
       <ListHeader
@@ -1133,6 +1285,8 @@ export default function ListaMapePresaPage() {
               onEdit={handleEdit}
               onDownload={(row) => void handleDownload(row)}
               onDelete={handleAskDelete}
+              onCopyTitle={(row) => void handleCopyTitle(row)}
+              onCopyContent={(row) => void handleCopyContent(row)}
             />
           ))}
         </div>
@@ -1147,6 +1301,8 @@ export default function ListaMapePresaPage() {
           onEdit={handleEdit}
           onDownload={(row) => void handleDownload(row)}
           onDelete={handleAskDelete}
+          onCopyTitle={(row) => void handleCopyTitle(row)}
+          onCopyContent={(row) => void handleCopyContent(row)}
         />
       ) : null}
 

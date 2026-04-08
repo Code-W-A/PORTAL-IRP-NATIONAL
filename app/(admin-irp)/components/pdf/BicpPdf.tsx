@@ -273,15 +273,30 @@ function renderHtmlContent(html: string) {
     }
   }
 
-export function createBicpPage({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
+export function createBicpPage({
+  data,
+  settings,
+  variant = "signed",
+  compactLetterhead = false,
+}: {
+  data: BicpPdfData;
+  settings?: BicpPdfSettings;
+  variant?: BicpPdfVariant;
+  compactLetterhead?: boolean;
+}) {
   registerNoto(settings?.assetBaseUrl);
   const s = settings || {};
   const isRaduSignature = (data.purtatorSemnaturaUrl || "").toUpperCase().includes("RADU.PNG");
+  const pageStyle = compactLetterhead
+    ? [styles.page, { fontFamily: "NotoSerif", paddingTop: 72 }]
+    : [styles.page, { fontFamily: "NotoSerif" }];
   return (
-    <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif" }]}> 
-      <BicpPdfHeader settings={s} data={{ numar: data.numar, dateLabel: data.dateLabel }} variant={variant} />
+    <Page size="A4" style={pageStyle}>
+      {!compactLetterhead && (
+        <BicpPdfHeader settings={s} data={{ numar: data.numar, dateLabel: data.dateLabel }} variant={variant} />
+      )}
 
-      {variant === "signed" && (
+      {!compactLetterhead && variant === "signed" && (
         <View style={styles.approveRow}>
           <View style={styles.approveBox}>
             <Text style={styles.approveTitle}>APROB</Text>
@@ -301,7 +316,7 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
         <Text style={styles.content}>{data.continut}</Text>
       )}
 
-      {(s.showSpokespersonBlock !== false) && (
+      {!compactLetterhead && (s.showSpokespersonBlock !== false) && (
         <View style={styles.spokespersonBlock}>
           {!!data.purtator && <Text style={styles.spLine}>{data.purtator}</Text>}
           <Text style={styles.spLine}>Purtător de cuvânt {s.structureDisplay || s.unitLabel || ""}</Text>
@@ -318,7 +333,17 @@ export function createBicpPage({ data, settings, variant = "signed" }: { data: B
   );
 }
 
-export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpPdfData; settings?: BicpPdfSettings; variant?: BicpPdfVariant }) {
+export function BicpPdfDoc({
+  data,
+  settings,
+  variant = "signed",
+  compactLetterhead = false,
+}: {
+  data: BicpPdfData;
+  settings?: BicpPdfSettings;
+  variant?: BicpPdfVariant;
+  compactLetterhead?: boolean;
+}) {
   registerNoto(settings?.assetBaseUrl);
   const s = settings || {};
   // Derive structure display if not provided
@@ -332,14 +357,10 @@ export function BicpPdfDoc({ data, settings, variant = "signed" }: { data: BicpP
     }
   } catch {}
   const s2: BicpPdfSettings = { ...s, structureDisplay: derivedStructureDisplay };
-  const headerLines = s.headerLines && s.headerLines.length ? s.headerLines : [
-    "DEPARTAMENTUL PENTRU SITUAȚII DE URGENȚĂ",
-    "INSPECTORATUL GENERAL PENTRU SITUAȚII DE URGENȚĂ",
-  ];
 
   return (
     <Document>
-      {createBicpPage({ data, settings: s2, variant })}
+      {createBicpPage({ data, settings: s2, variant, compactLetterhead })}
       {/* Page template for subsequent pages (only full-width tricolor on top) could be handled by content spill; 
           to enforce, consumers can split content. Keeping single page factory to avoid duplication. */}
     </Document>
