@@ -160,7 +160,7 @@ export function TopNavbar() {
   const { auth } = initFirebase();
   const { isAdmin } = useAuth();
 
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [openGroupIds, setOpenGroupIds] = useState<string[]>(["bicp"]);
 
   const visibleGroups = useMemo(
@@ -200,22 +200,22 @@ export function TopNavbar() {
           <button
             type="button"
             aria-label="Deschide meniul"
-            onClick={() => setDesktopSidebarOpen(true)}
-            className="hidden h-9 w-9 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition-colors hover:bg-gray-100 md:inline-flex"
+            onClick={() => setSidebarOpen(true)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition-colors hover:bg-gray-100"
           >
             <Menu size={18} />
           </button>
 
           <Link
             href="/lista-BICP"
-            className="inline-flex items-center text-gray-900 font-semibold tracking-tight"
+            className="inline-flex min-w-0 items-center text-gray-900 font-semibold tracking-tight"
           >
             <img
               src="/logo-aplicatie/sigla-aplicatie-svg.svg"
               alt="IRP"
-              className="mr-2 h-6 w-6"
+              className="mr-2 h-6 w-6 shrink-0"
             />
-            Portal IRP
+            <span className="truncate">Portal IRP</span>
           </Link>
 
           <div className="flex-1" />
@@ -231,10 +231,10 @@ export function TopNavbar() {
         </div>
       </nav>
 
-      <Sheet open={desktopSidebarOpen} onOpenChange={setDesktopSidebarOpen}>
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
         <SheetContent
-          className="hidden h-full w-[320px] max-w-[86vw] border-l-0 border-r border-gray-200 bg-white p-0 left-0 right-auto md:block data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0"
-          aria-describedby="desktop-sidebar-description"
+          className="left-0 right-auto h-full w-[320px] max-w-[88vw] border-l-0 border-r border-gray-200 bg-white p-0 data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0"
+          aria-describedby="main-sidebar-description"
         >
           <div className="flex h-full flex-col">
             <SheetHeader className="border-b border-gray-200 px-5 py-4 text-left">
@@ -246,7 +246,7 @@ export function TopNavbar() {
                 />
                 Portal IRP
               </SheetTitle>
-              <SheetDescription id="desktop-sidebar-description">
+              <SheetDescription id="main-sidebar-description">
                 Navigație principală
               </SheetDescription>
             </SheetHeader>
@@ -282,7 +282,7 @@ export function TopNavbar() {
                                 <Link
                                   key={item.href}
                                   href={item.href}
-                                  onClick={() => setDesktopSidebarOpen(false)}
+                                  onClick={() => setSidebarOpen(false)}
                                   className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
                                     active
                                       ? "border border-blue-100 bg-blue-50 text-blue-700"
@@ -310,7 +310,7 @@ export function TopNavbar() {
                     <Link
                       key={item.href}
                       href={item.href}
-                      onClick={() => setDesktopSidebarOpen(false)}
+                      onClick={() => setSidebarOpen(false)}
                       className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
                         active
                           ? "border border-blue-100 bg-blue-50 text-blue-700"
