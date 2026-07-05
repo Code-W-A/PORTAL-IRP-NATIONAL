@@ -46,7 +46,6 @@ export default function LoginPage() {
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-blue-600 text-white font-bold text-lg">IRP</div>
           <h1 className="mt-3 text-2xl font-semibold text-gray-900">Autentificare</h1>
-          <p className="text-sm text-gray-600">Accesează portalul intern pentru BI/CP</p>
         </div>
         <form onSubmit={onSubmit} className="rounded-2xl bg-white/95 backdrop-blur-sm border border-white/50 shadow-2xl p-8">
           {error && (

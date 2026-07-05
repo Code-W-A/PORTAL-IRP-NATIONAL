@@ -46,6 +46,7 @@
     "docx": "^9.5.1",
     "exceljs": "^4.4.0",
     "firebase": "^12.1.0",
+    "firebase-admin": "^13.8.0",
     "jszip": "^3.10.1",
     "lexical": "^0.34.0",
     "linkedom": "^0.18.11",
