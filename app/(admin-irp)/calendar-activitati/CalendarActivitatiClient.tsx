@@ -41,6 +41,11 @@ import ActivityModal, {
   type ActivityModalSeed,
 } from "@/app/(admin-irp)/calendar-activitati/components/ActivityModal";
 import ImportIcsDialog from "@/app/(admin-irp)/calendar-activitati/components/ImportIcsDialog";
+import GoogleCalendarSyncDialog from "@/app/(admin-irp)/calendar-activitati/components/GoogleCalendarSyncDialog";
+import {
+  loadGoogleCalendarSyncSettings,
+  triggerGoogleCalendarSync,
+} from "@/app/(admin-irp)/calendar-activitati/services/googleCalendarSyncSettings.service";
 
 type ToastState = {
   type: "success" | "info" | "error";
@@ -81,6 +86,9 @@ export default function CalendarActivitatiClient() {
   const [modalSeed, setModalSeed] = useState<ActivityModalSeed | null>(null);
 
   const [importOpen, setImportOpen] = useState(false);
+  const [googleSyncOpen, setGoogleSyncOpen] = useState(false);
+  const [googleSyncSettingsVersion, setGoogleSyncSettingsVersion] = useState(0);
+  const autoSyncBusyRef = useRef(false);
 
   function showToast(message: string, type: ToastType = "info") {
     setToast({ message, type });
@@ -97,6 +105,50 @@ export default function CalendarActivitatiClient() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    async function setupAutoSync() {
+      const settings = await loadGoogleCalendarSyncSettings();
+      if (cancelled || !settings.syncEnabled || !settings.googleIcalUrl.trim()) return;
+
+      const intervalMs = Math.max(15, settings.syncIntervalMinutes) * 60 * 1000;
+
+      async function runAutoSync() {
+        if (autoSyncBusyRef.current) return;
+        autoSyncBusyRef.current = true;
+        try {
+          const res = await triggerGoogleCalendarSync();
+          await reload();
+          if (!cancelled) {
+            showToast(res.message, "success");
+          }
+        } catch (err) {
+          if (!cancelled) {
+            showToast(
+              err instanceof Error ? err.message : "Sincronizarea automată Google a eșuat.",
+              "error"
+            );
+          }
+        } finally {
+          autoSyncBusyRef.current = false;
+        }
+      }
+
+      timer = setInterval(() => {
+        void runAutoSync();
+      }, intervalMs);
+    }
+
+    void setupAutoSync();
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [reload, googleSyncSettingsVersion]);
 
   const categories = useMemo(
     () => Array.from(new Set(events.map((item) => item.category).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b, "ro")),
@@ -163,6 +215,14 @@ export default function CalendarActivitatiClient() {
       return;
     }
 
+    if (matchedEvent.source === "google_calendar") {
+      showToast(
+        "Eveniment sincronizat din Google Calendar — editează-l în Google, apoi rulează sync.",
+        "info"
+      );
+      return;
+    }
+
     setModalMode("edit");
     setEditingEvent(matchedEvent);
     setModalSeed(null);
@@ -204,6 +264,13 @@ export default function CalendarActivitatiClient() {
     };
 
     if (!eventMeta.masterEventId) {
+      revert();
+      return;
+    }
+
+    const masterEvent = events.find((item) => item.id === eventMeta.masterEventId);
+    if (masterEvent?.source === "google_calendar") {
+      showToast("Evenimentele Google se actualizează prin sincronizare automată.", "info");
       revert();
       return;
     }
@@ -319,6 +386,7 @@ export default function CalendarActivitatiClient() {
         onViewChange={changeView}
         onAddActivity={openCreateModalNow}
         onImportIcs={() => setImportOpen(true)}
+        onGoogleSync={() => setGoogleSyncOpen(true)}
         onFiltersChange={(patch) =>
           setFilters((prev) => ({
             ...prev,
@@ -404,6 +472,13 @@ export default function CalendarActivitatiClient() {
         open={importOpen}
         onOpenChange={setImportOpen}
         onImported={reload}
+      />
+
+      <GoogleCalendarSyncDialog
+        open={googleSyncOpen}
+        onOpenChange={setGoogleSyncOpen}
+        onSynced={reload}
+        onSettingsSaved={() => setGoogleSyncSettingsVersion((value) => value + 1)}
       />
 
       {toast && (

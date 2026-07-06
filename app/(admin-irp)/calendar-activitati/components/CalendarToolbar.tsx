@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, CalendarPlus2, ChevronLeft, ChevronRight, Upload } from "lucide-react";
+import { Search, CalendarPlus2, ChevronLeft, ChevronRight, Upload, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ type CalendarToolbarProps = {
   onViewChange: (view: CalendarView) => void;
   onAddActivity: () => void;
   onImportIcs: () => void;
+  onGoogleSync: () => void;
   onFiltersChange: (patch: Partial<ActivityFilters>) => void;
 };
 
@@ -40,6 +41,7 @@ export default function CalendarToolbar({
   onViewChange,
   onAddActivity,
   onImportIcs,
+  onGoogleSync,
   onFiltersChange,
 }: CalendarToolbarProps) {
   return (
@@ -54,6 +56,11 @@ export default function CalendarToolbar({
           <Button variant="outline" onClick={onImportIcs}>
             <Upload className="h-4 w-4" />
             Import .ics
+          </Button>
+
+          <Button variant="outline" onClick={onGoogleSync}>
+            <RefreshCw className="h-4 w-4" />
+            Google → Portal
           </Button>
 
           <Button onClick={onAddActivity}>

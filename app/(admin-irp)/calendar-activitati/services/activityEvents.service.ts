@@ -145,6 +145,10 @@ function normalizeEventDoc(
 
   const recurrence = sanitizeRecurrence(raw.recurrence, startDateTime);
 
+  const sourceRaw = raw.source;
+  const source =
+    sourceRaw === "google_calendar" || sourceRaw === "manual" ? sourceRaw : undefined;
+
   return {
     id,
     title: typeof raw.title === "string" ? raw.title : "Activitate",
@@ -163,6 +167,8 @@ function normalizeEventDoc(
       typeof raw.workspaceId === "string" && raw.workspaceId
         ? raw.workspaceId
         : scope.workspaceId,
+    source,
+    externalUid: typeof raw.externalUid === "string" ? raw.externalUid : undefined,
   };
 }
 
@@ -182,6 +188,8 @@ function toFirestoreDoc(event: ActivityEvent) {
     updatedAt: event.updatedAt,
     userId: event.userId,
     workspaceId: event.workspaceId,
+    source: event.source,
+    externalUid: event.externalUid,
   });
 }
 
@@ -241,6 +249,7 @@ export async function createActivityEvent(
     updatedAt: nowIso,
     userId,
     workspaceId: scope.workspaceId,
+    source: "manual",
   };
 
   await setDoc(doc(getCollectionRef(db, scope), id), toFirestoreDoc(event), { merge: false });

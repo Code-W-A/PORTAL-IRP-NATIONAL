@@ -30,6 +30,7 @@ type GenerateDraftBody = {
     id?: string;
     rawMessages?: OperationalDraftInput["rawMessages"];
   };
+  promptConfig?: OperationalDraftInput["promptConfig"];
 };
 
 export async function POST(req: Request) {
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
       initialTime: incident.initialTime || "",
       warnings: incident.warnings,
       needsHumanReview: incident.needsHumanReview,
+      promptConfig: body.promptConfig,
     });
 
     return jsonWithCors({ draft: result.draft, model: result.model, requestId });

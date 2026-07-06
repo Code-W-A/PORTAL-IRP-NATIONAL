@@ -3,6 +3,16 @@ import {
   ISU_OPERATIONAL_COMMUNICATION_PROMPT,
 } from "./operationalCommunicationPrompt";
 
+export type PromptConfigInput = {
+  generalInstructions?: string;
+  template?: {
+    id: string;
+    title: string;
+    structureInstructions: string;
+    exampleText?: string;
+  };
+};
+
 export type OperationalDraftInput = {
   rawMessages: Array<{ sender: string; body: string; receivedAt: string }>;
   extractedData: Record<string, unknown>;
@@ -13,6 +23,7 @@ export type OperationalDraftInput = {
   initialTime: string;
   warnings?: Array<{ type: string; message: string; severity: string }>;
   needsHumanReview?: boolean;
+  promptConfig?: PromptConfigInput | null;
 };
 
 export type OperationalDraftResult = {
@@ -30,6 +41,36 @@ function ensureDraftFooter(text: string): string {
   return `${trimmed}\n\n${DRAFT_FOOTER}`;
 }
 
+const SAFETY_FLOOR = `
+Constrângeri obligatorii (nu le ignora niciodată):
+- Nu inventa date, victime, cauze, vârste, suprafețe, mijloace sau finalizarea intervenției.
+- Nu menționa cauza probabilă dacă nu apare explicit în SMS.
+- Nu menționa victime dacă nu apar explicit în SMS.
+- Dacă needsHumanReview este true sau există warnings de tip contradiction, redactează conservator.
+- La final adaugă exact: "${DRAFT_FOOTER}"
+- Returnează doar textul comunicatului, fără titluri sau markdown.
+`.trim();
+
+export function buildSystemPrompt(promptConfig?: PromptConfigInput | null): string {
+  const general = promptConfig?.generalInstructions?.trim() || ISU_OPERATIONAL_COMMUNICATION_PROMPT;
+  const parts = [general.trim()];
+
+  if (promptConfig?.template) {
+    parts.push(`
+Model selectat: "${promptConfig.template.title}" (id: ${promptConfig.template.id})
+Instrucțiuni structură pentru acest model:
+${promptConfig.template.structureInstructions.trim()}`);
+    if (promptConfig.template.exampleText?.trim()) {
+      parts.push(`
+Exemplu de referință (stil și structură — nu copia datele dacă nu sunt în SMS):
+${promptConfig.template.exampleText.trim()}`);
+    }
+  }
+
+  parts.push(SAFETY_FLOOR);
+  return parts.join("\n\n");
+}
+
 export async function generateOperationalDraft(
   input: OperationalDraftInput
 ): Promise<OperationalDraftResult> {
@@ -39,6 +80,7 @@ export async function generateOperationalDraft(
   }
 
   const model = getOpenAiModel();
+  const systemPrompt = buildSystemPrompt(input.promptConfig);
   const userPayload = {
     incident: {
       type: input.type,
@@ -69,7 +111,7 @@ export async function generateOperationalDraft(
       temperature: 0.2,
       max_tokens: 1500,
       messages: [
-        { role: "system", content: ISU_OPERATIONAL_COMMUNICATION_PROMPT },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: JSON.stringify(userPayload, null, 2),

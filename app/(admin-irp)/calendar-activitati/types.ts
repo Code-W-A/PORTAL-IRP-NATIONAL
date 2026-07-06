@@ -28,6 +28,10 @@ export type ActivityEvent = {
   updatedAt: string;
   userId: string;
   workspaceId: string;
+  /** manual | google_calendar — evenimente importate din Google nu se editează preferabil manual în portal */
+  source?: "manual" | "google_calendar";
+  /** UID din feed-ul ICS Google */
+  externalUid?: string;
 };
 
 export type ActivityEventDraft = Omit<
@@ -64,4 +68,20 @@ export type ActivityFilters = {
 export type CalendarDateRange = {
   start: Date;
   end: Date;
+};
+
+export type GoogleCalendarSyncSettings = {
+  googleIcalUrl: string;
+  syncEnabled: boolean;
+  syncIntervalMinutes: number;
+  lastSyncAt?: string;
+  lastSyncStatus?: "ok" | "error";
+  lastSyncMessage?: string;
+  lastSyncStats?: {
+    created: number;
+    updated: number;
+    removed: number;
+    skipped: number;
+    errors: number;
+  };
 };

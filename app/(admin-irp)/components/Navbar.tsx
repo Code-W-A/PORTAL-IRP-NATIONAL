@@ -15,12 +15,15 @@ import {
   ClipboardList,
   Menu,
   FolderOpen,
+  ScrollText,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { signOut } from "firebase/auth";
 import { useEffect, useMemo, useState } from "react";
 
 import { initFirebase } from "@/lib/firebase";
+import { canAccessDbIsuFeature } from "@/lib/access/canAccessDbIsuFeature";
+import { getTenantContext } from "@/lib/tenant";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import {
   Accordion,
@@ -41,6 +44,7 @@ type NavItem = {
   label: string;
   icon: LucideIcon;
   adminOnly?: boolean;
+  dbIsuOnly?: boolean;
   matchPrefixes?: string[];
 };
 
@@ -49,6 +53,7 @@ type NavGroup = {
   label: string;
   icon: LucideIcon;
   adminOnly?: boolean;
+  dbIsuOnly?: boolean;
   items: NavItem[];
 };
 
@@ -124,10 +129,23 @@ const SIDEBAR_LINKS: NavItem[] = [
   },
   { href: "/activitate-zilnica", label: "Activitate zilnică", icon: ClipboardList, adminOnly: true },
   { href: "/calendar-activitati", label: "Calendar activități", icon: CalendarDays, adminOnly: true },
+  {
+    href: "/registru-informatii-publice",
+    label: "Registru info publice",
+    icon: ScrollText,
+    adminOnly: true,
+    dbIsuOnly: true,
+    matchPrefixes: ["/registru-informatii-publice"],
+  },
   { href: "/setari-structura", label: "Setări", icon: Settings, adminOnly: true },
 ];
 
-function canAccess(item: { adminOnly?: boolean }, isAdmin: boolean) {
+function canAccess(
+  item: { adminOnly?: boolean; dbIsuOnly?: boolean },
+  isAdmin: boolean,
+  dbIsuAllowed: boolean
+) {
+  if (item.dbIsuOnly && !dbIsuAllowed) return false;
   return item.adminOnly ? isAdmin : true;
 }
 
@@ -144,9 +162,9 @@ function isPathActive(pathname: string, item: NavItem) {
   return pathname.startsWith(`/${segment}`) && item.href !== "/setari-structura";
 }
 
-function isGroupActive(pathname: string, group: NavGroup, isAdmin: boolean) {
+function isGroupActive(pathname: string, group: NavGroup, isAdmin: boolean, dbIsuAllowed: boolean) {
   return group.items
-    .filter((item) => canAccess(item, isAdmin))
+    .filter((item) => canAccess(item, isAdmin, dbIsuAllowed))
     .some((item) => isPathActive(pathname, item));
 }
 
@@ -159,29 +177,31 @@ export function TopNavbar() {
   const router = useRouter();
   const { auth } = initFirebase();
   const { isAdmin } = useAuth();
+  const tenant = getTenantContext();
+  const dbIsuAllowed = canAccessDbIsuFeature(tenant, isAdmin);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [openGroupIds, setOpenGroupIds] = useState<string[]>(["bicp"]);
 
   const visibleGroups = useMemo(
-    () => SIDEBAR_GROUPS.filter((group) => canAccess(group, isAdmin)),
-    [isAdmin]
+    () => SIDEBAR_GROUPS.filter((group) => canAccess(group, isAdmin, dbIsuAllowed)),
+    [isAdmin, dbIsuAllowed]
   );
 
   const visibleLinks = useMemo(
-    () => SIDEBAR_LINKS.filter((item) => canAccess(item, isAdmin)),
-    [isAdmin]
+    () => SIDEBAR_LINKS.filter((item) => canAccess(item, isAdmin, dbIsuAllowed)),
+    [isAdmin, dbIsuAllowed]
   );
 
   useEffect(() => {
     const activeGroups = visibleGroups
-      .filter((group) => isGroupActive(pathname, group, isAdmin))
+      .filter((group) => isGroupActive(pathname, group, isAdmin, dbIsuAllowed))
       .map((group) => group.id);
 
     if (!activeGroups.length) return;
 
     setOpenGroupIds((prev) => Array.from(new Set([...prev, ...activeGroups])));
-  }, [pathname, visibleGroups, isAdmin]);
+  }, [pathname, visibleGroups, isAdmin, dbIsuAllowed]);
 
   async function handleLogout() {
     try {
@@ -260,7 +280,7 @@ export function TopNavbar() {
               >
                 {visibleGroups.map((group) => {
                   const GroupIcon = group.icon;
-                  const groupIsActive = isGroupActive(pathname, group, isAdmin);
+                  const groupIsActive = isGroupActive(pathname, group, isAdmin, dbIsuAllowed);
 
                   return (
                     <AccordionItem key={group.id} value={group.id} className="border-gray-200">
@@ -273,7 +293,7 @@ export function TopNavbar() {
                       <AccordionContent>
                         <div className="space-y-1">
                           {group.items
-                            .filter((item) => canAccess(item, isAdmin))
+                            .filter((item) => canAccess(item, isAdmin, dbIsuAllowed))
                             .map((item) => {
                               const Icon = item.icon;
                               const active = isPathActive(pathname, item);
@@ -346,6 +366,8 @@ export function BottomNavbar() {
   const router = useRouter();
   const { auth } = initFirebase();
   const { isAdmin } = useAuth();
+  const tenant = getTenantContext();
+  const dbIsuAllowed = canAccessDbIsuFeature(tenant, isAdmin);
 
   const [bicpOpen, setBicpOpen] = useState(false);
   const [acreditariOpen, setAcreditariOpen] = useState(false);
@@ -366,7 +388,7 @@ export function BottomNavbar() {
     }
   }
 
-  const bottomItems = SIDEBAR_LINKS.filter((item) => canAccess(item, isAdmin));
+  const bottomItems = SIDEBAR_LINKS.filter((item) => canAccess(item, isAdmin, dbIsuAllowed));
 
   const item = (navItem: NavItem) => {
     const Icon = navItem.icon;
@@ -403,7 +425,7 @@ export function BottomNavbar() {
               setBicpOpen((value) => !value);
             }}
             className={`flex w-full flex-col items-center justify-center py-2 ${
-              bicpGroup && isGroupActive(pathname, bicpGroup, isAdmin) ? "text-blue-700" : "text-gray-700"
+              bicpGroup && isGroupActive(pathname, bicpGroup, isAdmin, dbIsuAllowed) ? "text-blue-700" : "text-gray-700"
             }`}
             aria-label="BICP"
           >
@@ -422,7 +444,7 @@ export function BottomNavbar() {
                 setAcreditariOpen((value) => !value);
               }}
               className={`flex w-full flex-col items-center justify-center py-2 ${
-                acreditariGroup && isGroupActive(pathname, acreditariGroup, isAdmin)
+                acreditariGroup && isGroupActive(pathname, acreditariGroup, isAdmin, dbIsuAllowed)
                   ? "text-blue-700"
                   : "text-gray-700"
               }`}
@@ -444,7 +466,7 @@ export function BottomNavbar() {
                 setMonitorizareOpen((value) => !value);
               }}
               className={`flex w-full flex-col items-center justify-center py-2 ${
-                monitorizareGroup && isGroupActive(pathname, monitorizareGroup, isAdmin)
+                monitorizareGroup && isGroupActive(pathname, monitorizareGroup, isAdmin, dbIsuAllowed)
                   ? "text-blue-700"
                   : "text-gray-700"
               }`}
@@ -466,7 +488,7 @@ export function BottomNavbar() {
                 setMapePresaOpen((value) => !value);
               }}
               className={`flex w-full flex-col items-center justify-center py-2 ${
-                mapePresaGroup && isGroupActive(pathname, mapePresaGroup, isAdmin)
+                mapePresaGroup && isGroupActive(pathname, mapePresaGroup, isAdmin, dbIsuAllowed)
                   ? "text-blue-700"
                   : "text-gray-700"
               }`}
@@ -505,7 +527,7 @@ export function BottomNavbar() {
       {monitorizareOpen && showMonitorizare && (
         <GroupModal
           title="Monitorizare"
-          items={MONITORIZARE_ITEMS.filter((item) => canAccess(item, isAdmin))}
+          items={MONITORIZARE_ITEMS.filter((item) => canAccess(item, isAdmin, dbIsuAllowed))}
           onClose={() => setMonitorizareOpen(false)}
           onNavigate={(href) => {
             setMonitorizareOpen(false);
@@ -517,7 +539,7 @@ export function BottomNavbar() {
       {mapePresaOpen && showMapePresa && (
         <GroupModal
           title="Mape de presă"
-          items={MAPE_PRESA_ITEMS.filter((item) => canAccess(item, isAdmin))}
+          items={MAPE_PRESA_ITEMS.filter((item) => canAccess(item, isAdmin, dbIsuAllowed))}
           onClose={() => setMapePresaOpen(false)}
           onNavigate={(href) => {
             setMapePresaOpen(false);
@@ -529,7 +551,7 @@ export function BottomNavbar() {
       {acreditariOpen && showAcreditari && (
         <GroupModal
           title="Acreditări"
-          items={ACREDITARI_ITEMS.filter((item) => canAccess(item, isAdmin))}
+          items={ACREDITARI_ITEMS.filter((item) => canAccess(item, isAdmin, dbIsuAllowed))}
           onClose={() => setAcreditariOpen(false)}
           onNavigate={(href) => {
             setAcreditariOpen(false);
