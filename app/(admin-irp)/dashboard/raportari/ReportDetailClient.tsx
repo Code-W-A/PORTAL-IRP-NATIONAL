@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Download,
+  FileSpreadsheet,
   History,
   Pencil,
   RefreshCcw,
@@ -15,6 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import ConfirmDialog from "@/app/(admin-irp)/dashboard/raportari/ConfirmDialog";
+import ReportExcelImportDialog from "@/app/(admin-irp)/dashboard/raportari/ReportExcelImportDialog";
 import ReportPeriodSelector from "@/app/(admin-irp)/dashboard/raportari/ReportPeriodSelector";
 import ReportRowsEditor from "@/app/(admin-irp)/dashboard/raportari/ReportRowsEditor";
 import ReportToast, { type ToastState } from "@/app/(admin-irp)/dashboard/raportari/ReportToast";
@@ -84,6 +86,7 @@ export default function ReportDetailClient({ typeId, reportId, mode }: Props) {
   const [confirmCancelCreate, setConfirmCancelCreate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [pendingPeriodSync, setPendingPeriodSync] = useState<{
     previousStart: string;
     previousEnd: string;
@@ -280,6 +283,22 @@ export default function ReportDetailClient({ typeId, reportId, mode }: Props) {
     const rows = suggestCompletionsForRows(draft.rows, draft.columnsSnapshot, typeReports);
     setDraft((previous) => (previous ? { ...previous, rows } : previous));
     showToast("Celulele goale au fost completate din istoric.", "success");
+  }
+
+  function handleExcelImportApply(payload: {
+    periodStart: string;
+    periodEnd: string;
+    rows: ReportRowDoc[];
+  }) {
+    updateDraft((previous) => ({
+      ...previous,
+      periodPreset: "custom" as PeriodPreset,
+      periodStart: payload.periodStart,
+      periodEnd: payload.periodEnd,
+      rows: payload.rows,
+    }));
+    setPendingPeriodSync(null);
+    showToast(`Import Excel aplicat: ${payload.rows.length} rând(uri).`, "success");
   }
 
   async function handleSave() {
@@ -538,6 +557,10 @@ export default function ReportDetailClient({ typeId, reportId, mode }: Props) {
                     </div>
                   ) : null}
                   <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
+                      <FileSpreadsheet className="h-4 w-4" />
+                      Import Excel
+                    </Button>
                     <Button
                       variant="outline"
                       size="sm"
@@ -690,6 +713,16 @@ export default function ReportDetailClient({ typeId, reportId, mode }: Props) {
         onConfirm={() => void handleDelete()}
         onCancel={() => setConfirmDelete(false)}
       />
+
+      {draft ? (
+        <ReportExcelImportDialog
+          open={importDialogOpen}
+          typeId={typeId}
+          columnsSnapshot={draft.columnsSnapshot}
+          onClose={() => setImportDialogOpen(false)}
+          onApply={handleExcelImportApply}
+        />
+      ) : null}
     </div>
   );
 }
