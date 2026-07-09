@@ -25,6 +25,7 @@ export async function POST(req: Request) {
     const doc = React.createElement(DynamicReportPdfDoc, {
       settings,
       data: {
+        typeId: payload.report.typeId,
         title: payload.report.title,
         registrationNumber: payload.report.registrationNumber,
         periodStart: payload.report.periodStart,

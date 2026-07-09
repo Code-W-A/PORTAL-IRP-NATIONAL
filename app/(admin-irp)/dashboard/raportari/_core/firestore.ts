@@ -113,7 +113,10 @@ export function normalizeReportDoc(raw: any, id: string): ReportInstanceDoc {
     title: String(raw?.title || "Raport"),
     registrationNumber: String(raw?.registrationNumber || ""),
     periodPreset:
-      raw?.periodPreset === "previous_month" || raw?.periodPreset === "previous_year"
+      raw?.periodPreset === "next_week" ||
+      raw?.periodPreset === "previous_week" ||
+      raw?.periodPreset === "previous_month" ||
+      raw?.periodPreset === "previous_year"
         ? raw.periodPreset
         : "custom",
     periodStart: String(raw?.periodStart || ""),

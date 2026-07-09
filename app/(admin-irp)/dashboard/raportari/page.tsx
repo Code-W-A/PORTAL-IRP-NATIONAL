@@ -1,6 +1,5 @@
-import RaportariClient from "@/app/(admin-irp)/dashboard/raportari/RaportariClient";
+import RaportariTypesList from "@/app/(admin-irp)/dashboard/raportari/RaportariTypesList";
 
 export default function RaportariPage() {
-  return <RaportariClient />;
+  return <RaportariTypesList />;
 }
-

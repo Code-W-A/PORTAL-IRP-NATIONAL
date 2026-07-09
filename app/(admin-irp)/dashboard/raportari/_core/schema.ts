@@ -1,8 +1,14 @@
 import { z } from "zod";
 
 export const reportColumnWidthSchema = z.enum(["s", "m", "l"]);
-export const reportColumnKindSchema = z.enum(["text", "textarea"]);
-export const periodPresetSchema = z.enum(["previous_month", "previous_year", "custom"]);
+export const reportColumnKindSchema = z.enum(["text", "textarea", "date_flexible"]);
+export const periodPresetSchema = z.enum([
+  "next_week",
+  "previous_week",
+  "custom",
+  "previous_month",
+  "previous_year",
+]);
 
 export const reportTypeColumnSchema = z.object({
   id: z.string().min(1, "ID-ul coloanei este obligatoriu."),

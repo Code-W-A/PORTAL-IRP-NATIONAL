@@ -1,4 +1,5 @@
 import type { ReportRowDoc, ReportTypeColumn } from "./types";
+import { formatCellValueForExport } from "./rowDateCell";
 
 export function widthWeight(width: ReportTypeColumn["width"]) {
   if (width === "s") return 1;
@@ -21,6 +22,11 @@ export function buildTableRowValues(
 ): string[] {
   return [
     String(rowIndex + 1),
-    ...getOrderedColumns(columns).map((column) => String(row.cells[column.id] || "")),
+    ...getOrderedColumns(columns).map((column) =>
+      formatCellValueForExport(
+        String(row.cells[column.id] || ""),
+        column.kind === "date_flexible" || column.id === "data" ? "date_flexible" : column.kind
+      )
+    ),
   ];
 }

@@ -2,7 +2,15 @@ import ExcelJS from "exceljs";
 
 import { getOrderedColumns } from "@/app/(admin-irp)/dashboard/raportari/_core/export";
 import { getSignaturesFromSettings } from "@/app/(admin-irp)/dashboard/raportari/_core/settings";
-import { formatDateRo } from "@/app/(admin-irp)/dashboard/raportari/_core/title";
+import {
+  ACTIVITATI_IMPACT_FOOTNOTE,
+  ACTIVITATI_IMPACT_TYPE_ID,
+} from "@/app/(admin-irp)/dashboard/raportari/_core/templates/activitatiImpact";
+import {
+  DEFAULT_UNITATE_LABEL,
+  propagateUnitateOnRows,
+} from "@/app/(admin-irp)/dashboard/raportari/_core/templates/shared";
+import { formatCellValueForExport } from "@/app/(admin-irp)/dashboard/raportari/_core/rowDateCell";
 import type { ReportInstanceDoc } from "@/app/(admin-irp)/dashboard/raportari/_core/types";
 import type { StructuraSettings } from "@/lib/settings/getSettings";
 
@@ -31,6 +39,7 @@ export async function buildDynamicReportWorkbook(
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("Raport");
   const columns = getOrderedColumns(report.columnsSnapshot);
+  const exportRows = propagateUnitateOnRows(report.rows, DEFAULT_UNITATE_LABEL);
 
   sheet.columns = [
     { key: "nr", width: 8 },
@@ -41,20 +50,16 @@ export async function buildDynamicReportWorkbook(
   const totalColLetter = columnLetter(totalCols);
 
   sheet.mergeCells(`A1:${totalColLetter}1`);
-  sheet.getCell("A1").value = report.title;
-  sheet.getCell("A1").font = { bold: true, size: 14 };
-  sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle" };
+  sheet.getCell("A1").value = report.title.toUpperCase();
+  sheet.getCell("A1").font = { bold: true, size: 13 };
+  sheet.getCell("A1").alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  sheet.getRow(1).height = 42;
 
-  sheet.mergeCells(`A2:${columnLetter(Math.min(2, totalCols))}2`);
-  sheet.getCell("A2").value = `Nr. înregistrare: ${report.registrationNumber}`;
-  sheet.getCell("A2").font = { bold: true };
-
-  sheet.mergeCells(`A3:${columnLetter(Math.min(2, totalCols))}3`);
-  sheet.getCell("A3").value = `Perioada: ${formatDateRo(report.periodStart)} - ${formatDateRo(report.periodEnd)}`;
-  sheet.getCell("A3").font = { bold: true };
+  sheet.addRow([]);
+  sheet.addRow([]);
+  sheet.addRow([]);
 
   const headerRowIndex = 5;
-  sheet.addRow([]);
 
   const headerRow = sheet.getRow(headerRowIndex);
   headerRow.values = ["Nr. crt.", ...columns.map((column) => column.label)];
@@ -74,10 +79,12 @@ export async function buildDynamicReportWorkbook(
     }
   });
 
-  report.rows.forEach((row, rowIndex) => {
+  exportRows.forEach((row, rowIndex) => {
     const values = [
       rowIndex + 1,
-      ...columns.map((column) => String(row.cells[column.id] || "")),
+      ...columns.map((column) =>
+        formatCellValueForExport(String(row.cells[column.id] || ""), column.kind === "date_flexible" || column.id === "data" ? "date_flexible" : column.kind)
+      ),
     ];
     const dataRow = sheet.addRow(values);
 
@@ -101,7 +108,7 @@ export async function buildDynamicReportWorkbook(
     });
   });
 
-  if (report.rows.length === 0) {
+  if (exportRows.length === 0) {
     const row = sheet.addRow(["", ...Array(columns.length).fill("")]);
     row.getCell(2).value = "Nu există rânduri în raport.";
     row.getCell(2).alignment = { horizontal: "left", vertical: "middle" };
@@ -113,6 +120,15 @@ export async function buildDynamicReportWorkbook(
         right: { style: "thin" },
       };
     });
+  }
+
+  if (report.typeId === ACTIVITATI_IMPACT_TYPE_ID) {
+    sheet.addRow([]);
+    const noteRow = sheet.addRow([ACTIVITATI_IMPACT_FOOTNOTE]);
+    sheet.mergeCells(`A${noteRow.number}:${totalColLetter}${noteRow.number}`);
+    noteRow.getCell(1).font = { italic: true, size: 10 };
+    noteRow.getCell(1).alignment = { horizontal: "left", vertical: "top", wrapText: true };
+    noteRow.height = 36;
   }
 
   sheet.views = [{ state: "frozen", ySplit: headerRowIndex }];

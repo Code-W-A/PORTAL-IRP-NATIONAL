@@ -137,6 +137,14 @@ const SIDEBAR_LINKS: NavItem[] = [
     dbIsuOnly: true,
     matchPrefixes: ["/registru-informatii-publice"],
   },
+  {
+    href: "/statistici-interventii",
+    label: "Statistici intervenții",
+    icon: BarChart3,
+    adminOnly: true,
+    dbIsuOnly: true,
+    matchPrefixes: ["/statistici-interventii"],
+  },
   { href: "/setari-structura", label: "Setări", icon: Settings, adminOnly: true },
 ];
 

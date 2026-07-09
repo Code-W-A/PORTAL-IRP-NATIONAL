@@ -1,8 +1,8 @@
 export type ReportColumnWidth = "s" | "m" | "l";
 
-export type ReportColumnKind = "text" | "textarea";
+export type ReportColumnKind = "text" | "textarea" | "date_flexible";
 
-export type PeriodPreset = "previous_month" | "previous_year" | "custom";
+export type PeriodPreset = "next_week" | "previous_week" | "custom" | "previous_month" | "previous_year";
 
 export type ReportTypeColumn = {
   id: string;
@@ -54,4 +54,18 @@ export type ReportSettingsStatus = {
   hasAprobat: boolean;
   intocmit?: { nume?: string } | null;
   aprobat?: { nume?: string; functia?: string; grad?: string } | null;
+};
+
+export type ReportTypePeriodPrefs = {
+  lastPeriodStart?: string;
+  lastPeriodEnd?: string;
+  lastRegistrationNumber?: string;
+};
+
+export type RaportariSettingsDoc = {
+  byTypeId: Record<string, ReportTypePeriodPrefs>;
+};
+
+export type RaportariSettingsResponse = ReportSettingsStatus & {
+  raportariPrefs?: RaportariSettingsDoc;
 };

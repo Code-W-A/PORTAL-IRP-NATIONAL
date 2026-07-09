@@ -19,4 +19,11 @@ export function setTenantContext(ctx: TenantContext) {
   localStorage.setItem("tenant:structuraId", ctx.structuraId);
 }
 
+export function interventionTypesCollectionPath(judetId: string, structuraId: string): string {
+  return `Judete/${judetId}/Structuri/${structuraId}/InterventiiTipuri`;
+}
+
+export function interventionRecordsCollectionPath(judetId: string, structuraId: string): string {
+  return `Judete/${judetId}/Structuri/${structuraId}/InterventiiInregistrari`;
+}
 

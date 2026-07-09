@@ -7,10 +7,28 @@ import { getTenantContext } from "@/lib/tenant";
 import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, Download, Mail, MoreVertical } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FiltersDialog } from "./FiltersDialog";
+import { AdvancedFiltersPanel } from "./components/AdvancedFiltersPanel";
+import {
+  BICP_VIEW_MODE_KEY,
+  type BicpViewMode,
+  btnAccent,
+  btnBase,
+  btnPrimaryGreen,
+  btnSecondary,
+  chipBase,
+  DocumentBadge,
+  getDefaultViewMode,
+  getYearMetaLabel,
+  inputBase,
+  pageBg,
+  selectBase,
+  subtleShadow,
+  surface,
+} from "./constants/ui";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import { SendPublicPdfEmailDialog } from "./SendPublicPdfEmailDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import type { Filters } from "./hooks/useBicpData";
 
 // Helper function to format date consistently as DD/MM/YYYY
 function formatDate(doc: any): string {
@@ -51,53 +69,6 @@ function formatDate(doc: any): string {
   return "—";
 }
 
-// Funcție pentru badge-uri colorate
-function getDocumentBadge(tipDocument: string) {
-  const tip = tipDocument || "Document";
-  
-  let colorClasses = "";
-  switch (tip.toLowerCase()) {
-    case "comunicat de presă":
-      colorClasses = "bg-blue-100 text-blue-700 border border-blue-200";
-      break;
-    case "buletin informativ":
-      colorClasses = "bg-green-100 text-green-700 border border-green-200";
-      break;
-    case "știre":
-      colorClasses = "bg-orange-100 text-orange-700 border border-orange-200";
-      break;
-    case "declarație de presă":
-      colorClasses = "bg-purple-100 text-purple-700 border border-purple-200";
-      break;
-    case "conferință de presă":
-      colorClasses = "bg-red-100 text-red-700 border border-red-200";
-      break;
-    case "invitație":
-      colorClasses = "bg-cyan-100 text-cyan-700 border border-cyan-200";
-      break;
-    case "interviu":
-      colorClasses = "bg-indigo-100 text-indigo-700 border border-indigo-200";
-      break;
-    case "anunț":
-      colorClasses = "bg-yellow-100 text-yellow-700 border border-yellow-200";
-      break;
-    case "eveniment de presă":
-      colorClasses = "bg-pink-100 text-pink-700 border border-pink-200";
-      break;
-    case "drept la replică":
-      colorClasses = "bg-rose-100 text-rose-700 border border-rose-200";
-      break;
-    default:
-      colorClasses = "bg-gray-100 text-gray-700 border border-gray-200";
-  }
-  
-  return (
-    <span className={`inline-block px-3 py-1.5 rounded-lg text-sm font-medium ${colorClasses}`}>
-      {tip}
-    </span>
-  );
-}
-
 type ToastType = "info" | "success" | "error";
 type ToastState = { type: ToastType; message: string } | null;
 
@@ -109,11 +80,8 @@ export default function ListaBicpPage() {
   const { loading, error, filters, setFilters, items, total, availableYears, reload } = useBicpData();
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [view, setView] = useState<string>(() => {
-    if (typeof window === "undefined") return "card";
-    return localStorage.getItem("bicpViewMode") || "card";
-  });
-  const [showFilters, setShowFilters] = useState(false);
+  const [view, setView] = useState<BicpViewMode>(() => getDefaultViewMode());
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [downloadingZipType, setDownloadingZipType] = useState<"signed" | "public" | null>(null);
@@ -149,6 +117,30 @@ export default function ListaBicpPage() {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(BICP_VIEW_MODE_KEY, view);
+  }, [view]);
+
+  function resetAllFilters() {
+    setFilters({
+      ...filters,
+      search: "",
+      tipDocument: "",
+      semnatarCat: "",
+      numeSemnatar: "",
+      grad: "",
+      functia: "",
+      pentru: "",
+      purtatorCuvant: "",
+      numarMin: undefined,
+      numarMax: undefined,
+      dataStart: undefined,
+      dataEnd: undefined,
+      page: 1,
+    });
+  }
 
   useEffect(() => {
     if (deniedHandledRef.current) return;
@@ -452,238 +444,221 @@ export default function ListaBicpPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50/30">
-      <div className="max-w-screen-2xl mx-auto px-3 md:px-5 py-6">
-        <div className="mb-8">
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
-              <div className="flex items-start gap-3 flex-wrap">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center shadow-xl shrink-0">
-                  <FileText size={24} className="text-white" />
-                </div>
-                <div className="space-y-2">
-                  <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Lista Documente BI/CP</h1>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-sm font-semibold text-gray-700">Anul</p>
-                    <select
-                      value={selectedYear}
-                      onChange={(e) => setFilters({ ...filters, year: Number(e.target.value), page: 1 })}
-                      className="bg-white border border-gray-300 rounded-xl px-3 py-2 text-sm font-semibold text-gray-900 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                      title="Selectează anul (arhivă)"
-                    >
-                      {(availableYears?.length ? [...new Set(availableYears)].sort((a,b)=>b-a) : [new Date().getFullYear()]).map((y: number) => (
-                        <option key={y} value={y}>{y}</option>
-                      ))}
-                    </select>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setFilters({ ...filters, year: currentYear, page: 1 })}
-                        className={`px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
-                          selectedYear === currentYear
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
-                        }`}
-                        title="Sari la anul curent"
-                      >
-                        An curent
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setFilters({ ...filters, year: currentYear - 1, page: 1 })}
-                        className={`px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${
-                          selectedYear === currentYear - 1
-                            ? "bg-indigo-600 text-white border-indigo-600"
-                            : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
-                        }`}
-                        title="Deschide arhiva (anul precedent)"
-                      >
-                        Arhivă
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                      <span className="text-sm text-gray-700">Total: <span className="font-semibold text-gray-900">{total}</span> documente</span>
-                    </div>
-                  </div>
+    <div className={`min-h-screen ${pageBg}`}>
+      <div className="max-w-screen-2xl mx-auto px-4 py-5">
+        {/* Header */}
+        <div className="mb-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="w-9 h-9 shrink-0 rounded-lg bg-[#EFF6FF] flex items-center justify-center">
+                <FileText size={18} className="text-[#1D4ED8]" />
+              </div>
+              <div className="min-w-0 space-y-2">
+                <h1 className="text-xl font-semibold text-[#111827]">Lista Documente BI/CP</h1>
+                <p className="text-sm text-[#64748B]">
+                  {total} documente • An {selectedYear} • {getYearMetaLabel(selectedYear, currentYear)}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    value={selectedYear}
+                    onChange={(e) => setFilters({ ...filters, year: Number(e.target.value), page: 1 })}
+                    className={selectBase}
+                    title="Selectează anul"
+                    aria-label="Selectează anul"
+                  >
+                    {(availableYears?.length ? [...new Set(availableYears)].sort((a, b) => b - a) : [new Date().getFullYear()]).map((y: number) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setFilters({ ...filters, year: currentYear, page: 1 })}
+                    className={`${btnBase} border ${
+                      selectedYear === currentYear
+                        ? "bg-[#1D4ED8] text-white border-[#1D4ED8]"
+                        : "bg-white border-[#E5E7EB] text-[#334155] hover:bg-[#F8FAFC]"
+                    }`}
+                    title="Sari la anul curent"
+                  >
+                    An curent
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFilters({ ...filters, year: currentYear - 1, page: 1 })}
+                    className={`${btnBase} border ${
+                      selectedYear === currentYear - 1
+                        ? "bg-[#1D4ED8] text-white border-[#1D4ED8]"
+                        : "bg-white border-[#E5E7EB] text-[#334155] hover:bg-[#F8FAFC]"
+                    }`}
+                    title="Deschide arhiva (anul precedent)"
+                  >
+                    Arhivă
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-3 flex-wrap w-full xl:w-auto justify-start xl:justify-end">
-                <Link 
-                  href="/creaza-BICP"
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-xl shadow-lg shadow-emerald-500/25 transition-all duration-200"
-                >
-                  <FilePlus2 size={16} /> Creează BI/CP
-                </Link>
-                <button 
-                  onClick={reload} 
-                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm transition-colors"
-                >
-                  <RefreshCw size={16} /> Actualizează
-                </button>
-                <div className="inline-flex rounded-xl overflow-hidden border border-gray-200 bg-white shadow-sm">
-                  <button
-                    className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-                      view === "card" 
-                        ? "bg-blue-600 text-white shadow-lg" 
-                        : "text-gray-700 hover:bg-gray-50"
-                    }`}
-                    onClick={() => { setView("card"); localStorage.setItem("bicpViewMode", "card"); }}
-                  >
-                    <Grid2X2 size={16} /> Carduri
-                  </button>
-                  <button
-                    className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-l border-gray-200 transition-colors ${
-                      view === "table" 
-                        ? "bg-blue-600 text-white shadow-lg" 
-                        : "text-gray-700 hover:bg-gray-50"
-                    }`}
-                    onClick={() => { setView("table"); localStorage.setItem("bicpViewMode", "table"); }}
-                  >
-                    <Rows2 size={16} /> Tabel
-                  </button>
-                </div>
-                <button 
-                  onClick={() => {
-                    setSelectMode((s) => !s);
-                    if (selectMode) setSelected({});
-                  }} 
-                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 ${
-                    selectMode 
-                      ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/25" 
-                      : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full xl:w-auto xl:justify-end">
+              <Link href="/creaza-BICP" className={btnPrimaryGreen}>
+                <FilePlus2 size={16} /> Creează BI/CP
+              </Link>
+              <button type="button" onClick={reload} className={btnSecondary}>
+                <RefreshCw size={16} /> Actualizează
+              </button>
+              <div className={`inline-flex rounded-lg overflow-hidden border border-[#E5E7EB] ${subtleShadow}`}>
+                <button
+                  type="button"
+                  className={`${btnBase} rounded-none border-0 ${
+                    view === "card"
+                      ? "bg-[#1D4ED8] text-white"
+                      : "bg-white text-[#334155] hover:bg-[#F8FAFC]"
                   }`}
+                  onClick={() => setView("card")}
+                  aria-pressed={view === "card"}
                 >
-                  <CheckSquare size={16} />
-                  {selectMode ? "Anulează selecția" : "Selectează documente"}
+                  <Grid2X2 size={16} /> Carduri
+                </button>
+                <button
+                  type="button"
+                  className={`${btnBase} rounded-none border-0 border-l border-[#E5E7EB] ${
+                    view === "table"
+                      ? "bg-[#1D4ED8] text-white"
+                      : "bg-white text-[#334155] hover:bg-[#F8FAFC]"
+                  }`}
+                  onClick={() => setView("table")}
+                  aria-pressed={view === "table"}
+                >
+                  <Rows2 size={16} /> Listă
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectMode((s) => !s);
+                  if (selectMode) setSelected({});
+                }}
+                className={
+                  selectMode
+                    ? `${btnAccent} border border-[#1D4ED8]`
+                    : btnSecondary
+                }
+              >
+                <CheckSquare size={16} />
+                {selectMode ? "Anulează selecția" : "Selectează documente"}
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Selection Toolbar - appears when selectMode is active */}
-              {selectMode && (
-          <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-2xl p-4 shadow-lg">
-              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                      <CheckSquare size={20} className="text-white" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-gray-900">
-                        {allSelectedIds.length > 0 
-                          ? `${allSelectedIds.length} ${allSelectedIds.length === 1 ? 'document selectat' : 'documente selectate'}`
-                          : 'Nici un document selectat'
-                        }
-                      </p>
-                      <p className="text-xs text-gray-600">Bifează documentele pentru a efectua acțiuni în bloc</p>
-                    </div>
-                  </div>
+        {/* Selection Toolbar */}
+        {selectMode && (
+          <div className="mb-4">
+            <div className={`rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] p-3 ${subtleShadow}`}>
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#111827]">
+                    {allSelectedIds.length > 0
+                      ? `${allSelectedIds.length} ${allSelectedIds.length === 1 ? "document selectat" : "documente selectate"}`
+                      : "Nici un document selectat"}
+                  </p>
+                  <p className="text-xs text-[#64748B]">Bifează documentele pentru acțiuni în bloc</p>
                 </div>
-                
+
                 {allSelectedIds.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
-                    {/* Quick select/deselect for current page */}
-                  <button 
+                    <button
+                      type="button"
                       onClick={() => toggleSelectPage(!allPageSelected)}
-                      className={`inline-flex items-center gap-2 px-3 py-2 rounded-xl font-medium transition-colors shadow-sm ${
-                        allPageSelected
-                          ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
-                          : 'bg-white border border-blue-200 text-blue-700 hover:bg-blue-50'
-                      }`}
-                      title={allPageSelected ? 'Deselectează pagina curentă' : 'Selectează pagina curentă'}
+                      className={btnSecondary}
+                      title={allPageSelected ? "Deselectează pagina curentă" : "Selectează pagina curentă"}
                     >
-                      {allPageSelected ? 'Deselectează pagina' : 'Selectează pagina'}
-                  </button>
-                    {/* Chip cu count + Clear */}
-                    <span className="inline-flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-gray-200 text-gray-700">
+                      {allPageSelected ? "Deselectează pagina" : "Selectează pagina"}
+                    </button>
+                    <span className={chipBase}>
                       Selectate: <span className="font-semibold">{allSelectedIds.length}</span>
-                  <button 
+                      <button
+                        type="button"
                         onClick={() => setSelected({})}
-                        className="inline-flex items-center justify-center w-6 h-6 rounded-full hover:bg-gray-100 text-gray-500"
+                        className="inline-flex items-center justify-center w-5 h-5 rounded hover:bg-[#E5E7EB] text-[#64748B]"
                         title="Deselectează toate"
-                  >
-                        <X size={14} />
-                  </button>
+                        aria-label="Deselectează toate"
+                      >
+                        <X size={12} />
+                      </button>
                     </span>
-                  <button 
-                      onClick={() => downloadBulkPdfsAsZip("signed")} 
+                    <button
+                      type="button"
+                      onClick={() => downloadBulkPdfsAsZip("signed")}
                       disabled={downloadingZipType !== null}
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
-                        downloadingZipType !== null
-                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
-                          : "bg-white border border-blue-200 text-blue-700 hover:bg-blue-50"
-                      }`}
-                      title="Descarcă toate PDF-urile cu semnături într-o arhivă ZIP"
+                      className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
-                      {downloadingZipType === "signed" ? <Loader2 className="animate-spin" size={16}/> : <Download size={16}/>}
-                      {downloadingZipType === "signed" ? "Se creează arhiva..." : "PDF semnate (ZIP)"}
-                  </button>
-                  <button 
-                      onClick={() => downloadBulkPdfsAsZip("public")} 
+                      {downloadingZipType === "signed" ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+                      {downloadingZipType === "signed" ? "Se creează..." : "PDF semnate (ZIP)"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => downloadBulkPdfsAsZip("public")}
                       disabled={downloadingZipType !== null}
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
-                        downloadingZipType !== null
-                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
-                          : "bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                      }`}
-                      title="Descarcă toate PDF-urile fără semnături într-o arhivă ZIP"
-                  >
-                      {downloadingZipType === "public" ? <Loader2 className="animate-spin" size={16}/> : <Download size={16}/>}
-                      {downloadingZipType === "public" ? "Se creează arhiva..." : "PDF fara semnaturi (ZIP)"}
-                  </button>
-                  <button 
-                      onClick={() => startBulkPrint("signed")} 
+                      className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {downloadingZipType === "public" ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
+                      {downloadingZipType === "public" ? "Se creează..." : "PDF fără semnături (ZIP)"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startBulkPrint("signed")}
                       disabled={isPrinting}
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors shadow-sm ${
-                        isPrinting 
-                          ? "bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200" 
-                          : "bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                      }`}
-                      title="Printează toate documentele cu semnături"
+                      className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
-                      {isPrinting ? <Loader2 className="animate-spin" size={16}/> : <Printer size={16}/>}
+                      {isPrinting ? <Loader2 className="animate-spin" size={16} /> : <Printer size={16} />}
                       {isPrinting ? "Se printează..." : "Printează"}
                     </button>
-                    <button 
-                      onClick={() => showDeleteConfirmation(allSelectedIds, true)} 
-                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 font-medium transition-colors shadow-lg shadow-red-500/20"
-                      title="Șterge toate documentele selectate"
-                  >
+                    <button
+                      type="button"
+                      onClick={() => showDeleteConfirmation(allSelectedIds, true)}
+                      className={`${btnBase} bg-[#DC2626] hover:bg-[#B91C1C] text-white border border-[#DC2626]`}
+                    >
                       <Trash2 size={16} /> Șterge
-                  </button>
-                </div>
-              )}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
         )}
 
         {/* Search */}
-        <div className="mb-8">
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 space-y-3 shadow-sm">
-            <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center">
+        <div className="mb-5">
+          <div className={`rounded-lg p-3 ${surface} ${subtleShadow}`}>
+            <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
               <div className="relative flex-1 w-full">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
                 <input
                   placeholder="Caută în titlu, conținut sau nume afișare..."
-                  className="w-full pl-10 pr-3 h-11 border border-gray-300 rounded-xl bg-white text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors text-sm"
+                  className={`${inputBase} pl-9`}
                   value={filters.search}
                   onChange={(e) => setFilters({ ...filters, search: e.target.value, page: 1 })}
                 />
               </div>
               <button
-                onClick={() => setShowFilters(true)}
-                className="inline-flex items-center gap-2 px-4 h-11 bg-white border border-gray-300 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 shadow-sm transition-colors whitespace-nowrap w-full md:w-auto justify-center"
+                type="button"
+                onClick={() => setAdvancedFiltersOpen((open) => !open)}
+                className={`${btnSecondary} w-full sm:w-auto`}
+                aria-expanded={advancedFiltersOpen}
               >
                 <Filter size={16} /> Filtre avansate
+                {advancedFiltersOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
             </div>
 
-            {/* Active filter chips */}
+            {advancedFiltersOpen && (
+              <AdvancedFiltersPanel
+                filters={filters}
+                setFilters={setFilters}
+                onApplied={() => setAdvancedFiltersOpen(false)}
+              />
+            )}
+
             {(() => {
               const chips: { key: string; label: string; onClear: () => void }[] = [];
               if (filters.tipDocument) chips.push({ key: `tipDocument:${filters.tipDocument}`, label: `Tip: ${filters.tipDocument}`, onClear: () => setFilters({ ...filters, tipDocument: "", page: 1 }) });
@@ -699,20 +674,21 @@ export default function ListaBicpPage() {
               if (filters.dataEnd) chips.push({ key: `end:${filters.dataEnd}`, label: `Până la: ${filters.dataEnd}`, onClear: () => setFilters({ ...filters, dataEnd: undefined, page: 1 }) });
               if (filters.search) chips.push({ key: `search:${filters.search}`, label: `Căutare: ${filters.search}`, onClear: () => setFilters({ ...filters, search: "", page: 1 }) });
               return chips.length ? (
-                <div className="flex flex-wrap gap-2 max-h-28 overflow-auto pr-1">
+                <div className="flex flex-wrap gap-2 max-h-24 overflow-auto pt-3 mt-3 border-t border-[#E5E7EB]">
                   {chips.map((c) => (
-                    <span key={c.key} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                    <span key={c.key} className={chipBase}>
                       {c.label}
-                      <button onClick={c.onClear} className="inline-flex items-center justify-center w-5 h-5 rounded-full hover:bg-blue-100">
-                        <X size={12} />
+                      <button
+                        type="button"
+                        onClick={c.onClear}
+                        className="inline-flex items-center justify-center w-4 h-4 rounded hover:bg-[#E5E7EB]"
+                        aria-label={`Elimină filtrul ${c.label}`}
+                      >
+                        <X size={11} />
                       </button>
                     </span>
                   ))}
-                  <button
-                    onClick={() => setFilters({ ...filters, tipDocument: "", semnatarCat: "", numeSemnatar: "", grad: "", functia: "", pentru: "", purtatorCuvant: "", numarMin: undefined, numarMax: undefined, dataStart: undefined, dataEnd: undefined, search: "", page: 1 })}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200 hover:bg-gray-100"
-                    title="Resetează toate filtrele"
-                  >
+                  <button type="button" onClick={resetAllFilters} className={chipBase} title="Resetează toate filtrele">
                     Curăță filtrele
                   </button>
                 </div>
@@ -722,24 +698,25 @@ export default function ListaBicpPage() {
         </div>
 
         {error && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-800 mb-6">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 mb-4 text-sm">
             <strong>Eroare:</strong> {error}
           </div>
         )}
 
         {loading ? (
           view === "card" ? <CardSkeletons /> : <TableSkeletons />
-        ) : (
-          !items.length && (
-            <div className="text-center py-20">
-              <FileText size={64} className="mx-auto text-gray-300 mb-4" />
-              <h3 className="text-xl font-semibold text-gray-600 mb-2">Nu există documente</h3>
-              <p className="text-gray-500">Nu au fost găsite documente care să corespundă criteriilor de căutare.</p>
-            </div>
-          )
-        )}
+        ) : !items.length ? (
+          <div className={`text-center py-16 rounded-lg ${surface} ${subtleShadow}`}>
+            <FileText size={40} className="mx-auto text-[#CBD5E1] mb-3" />
+            <h3 className="text-base font-semibold text-[#111827] mb-1">Nu au fost găsite documente</h3>
+            <p className="text-sm text-[#64748B] mb-4">Modifică filtrele sau caută după alt termen.</p>
+            <button type="button" onClick={resetAllFilters} className={btnSecondary}>
+              Resetează filtrele
+            </button>
+          </div>
+        ) : null}
 
-        {!loading && (
+        {!loading && items.length > 0 && (
           view === "card" ? (
             <CardView
               items={items}
@@ -776,80 +753,78 @@ export default function ListaBicpPage() {
         )}
 
         {!loading && (
-          <Pagination 
-            total={total} 
-            page={filters.page} 
-            pageSize={filters.pageSize} 
+          <Pagination
+            total={total}
+            page={filters.page}
+            pageSize={filters.pageSize}
             onChange={(p) => setFilters({ ...filters, page: p })}
             onChangePageSize={(s) => setFilters({ ...filters, pageSize: s, page: 1 })}
           />
         )}
-        
-        {/* Filters Dialog */}
-        {showFilters && <FiltersDialog filters={filters} setFilters={setFilters} onClose={() => setShowFilters(false)} />}
-        
+
         {/* Delete Confirmation Dialog */}
         {deleteConfirm.show && (
-          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200" onClick={() => setDeleteConfirm({ show: false, ids: [], isBulk: false })}>
-            <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
-              <div className="p-6">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center flex-shrink-0">
-                    <Trash2 size={24} className="text-red-600" />
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setDeleteConfirm({ show: false, ids: [], isBulk: false })}>
+            <div className={`rounded-xl max-w-md w-full ${surface} ${subtleShadow}`} onClick={(e) => e.stopPropagation()}>
+              <div className="p-5">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center shrink-0">
+                    <Trash2 size={20} className="text-red-600" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">Confirmare ștergere</h3>
-                    <p className="text-sm text-gray-600">Această acțiune este permanentă</p>
+                    <h3 className="text-base font-semibold text-[#111827]">Confirmare ștergere</h3>
+                    <p className="text-sm text-[#64748B]">Această acțiune este permanentă</p>
                   </div>
                 </div>
-                
-                <p className="text-gray-700 mb-6">
-                  {deleteConfirm.ids.length === 1 
+
+                <p className="text-sm text-[#334155] mb-5">
+                  {deleteConfirm.ids.length === 1
                     ? "Sigur doriți să ștergeți acest document? Acțiunea nu poate fi anulată."
-                    : `Sigur doriți să ștergeți ${deleteConfirm.ids.length} documente? Acțiunea nu poate fi anulată.`
-                  }
+                    : `Sigur doriți să ștergeți ${deleteConfirm.ids.length} documente? Acțiunea nu poate fi anulată.`}
                 </p>
-                
-                <div className="flex gap-3 justify-end">
+
+                <div className="flex gap-2 justify-end">
                   <button
+                    type="button"
                     onClick={() => setDeleteConfirm({ show: false, ids: [], isBulk: false })}
-                    className="px-5 py-2.5 border border-gray-300 rounded-xl text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                    className={btnSecondary}
                   >
                     Anulează
                   </button>
                   <button
+                    type="button"
                     onClick={executeDelete}
-                    className="px-5 py-2.5 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 transition-colors shadow-lg shadow-red-500/25"
+                    className={`${btnBase} bg-[#DC2626] hover:bg-[#B91C1C] text-white border border-[#DC2626]`}
                   >
-                    Șterge {deleteConfirm.ids.length > 1 ? `(${deleteConfirm.ids.length})` : ''}
+                    Șterge {deleteConfirm.ids.length > 1 ? `(${deleteConfirm.ids.length})` : ""}
                   </button>
                 </div>
               </div>
             </div>
           </div>
         )}
-        
-        {/* FAB pentru mobil - Creează BI/CP */}
+
         <Link
           href="/creaza-BICP"
-          className="md:hidden fixed bottom-20 right-4 w-14 h-14 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-full shadow-2xl shadow-emerald-500/40 flex items-center justify-center transition-all duration-200 hover:scale-110 active:scale-95 z-50"
+          className="md:hidden fixed bottom-20 right-4 w-12 h-12 bg-[#047857] hover:bg-[#065f46] text-white rounded-full flex items-center justify-center z-50 shadow-[0_1px_2px_rgba(15,23,42,0.12)]"
           title="Creează document BI/CP"
+          aria-label="Creează document BI/CP"
         >
-          <FilePlus2 size={24} strokeWidth={2.5} />
+          <FilePlus2 size={22} strokeWidth={2} />
         </Link>
 
         {toast && (
-          <div className="fixed right-4 bottom-4 z-[70] animate-in slide-in-from-right-4 fade-in duration-300">
+          <div className="fixed right-4 bottom-4 z-[70]">
             <div
-              className={`max-w-sm rounded-xl border px-4 py-3 shadow-xl ${
+              className={`max-w-sm rounded-lg border px-4 py-2.5 text-sm font-medium ${subtleShadow} ${
                 toast.type === "success"
                   ? "border-emerald-200 bg-emerald-50 text-emerald-900"
                   : toast.type === "error"
                     ? "border-red-200 bg-red-50 text-red-900"
-                    : "border-blue-200 bg-blue-50 text-blue-900"
+                    : "border-[#BFDBFE] bg-[#EFF6FF] text-[#1E3A8A]"
               }`}
             >
-              <div className="text-sm font-medium">{toast.message}</div>
+              {toast.message}
             </div>
           </div>
         )}
@@ -891,85 +866,74 @@ function CardView({
   onSendPublicPdf: (item: Bicp) => void;
   showToast: (message: string, type?: ToastType, durationMs?: number) => void;
 }) {
-  // if (!items.length) return (
-  //   <div className="text-center py-12">
-  //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
-  //     <p className="text-gray-500">Nu există documente care să corespundă criteriilor.</p>
-  //   </div>
-  // );
-  
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">
       {items.map((x) => {
-        const label = x.numeAfisare || `${x.numarComunicat ?? x.numar} - ${x.nume || x.tip} - ${x.titlu}`;
         const isSelected = !!selected[x.id];
-        
+
         const toggleSelection = () => {
           if (selectMode) {
             setSelected({ ...selected, [x.id]: !isSelected });
           }
         };
-        
+
         return (
-          <div 
-            key={x.id} 
-            className={`group relative bg-white rounded-2xl border border-gray-200 p-6 transition-all duration-200 ${
-              isSelected ? "ring-2 ring-blue-500 border-blue-300 shadow-lg bg-blue-50/30" : "hover:border-gray-300 hover:shadow-xl"
+          <div
+            key={x.id}
+            className={`relative rounded-[10px] p-4 ${surface} ${subtleShadow} transition-colors ${
+              isSelected ? "ring-2 ring-[#1D4ED8] border-[#BFDBFE] bg-[#F8FAFC]" : "hover:border-[#CBD5E1]"
             } ${selectMode ? "cursor-pointer" : ""}`}
             onClick={toggleSelection}
           >
             {selectMode && (
-              <div className="absolute top-4 right-4 pointer-events-none">
-                <input 
-                  type="checkbox" 
-                  checked={isSelected} 
-                  onChange={() => {}} // Controlled by parent div click
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 pointer-events-none"
+              <div className="absolute top-3 right-3 pointer-events-none">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  readOnly
+                  className="w-4 h-4 text-[#1D4ED8] border-[#E5E7EB] rounded focus:ring-[#1D4ED8]"
                 />
               </div>
             )}
-            
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText size={18} className="text-blue-600" />
-                {getDocumentBadge(x.nume || x.tip || "")}
+
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <FileText size={16} className="text-[#64748B] shrink-0" />
+                <DocumentBadge tipDocument={x.nume || x.tip || ""} />
               </div>
-              <h3 className="font-semibold text-gray-900 line-clamp-2 leading-5">
-                {x.titlu || "Fără titlu"}
-              </h3>
+              <span className="text-sm font-bold text-[#111827] shrink-0">
+                Nr. {x.numarComunicat ?? x.numar}
+              </span>
             </div>
-            
-            <div className="space-y-2 mb-5">
-              <div className="flex items-center text-sm text-gray-600">
-                <span className="font-medium text-gray-700">Nr:</span>
-                <span className="ml-1 text-gray-900 font-bold text-lg">{x.numarComunicat ?? x.numar}</span>
-              </div>
-              <div className="flex items-center text-sm text-gray-600">
-                <span className="font-medium text-gray-700">Data:</span>
-                <span className="ml-1 text-gray-900">{formatDate(x)}</span>
-              </div>
-            </div>
-            
-            <div className="flex flex-wrap items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+
+            <h3 className="text-sm font-semibold text-[#111827] line-clamp-2 leading-snug mb-2 min-h-[2.5rem]">
+              {x.titlu || "Fără titlu"}
+            </h3>
+
+            <p className="text-[13px] text-[#64748B] mb-3">
+              Data: {formatDate(x)}
+            </p>
+
+            <div className="flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                className={`${btnSecondary} h-8 px-2.5 text-xs`}
                 onClick={() => copyText("Titlu", x.titlu || "", showToast)}
                 title="Copiază titlu"
                 aria-label="Copiază titlu"
               >
-                <CopyIcon size={13} />
-                Titlu
+                <CopyIcon size={12} />
+                Copiază titlu
               </button>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                className={`${btnSecondary} h-8 px-2.5 text-xs`}
                 onClick={() => copyText("Conținut", x.comunicat || "", showToast)}
                 title="Copiază conținut"
                 aria-label="Copiază conținut"
               >
-                <CopyIcon size={13} />
-                Conținut
+                <CopyIcon size={12} />
+                Copiază conținut
               </button>
               <DocumentActionsMenu
                 item={x}
@@ -993,21 +957,23 @@ function CardView({
 
 function CardSkeletons() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-4">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-5 h-5 rounded bg-gray-200 animate-pulse" />
-            <div className="h-6 w-32 rounded bg-gray-200 animate-pulse" />
+        <div key={i} className={`rounded-[10px] p-4 ${surface} ${subtleShadow}`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-[#E5E7EB] animate-pulse" />
+              <div className="h-5 w-24 rounded bg-[#E5E7EB] animate-pulse" />
+            </div>
+            <div className="h-4 w-12 rounded bg-[#E5E7EB] animate-pulse" />
           </div>
-          <div className="space-y-2 mb-5">
-            <div className="h-4 w-48 rounded bg-gray-200 animate-pulse" />
-            <div className="h-4 w-64 rounded bg-gray-200 animate-pulse" />
-          </div>
+          <div className="h-4 w-full rounded bg-[#E5E7EB] animate-pulse mb-1" />
+          <div className="h-4 w-3/4 rounded bg-[#E5E7EB] animate-pulse mb-3" />
+          <div className="h-3 w-24 rounded bg-[#E5E7EB] animate-pulse mb-3" />
           <div className="flex gap-2">
-            <div className="h-9 w-20 rounded-lg bg-gray-200 animate-pulse" />
-            <div className="h-9 w-20 rounded-lg bg-gray-200 animate-pulse" />
-            <div className="h-9 w-24 rounded-lg bg-gray-200 animate-pulse" />
+            <div className="h-8 w-24 rounded-lg bg-[#E5E7EB] animate-pulse" />
+            <div className="h-8 w-28 rounded-lg bg-[#E5E7EB] animate-pulse" />
+            <div className="h-8 w-8 rounded-lg bg-[#E5E7EB] animate-pulse" />
           </div>
         </div>
       ))}
@@ -1017,48 +983,33 @@ function CardSkeletons() {
 
 function TableSkeletons() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div className={`overflow-hidden rounded-lg mb-4 ${surface} ${subtleShadow}`}>
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+          <thead className="bg-[#F8FAFC] border-b border-[#E5E7EB]">
             <tr>
-              <th className="p-3 text-left font-semibold text-gray-700 w-12" />
-              <th className="p-3 text-left font-semibold text-gray-700 w-20">Număr</th>
-              <th className="p-3 text-left font-semibold text-gray-700 w-80">Document</th>
-              <th className="p-3 text-left font-semibold text-gray-700 w-28">Data</th>
-              <th className="p-3 text-left font-semibold text-gray-700 w-40">Tip Document</th>
-              <th className="p-3 text-left font-semibold text-gray-700">Acțiuni</th>
+              <th className="px-3 py-2.5 w-10" />
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-16">Nr.</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B]">Document</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-32">Tip</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-28">Data</th>
+              <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-40">Acțiuni</th>
             </tr>
           </thead>
           <tbody>
             {Array.from({ length: 8 }).map((_, i) => (
-              <tr key={i} className="border-t">
-                <td className="p-3" />
-                <td className="p-3">
-                  <div className="h-4 w-10 rounded bg-gray-200 animate-pulse" />
-                </td>
-                <td className="p-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-gray-200 animate-pulse" />
-                    <div className="flex-1 min-w-0">
-                      <div className="h-4 w-56 rounded bg-gray-200 animate-pulse mb-1.5" />
-                      <div className="h-4 w-28 rounded bg-gray-200 animate-pulse" />
-                    </div>
+              <tr key={i} className="border-t border-[#E5E7EB]">
+                <td className="px-3 py-3" />
+                <td className="px-3 py-3"><div className="h-4 w-8 rounded bg-[#E5E7EB] animate-pulse" /></td>
+                <td className="px-3 py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded bg-[#E5E7EB] animate-pulse shrink-0" />
+                    <div className="h-4 w-48 rounded bg-[#E5E7EB] animate-pulse" />
                   </div>
                 </td>
-                <td className="p-3">
-                  <div className="h-4 w-20 rounded bg-gray-200 animate-pulse" />
-                </td>
-                <td className="p-3">
-                  <div className="h-6 w-36 rounded-lg bg-gray-200 animate-pulse" />
-                </td>
-                <td className="p-3">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div className="h-6 w-16 rounded-lg bg-gray-200 animate-pulse" />
-                    <div className="h-6 w-16 rounded-lg bg-gray-200 animate-pulse" />
-                    <div className="h-6 w-20 rounded-lg bg-gray-200 animate-pulse" />
-                  </div>
-                </td>
+                <td className="px-3 py-3"><div className="h-5 w-24 rounded bg-[#E5E7EB] animate-pulse" /></td>
+                <td className="px-3 py-3"><div className="h-4 w-20 rounded bg-[#E5E7EB] animate-pulse" /></td>
+                <td className="px-3 py-3"><div className="h-8 w-24 rounded bg-[#E5E7EB] animate-pulse" /></td>
               </tr>
             ))}
           </tbody>
@@ -1088,8 +1039,8 @@ function TableView({
   selectMode: boolean;
   selected: Record<string, boolean>;
   setSelected: (m: Record<string, boolean>) => void;
-  filters: any;
-  setFilters: (f: any) => void;
+  filters: Filters;
+  setFilters: (f: Filters) => void;
   printSingle: (id: string, variant?: "signed" | "public") => void;
   isPrinting: boolean;
   printingId: string | null;
@@ -1099,15 +1050,8 @@ function TableView({
   onSendPublicPdf: (item: Bicp) => void;
   showToast: (message: string, type?: ToastType, durationMs?: number) => void;
 }) {
-  // if (!items.length) return (
-  //   <div className="text-center py-12">
-  //     <FileText size={48} className="mx-auto text-gray-300 mb-3" />
-  //     <p className="text-gray-500">Nu există documente care să corespundă criteriilor.</p>
-  //   </div>
-  // );
-  
   const currentPageIds = items.map((x) => x.id);
-  const allPageSelected = currentPageIds.every((id) => selected[id]);
+  const allPageSelected = currentPageIds.length > 0 && currentPageIds.every((id) => selected[id]);
   const togglePage = (val: boolean) => {
     const m = { ...selected };
     currentPageIds.forEach((id) => (m[id] = val));
@@ -1116,100 +1060,119 @@ function TableView({
 
   const handleSort = (column: string) => {
     if (filters.sortBy === column) {
-      // Toggle direction
       setFilters({ ...filters, sortDir: filters.sortDir === "asc" ? "desc" : "asc", page: 1 });
     } else {
-      // New column, default to desc
-      setFilters({ ...filters, sortBy: column, sortDir: "desc", page: 1 });
+      setFilters({ ...filters, sortBy: column as Filters["sortBy"], sortDir: "desc", page: 1 });
     }
   };
 
+  const headerClass = "px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B]";
+
   const SortableHeader = ({ column, children, className }: { column: string; children: React.ReactNode; className?: string }) => (
-    <th 
-      className={`p-4 text-left font-semibold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors ${className || ""}`}
+    <th
+      className={`${headerClass} cursor-pointer hover:bg-[#F1F5F9] transition-colors ${className || ""}`}
       onClick={() => handleSort(column)}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1">
         {children}
         {filters.sortBy === column && (
-          filters.sortDir === "asc" ? <ChevronUp size={16} /> : <ChevronDown size={16} />
+          filters.sortDir === "asc" ? <ChevronUp size={14} /> : <ChevronDown size={14} />
         )}
       </div>
     </th>
   );
-  
+
   return (
-    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+    <div className={`overflow-hidden rounded-lg mb-4 ${surface} ${subtleShadow}`}>
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+          <thead className="bg-[#F8FAFC] border-b border-[#E5E7EB]">
             <tr>
-              <th className="p-3 text-left font-semibold text-gray-700 w-12">
+              <th className={`${headerClass} w-10`}>
                 {selectMode && (
-                  <input 
-                    type="checkbox" 
-                    checked={allPageSelected} 
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
                     onChange={(e) => togglePage(e.target.checked)}
-                    className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                    className="w-4 h-4 text-[#1D4ED8] border-[#E5E7EB] rounded focus:ring-[#1D4ED8]"
+                    aria-label="Selectează pagina"
                   />
                 )}
               </th>
-              <SortableHeader column="numarComunicat" className="w-20">Număr</SortableHeader>
-              <SortableHeader column="titlu" className="w-80">Document</SortableHeader>
+              <SortableHeader column="numarComunicat" className="w-16">Nr.</SortableHeader>
+              <SortableHeader column="titlu">Document</SortableHeader>
+              <SortableHeader column="nume" className="w-36">Tip</SortableHeader>
               <SortableHeader column="data" className="w-28">Data</SortableHeader>
-              <SortableHeader column="nume" className="w-40">Tip Document</SortableHeader>
-              <th className="p-3 text-left font-semibold text-gray-700 w-64">Acțiuni</th>
+              <th className={`${headerClass} w-44`}>Acțiuni</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
-            {items.map((x, idx) => {
-              const label = x.numeAfisare || `${x.numarComunicat ?? x.numar} - ${x.nume || x.tip} - ${x.titlu}`;
+          <tbody className="divide-y divide-[#E5E7EB]">
+            {items.map((x) => {
               const isSelected = !!selected[x.id];
-              
+
               const toggleSelection = (e: React.MouseEvent) => {
-                // Only toggle if clicking on the row itself, not on buttons/links
                 const target = e.target as HTMLElement;
-                if (selectMode && !target.closest('a, button')) {
+                if (selectMode && !target.closest("a, button, input")) {
                   setSelected({ ...selected, [x.id]: !isSelected });
                 }
               };
-              
+
               return (
-                <tr 
-                  key={x.id} 
-                  className={`group transition-colors ${isSelected ? "bg-blue-50" : idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"} ${selectMode ? "cursor-pointer hover:bg-blue-50/30" : "hover:bg-blue-50/30"}`}
+                <tr
+                  key={x.id}
+                  className={`group transition-colors ${
+                    isSelected ? "bg-[#EFF6FF]" : "hover:bg-[#F8FAFC]"
+                  } ${selectMode ? "cursor-pointer" : ""}`}
                   onClick={toggleSelection}
                 >
-                  <td className="p-3 w-12" onClick={(e) => e.stopPropagation()}>
+                  <td className="px-3 py-3 w-10 align-middle" onClick={(e) => e.stopPropagation()}>
                     {selectMode && (
-                      <input 
-                        type="checkbox" 
-                        checked={isSelected} 
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
                         onChange={(e) => setSelected({ ...selected, [x.id]: e.target.checked })}
-                        className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        className="w-4 h-4 text-[#1D4ED8] border-[#E5E7EB] rounded focus:ring-[#1D4ED8]"
+                        aria-label={`Selectează document ${x.numarComunicat ?? x.numar}`}
                       />
                     )}
                   </td>
-                  <td className="p-3 w-20 font-semibold text-base text-gray-900">{x.numarComunicat ?? x.numar}</td>
-                  <td className="p-3 w-80">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-shrink-0">
-                        <div className="w-8 h-8 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg flex items-center justify-center">
-                          <FileText size={16} className="text-blue-600" />
-                        </div>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-gray-900 truncate text-sm">{x.titlu || "Fără titlu"}</p>
-                        <p className="text-xs text-gray-500 truncate">
-                          {getDocumentBadge(x.nume || x.tip || "")}
-                        </p>
-                      </div>
+                  <td className="px-3 py-3 w-16 align-middle text-sm font-bold text-[#111827]">
+                    {x.numarComunicat ?? x.numar}
+                  </td>
+                  <td className="px-3 py-3 align-middle">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText size={15} className="text-[#64748B] shrink-0" />
+                      <p className="text-sm font-semibold text-[#111827] truncate">{x.titlu || "Fără titlu"}</p>
                     </div>
                   </td>
-                  <td className="p-3 w-28 text-gray-700 text-sm">{formatDate(x)}</td>
-                  <td className="p-3 w-40">{getDocumentBadge(x.nume || x.tip || "")}</td>
-                  <td className="p-3 align-top w-64">
-                    <div className="flex justify-end">
+                  <td className="px-3 py-3 w-36 align-middle">
+                    <DocumentBadge tipDocument={x.nume || x.tip || ""} />
+                  </td>
+                  <td className="px-3 py-3 w-28 align-middle text-[13px] text-[#64748B] whitespace-nowrap">
+                    {formatDate(x)}
+                  </td>
+                  <td className="px-3 py-3 align-middle w-44" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1">
+                      <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          className={`${btnSecondary} h-8 w-8 p-0`}
+                          onClick={() => copyText("Titlu", x.titlu || "", showToast)}
+                          title="Copiază titlu"
+                          aria-label="Copiază titlu"
+                        >
+                          <CopyIcon size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className={`${btnSecondary} h-8 w-8 p-0`}
+                          onClick={() => copyText("Conținut", x.comunicat || "", showToast)}
+                          title="Copiază conținut"
+                          aria-label="Copiază conținut"
+                        >
+                          <CopyIcon size={13} />
+                        </button>
+                      </div>
                       <DocumentActionsMenu
                         item={x}
                         canSendEmail={canSendEmail}
@@ -1298,6 +1261,8 @@ async function openCompactBicpPdfInNewTab(
 }
 
 async function copyText(label: string, value: string, showToast: (message: string, type?: ToastType, durationMs?: number) => void) {
+  const successMessage = label === "Titlu" ? "Titlul a fost copiat" : label === "Conținut" ? "Conținutul a fost copiat" : `${label} a fost copiat`;
+
   try {
     const textToCopy = String(value || "").trim();
     if (!textToCopy) {
@@ -1307,7 +1272,7 @@ async function copyText(label: string, value: string, showToast: (message: strin
 
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(textToCopy);
-      showToast(`${label} copiat în clipboard.`, "success");
+      showToast(successMessage, "success");
       return;
     }
 
@@ -1324,7 +1289,7 @@ async function copyText(label: string, value: string, showToast: (message: strin
     const successful = document.execCommand("copy");
     document.body.removeChild(textArea);
     if (!successful) throw new Error("copy_failed");
-    showToast(`${label} copiat în clipboard.`, "success");
+    showToast(successMessage, "success");
   } catch {
     showToast(`Eroare la copiere pentru ${label}.`, "error");
   }
@@ -1365,10 +1330,11 @@ function DocumentActionsMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className={`inline-flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors ${
+        className={`inline-flex items-center justify-center rounded-lg border border-[#E5E7EB] bg-white text-[#334155] hover:bg-[#F8FAFC] hover:border-[#CBD5E1] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1D4ED8] ${
           compact ? "h-8 w-8" : "h-9 w-9"
         }`}
         title="Acțiuni document"
+        aria-label="Acțiuni document"
       >
         <MoreVertical size={compact ? 14 : 16} />
       </DropdownMenuTrigger>
@@ -1451,15 +1417,15 @@ function DocumentActionsMenu({
 
 function Pagination({ total, page, pageSize, onChange, onChangePageSize }: { total: number; page: number; pageSize: number; onChange: (p: number) => void; onChangePageSize: (s: number) => void }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
-  if (pages <= 1) return null;
   const btn = (p: number, label?: string) => (
-    <button 
-      key={p + (label || "")} 
-      onClick={() => onChange(p)} 
-      className={`px-3 py-2 rounded-lg border transition-colors ${
-        p === page 
-          ? "bg-blue-600 text-white border-blue-600 shadow-sm" 
-          : "border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+    <button
+      type="button"
+      key={p + (label || "")}
+      onClick={() => onChange(p)}
+      className={`${btnBase} min-w-[2.25rem] border ${
+        p === page
+          ? "bg-[#1D4ED8] text-white border-[#1D4ED8]"
+          : "bg-white border-[#E5E7EB] text-[#334155] hover:bg-[#F8FAFC]"
       }`}
     >
       {label || p}
@@ -1473,34 +1439,37 @@ function Pagination({ total, page, pageSize, onChange, onChangePageSize }: { tot
     range(1, pages);
   } else {
     items.push(btn(1));
-    if (page > 4) items.push(<span key="l" className="px-2 text-gray-400">…</span>);
+    if (page > 4) items.push(<span key="l" className="px-1 text-[#94A3B8]">…</span>);
     const start = Math.max(2, page - 1);
     const end = Math.min(pages - 1, page + 1);
     range(start, end);
-    if (page < pages - 3) items.push(<span key="r" className="px-2 text-gray-400">…</span>);
+    if (page < pages - 3) items.push(<span key="r" className="px-1 text-[#94A3B8]">…</span>);
     items.push(btn(pages));
   }
   return (
-    <div className="flex items-center justify-between gap-3 mt-6 flex-wrap">
-      <div className="flex gap-2 items-center flex-wrap">
-      {page > 1 && btn(page - 1, "‹")}
-      {items}
-      {page < pages && btn(page + 1, "›")}
-        <span className="text-sm text-gray-600 ml-2 px-3 py-2 bg-gray-50 rounded-lg">
-        Pagina {page} din {pages} • {total} documente
-      </span>
-      </div>
-      <div className="flex items-center gap-2 ml-auto">
-        <span className="text-sm text-gray-600">Pe pagină</span>
-        <select
-          value={pageSize}
-          onChange={(e) => onChangePageSize(Number(e.target.value))}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-        >
-          {[10, 25, 50, 100].map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
+    <div className={`rounded-lg p-3 mt-4 ${surface} ${subtleShadow}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-wrap gap-1.5 items-center">
+          {page > 1 && btn(page - 1, "‹")}
+          {pages > 1 && items}
+          {page < pages && btn(page + 1, "›")}
+          <span className="text-sm text-[#64748B] ml-1">
+            Pagina {page} din {pages} • {total} documente
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-[#64748B]">Pe pagină</span>
+          <select
+            value={pageSize}
+            onChange={(e) => onChangePageSize(Number(e.target.value))}
+            className={selectBase}
+            aria-label="Număr documente pe pagină"
+          >
+            {[10, 25, 50, 100].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );

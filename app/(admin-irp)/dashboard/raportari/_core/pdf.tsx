@@ -2,13 +2,23 @@ import React from "react";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
 import { BicpPdfFooter, BicpPdfHeader, getBicpFooterMeta, registerNoto } from "@/app/(admin-irp)/components/pdf/BicpPdf";
-import { getSignaturesFromSettings } from "@/app/(admin-irp)/dashboard/raportari/_core/settings";
-import { formatDateRo } from "@/app/(admin-irp)/dashboard/raportari/_core/title";
 import { getOrderedColumns, widthWeight } from "@/app/(admin-irp)/dashboard/raportari/_core/export";
+import { getSignaturesFromSettings } from "@/app/(admin-irp)/dashboard/raportari/_core/settings";
+import {
+  ACTIVITATI_IMPACT_FOOTNOTE,
+  ACTIVITATI_IMPACT_TYPE_ID,
+} from "@/app/(admin-irp)/dashboard/raportari/_core/templates/activitatiImpact";
+import {
+  DEFAULT_UNITATE_LABEL,
+  propagateUnitateOnRows,
+} from "@/app/(admin-irp)/dashboard/raportari/_core/templates/shared";
+import { formatCellValueForExport } from "@/app/(admin-irp)/dashboard/raportari/_core/rowDateCell";
+import { formatDateRo } from "@/app/(admin-irp)/dashboard/raportari/_core/title";
 import type { ReportRowDoc, ReportTypeColumn } from "@/app/(admin-irp)/dashboard/raportari/_core/types";
 import type { StructuraSettings } from "@/lib/settings/getSettings";
 
 export type DynamicReportPdfData = {
+  typeId?: string;
   title: string;
   registrationNumber: string;
   periodStart: string;
@@ -39,6 +49,7 @@ const styles = StyleSheet.create({
   signCol: { width: "48%", alignItems: "center" },
   signLabel: { fontSize: 10, fontWeight: 700 },
   signLine: { fontSize: 9, marginTop: 3, textAlign: "center" },
+  footnote: { marginTop: 10, fontSize: 8.5, fontStyle: "italic", textAlign: "left" },
 });
 
 function widthPercentages(columns: ReportTypeColumn[]) {
@@ -66,6 +77,9 @@ export function DynamicReportPdfDoc({
   const { aprobat, intocmit } = getSignaturesFromSettings(settings);
   const orderedColumns = getOrderedColumns(data.columns);
   const widths = widthPercentages(orderedColumns);
+  const exportRows = propagateUnitateOnRows(data.rows, DEFAULT_UNITATE_LABEL);
+  const displayTitle = data.title.toUpperCase();
+  const showImpactFootnote = data.typeId === ACTIVITATI_IMPACT_TYPE_ID;
 
   return (
     <Document>
@@ -79,7 +93,7 @@ export function DynamicReportPdfDoc({
           variant="signed"
         />
 
-        <Text style={styles.title}>{data.title}</Text>
+        <Text style={styles.title}>{displayTitle}</Text>
         <Text style={styles.meta}>Nr. înregistrare: {data.registrationNumber || "—"}</Text>
         <Text style={styles.meta}>
           Perioada: {formatDateRo(data.periodStart)} - {formatDateRo(data.periodEnd)}
@@ -102,8 +116,8 @@ export function DynamicReportPdfDoc({
             ))}
           </View>
 
-          {data.rows.map((row, rowIndex) => (
-            <View key={row.id || rowIndex} style={styles.row} wrap={false}>
+          {exportRows.map((row, rowIndex) => (
+            <View key={row.id || rowIndex} style={styles.row}>
               <Text style={[styles.cellBase, styles.nrCell, { width: widths.nr }]}>{rowIndex + 1}</Text>
               {orderedColumns.map((column, index) => (
                 <Text
@@ -116,13 +130,16 @@ export function DynamicReportPdfDoc({
                     },
                   ]}
                 >
-                  {String(row.cells[column.id] || "") || "—"}
+                  {formatCellValueForExport(
+                    String(row.cells[column.id] || ""),
+                    column.kind === "date_flexible" || column.id === "data" ? "date_flexible" : column.kind
+                  ) || "—"}
                 </Text>
               ))}
             </View>
           ))}
 
-          {data.rows.length === 0 && (
+          {exportRows.length === 0 && (
             <View style={styles.row}>
               <Text style={[styles.cellBase, { width: "100%", borderRightWidth: 0, textAlign: "center" }]}> 
                 Nu există rânduri în raport.
@@ -130,6 +147,10 @@ export function DynamicReportPdfDoc({
             </View>
           )}
         </View>
+
+        {showImpactFootnote ? (
+          <Text style={styles.footnote}>{ACTIVITATI_IMPACT_FOOTNOTE}</Text>
+        ) : null}
 
         {data.includeSignatures && (
           <View style={styles.signArea}>
