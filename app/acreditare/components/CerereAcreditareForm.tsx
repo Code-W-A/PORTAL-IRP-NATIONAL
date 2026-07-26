@@ -600,8 +600,13 @@ export function CerereAcreditareForm({
       };
 
       if (isAdminSingle) {
-        const parts = fixedStructuraKey ? keyToParts(fixedStructuraKey.toUpperCase().replace(":", "_")) : null;
-        if (!parts?.judetId || !parts?.structuraId) throw new Error("Structura invalidă.");
+        const structKeyNormalized = fixedStructuraKey
+          ? fixedStructuraKey.toUpperCase().replace(":", "_")
+          : "";
+        const parts = structKeyNormalized ? keyToParts(structKeyNormalized) : null;
+        if (!parts?.judetId || !parts?.structuraId || !structKeyNormalized) {
+          throw new Error("Structura invalidă.");
+        }
 
         // Confirm before allocating / bumping acreditareLastNumar (mirror SimpleForm).
         const okSave = confirm("Sigur vrei să salvezi această cerere de acreditare?");
@@ -612,7 +617,7 @@ export function CerereAcreditareForm({
         }
 
         const settingsRef = doc(db, `Judete/${parts.judetId}/Structuri/${parts.structuraId}/Settings/general`);
-        const structKeyForNumar = fixedStructuraKey.toUpperCase().replace(":", "_");
+        const structKeyForNumar = structKeyNormalized;
         const existingFields = resolveAcreditareFieldsForStructura(existingDoc, structKeyForNumar);
         let numarFinal = acrFixedNumar || existingFields.numar;
         if (acrManualEdit) {
@@ -656,7 +661,7 @@ export function CerereAcreditareForm({
         }
 
         const dataLabel = ddmmyyyySlashFromIso(acrDateIso);
-        const structKey = fixedStructuraKey.toUpperCase().replace(":", "_");
+        const structKey = structKeyNormalized;
         // Keep global for single-structura legacy readers; always mirror on statusByStructura.
         basePayload.acreditare = {
           numar: numarFinal,

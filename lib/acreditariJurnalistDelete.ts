@@ -245,11 +245,11 @@ export async function deleteIssuedAcreditare(args: {
   // Backward-compatible fallback: preferred buildJurnalistDocId when matcher finds nothing.
   if (matchedJurnalisti.length === 0) {
     const preferredId = buildJurnalistDocId({
-      legit: acr.legit,
-      nume: acr.nume,
-      email: acr.email,
-      telefon: acr.telefon,
-      redactie: acr.redactie,
+      legit: acr.legit ?? undefined,
+      nume: acr.nume ?? undefined,
+      email: acr.email ?? undefined,
+      telefon: acr.telefon ?? undefined,
+      redactie: acr.redactie ?? undefined,
     });
     const preferred = jurnalistiSnap.docs.find((d) => d.id === preferredId);
     if (preferred) matchedJurnalisti = [{ id: preferred.id, ...(preferred.data() as any) }];

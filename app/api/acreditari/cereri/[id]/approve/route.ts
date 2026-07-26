@@ -335,7 +335,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
         // Trust scan result: do not fall back to registry when scan finds nothing.
         // A prior failed approve may have set lastAcreditareYear without an Acreditari doc.
       } catch (e) {
-        log("same_year_scan_failed", e);
+        log("same_year_scan_failed", errorLogFields(e));
         // Fallback to registry only when Acreditari scan itself failed.
         if (isJurnalistAccreditedForYear(existingJ?.lastAcreditareYear, accreditationYear)) {
           sameYearHit = {

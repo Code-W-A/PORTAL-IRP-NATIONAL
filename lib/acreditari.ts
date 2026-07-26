@@ -79,6 +79,15 @@ export type CerereAcreditare = {
     numar?: string;
     data?: string; // DD/MM/YYYY
   };
+
+  /** Optional provenance (simple form, issued acreditareId for single-structure, etc.). */
+  source?: {
+    simple?: boolean;
+    acreditareId?: string;
+    kind?: string;
+    cerereId?: string;
+    structuraKey?: string;
+  } | null;
 };
 
 export function buildStructuraKey(judetId: string, structuraId: string): StructuraKey {
