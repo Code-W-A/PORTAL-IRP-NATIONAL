@@ -142,4 +142,137 @@ export async function firestoreCreateDoc(collectionPath: string, idToken: string
   return name.split("/").pop() || "";
 }
 
+function databaseUrl() {
+  const pid = getProjectId();
+  return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(pid)}/databases/(default)`;
+}
+
+function absoluteDocName(docPath: string) {
+  const pid = getProjectId();
+  return `projects/${pid}/databases/(default)/documents/${docPath}`;
+}
+
+/**
+ * Atomically allocates the next `acreditareLastNumar` on Settings/general via a
+ * Firestore read/write transaction (retries on contention).
+ */
+export async function firestoreAllocateNextAcreditareNumar(
+  settingsDocPath: string,
+  idToken: string,
+  opts?: { floor?: number; maxAttempts?: number }
+): Promise<number> {
+  const floor = Math.max(0, Number(opts?.floor || 0) || 0);
+  const maxAttempts = Math.max(1, Number(opts?.maxAttempts || 8) || 8);
+  const authHeaders = {
+    Authorization: `Bearer ${idToken}`,
+    "Content-Type": "application/json",
+  };
+
+  // Lightweight structured log without importing full logger (avoid cycles); keep domain tag.
+  const logAlloc = (action: string, meta?: Record<string, unknown>) => {
+    console.log(
+      "[acreditari]",
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        level: action.includes("fail") || action.includes("error") ? "error" : "info",
+        domain: "acreditari",
+        area: "allocate",
+        action,
+        settingsDocPath,
+        floor,
+        ...meta,
+      })
+    );
+  };
+
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const beginRes = await fetch(`${databaseUrl()}/documents:beginTransaction`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({ options: { readWrite: {} } }),
+        cache: "no-store",
+      });
+      if (!beginRes.ok) throw new Error(`firestore_begin_tx_failed:${beginRes.status}`);
+      const beginJson = (await beginRes.json()) as { transaction?: string };
+      const transaction = String(beginJson.transaction || "");
+      if (!transaction) throw new Error("firestore_begin_tx_empty");
+
+      const absName = absoluteDocName(settingsDocPath);
+      const batchRes = await fetch(`${databaseUrl()}/documents:batchGet`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({ documents: [absName], transaction }),
+        cache: "no-store",
+      });
+      if (!batchRes.ok) throw new Error(`firestore_tx_get_failed:${batchRes.status}`);
+      const batchJson = await batchRes.json();
+      const entries = (Array.isArray(batchJson) ? batchJson : [batchJson]) as Array<{
+        found?: FirestoreRestDoc;
+        missing?: string;
+      }>;
+      const entry = entries.find((e) => e?.found || e?.missing) || entries[0] || null;
+      const exists = Boolean(entry?.found);
+      let last = 0;
+      if (entry?.found?.fields?.acreditareLastNumar) {
+        const raw = decodeValue(entry.found.fields.acreditareLastNumar as FirestoreValue);
+        last = typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+      }
+
+      const next = Math.max(last, floor) + 1;
+      const write: Record<string, any> = {
+        update: {
+          name: absName,
+          fields: encodeFields({ acreditareLastNumar: next }),
+        },
+      };
+      if (exists) {
+        write.updateMask = { fieldPaths: ["acreditareLastNumar"] };
+      } else {
+        write.currentDocument = { exists: false };
+      }
+
+      const commitRes = await fetch(`${databaseUrl()}/documents:commit`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({ transaction, writes: [write] }),
+        cache: "no-store",
+      });
+      if (!commitRes.ok) {
+        // Contention / aborted transaction — retry.
+        if (commitRes.status === 409 || commitRes.status === 429 || commitRes.status === 503) {
+          lastErr = new Error(`firestore_commit_aborted:${commitRes.status}`);
+          continue;
+        }
+        const body = await commitRes.text().catch(() => "");
+        // ABORTED often surfaces as 400 with status ABORTED in body.
+        if (/ABORTED|aborted|contention/i.test(body)) {
+          lastErr = new Error(`firestore_commit_aborted:${commitRes.status}`);
+          continue;
+        }
+        throw new Error(`firestore_commit_failed:${commitRes.status}`);
+      }
+
+      logAlloc("ok", { next, last, attempt: attempt + 1 });
+      return next;
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/aborted|begin_tx|tx_get/i.test(msg) && attempt < maxAttempts - 1) {
+        logAlloc("retry", { attempt: attempt + 1, message: msg });
+        continue;
+      }
+      logAlloc("failed", { attempt: attempt + 1, message: msg });
+      throw e;
+    }
+  }
+
+  logAlloc("failed_exhausted", {
+    maxAttempts,
+    message: lastErr instanceof Error ? lastErr.message : String(lastErr || "error"),
+  });
+  throw lastErr instanceof Error ? lastErr : new Error("firestore_allocate_numar_failed");
+}
+
 

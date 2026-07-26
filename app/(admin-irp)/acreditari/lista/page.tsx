@@ -1,15 +1,28 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { collection, deleteDoc, doc, getDocs } from "firebase/firestore";
+import { collection, doc, getDocs } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
+import { yearFromDateLabel } from "@/lib/acreditari";
+import { acrLog, acrLogError } from "@/lib/acreditareClientLog";
+import { deleteIssuedAcreditare } from "@/lib/acreditariJurnalistDelete";
 import Link from "next/link";
 import { FileText, Plus, Calendar, IdCard, Building2, Download, Pencil, Trash2, Loader2, Printer, Search, Filter, LayoutGrid, Table, ChevronUp, ChevronDown } from "lucide-react";
 
-type Acr = { id: string; numar: string; data: string; nume: string; legit: string; redactie: string };
+type Acr = {
+  id: string;
+  numar: string;
+  data: string;
+  nume: string;
+  legit: string;
+  redactie: string;
+  email?: string;
+  telefon?: string;
+  source?: { cerereId?: string };
+};
 
 export default function ListaAcreditariPage() {
-  const { db } = initFirebase();
+  const { db, auth } = initFirebase();
   const [items, setItems] = useState<Acr[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
@@ -62,12 +75,7 @@ export default function ListaAcreditariPage() {
   }, [view]);
 
   function yearFromData(v?: string): number | null {
-    const s = String(v || "").trim();
-    const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (m1) return Number(m1[3]);
-    const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    if (m2) return Number(m2[1]);
-    return null;
+    return yearFromDateLabel(v);
   }
 
   const filtered = useMemo(() => {
@@ -135,12 +143,22 @@ export default function ListaAcreditariPage() {
 
   async function onDelete(id: string) {
     const ok = confirm("Sigur vrei să ștergi această acreditare? Acțiunea este ireversibilă.");
-    if (!ok) return;
+    if (!ok) {
+      acrLog("lista", "delete_cancelled", { acreditareId: id });
+      return;
+    }
+    acrLog("lista", "delete_start", { acreditareId: id });
     try {
       const { judetId, structuraId } = getTenantContext();
-      await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Acreditari/${id}`));
+      const result = await deleteIssuedAcreditare({ db, judetId, structuraId, acreditareId: id });
+      acrLog("lista", "delete_ok", { acreditareId: id, deleted: result.deleted });
+      if (!result.deleted) {
+        setItems((prev) => prev.filter((x) => x.id !== id));
+        return;
+      }
       setItems((prev) => prev.filter((x) => x.id !== id));
-    } catch {
+    } catch (e) {
+      acrLogError("lista", "delete_failed", e, { acreditareId: id });
       alert("Nu am putut șterge acreditarea. Încearcă din nou.");
     }
   }
@@ -200,13 +218,34 @@ export default function ListaAcreditariPage() {
     win.document.close();
   }
 
+  async function authHeadersForPdf(variant: "signed" | "public"): Promise<HeadersInit> {
+    // Signed PDFs require Bearer auth (signature images). Public may work without, but send token when available.
+    if (variant === "signed" || auth.currentUser) {
+      const token = await auth.currentUser?.getIdToken();
+      if (variant === "signed" && !token) throw new Error("missing_auth");
+      if (token) return { Authorization: `Bearer ${token}` };
+    }
+    return {};
+  }
+
+  function pdfUrlFor(x: Acr, variant: "signed" | "public") {
+    const { judetId, structuraId } = getTenantContext();
+    const qs = new URLSearchParams();
+    if (variant === "public") qs.set("variant", "public");
+    if (judetId) qs.set("judetId", judetId);
+    if (structuraId) qs.set("structuraId", structuraId);
+    const q = qs.toString();
+    return `/api/acreditari/${encodeURIComponent(x.id)}/pdf${q ? `?${q}` : ""}`;
+  }
+
   async function downloadPdf(x: Acr, variant: "signed" | "public") {
     const key = `pdf:${x.id}:${variant}`;
     if (downloadingKey) return;
     setDownloadingKey(key);
+    acrLog("lista", "pdf_download_start", { acreditareId: x.id, variant });
     try {
-      const url = `/api/acreditari/${encodeURIComponent(x.id)}/pdf${variant === "public" ? "?variant=public" : ""}`;
-      const res = await fetch(url, { method: "GET" });
+      const headers = await authHeadersForPdf(variant);
+      const res = await fetch(pdfUrlFor(x, variant), { method: "GET", headers });
       if (!res.ok) throw new Error("download_failed");
       const blob = await res.blob();
       const objUrl = URL.createObjectURL(blob);
@@ -219,7 +258,9 @@ export default function ListaAcreditariPage() {
       a.remove();
       // Avoid revoking too early (can cancel downloads in some browsers)
       setTimeout(() => URL.revokeObjectURL(objUrl), 1500);
-    } catch {
+      acrLog("lista", "pdf_download_ok", { acreditareId: x.id, variant, bytes: blob.size });
+    } catch (e) {
+      acrLogError("lista", "pdf_download_failed", e, { acreditareId: x.id, variant });
       alert("Nu am putut descărca PDF-ul. Încearcă din nou.");
     } finally {
       setDownloadingKey(null);
@@ -234,8 +275,8 @@ export default function ListaAcreditariPage() {
     if (!win) return;
     setDownloadingKey(key);
     try {
-      const url = `/api/acreditari/${encodeURIComponent(x.id)}/pdf${variant === "public" ? "?variant=public" : ""}`;
-      const res = await fetch(url, { method: "GET" });
+      const headers = await authHeadersForPdf(variant);
+      const res = await fetch(pdfUrlFor(x, variant), { method: "GET", headers });
       if (!res.ok) throw new Error("print_failed");
       const blob = await res.blob();
       const objUrl = URL.createObjectURL(blob);

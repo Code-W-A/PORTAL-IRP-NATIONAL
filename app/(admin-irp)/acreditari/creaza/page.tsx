@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { getTenantContext } from "@/lib/tenant";
-import { FileText, Link2, Check, Copy, ExternalLink, Search, Loader2, X, ScanText, Wand2, Users } from "lucide-react";
+import { FileText, Link2, Check, Copy, ExternalLink, Search, Loader2, X, Users } from "lucide-react";
 import { CerereAcreditareForm, type CerereAcreditarePrefill } from "@/app/acreditare/components/CerereAcreditareForm";
 import { initFirebase } from "@/lib/firebase";
 import {
@@ -11,43 +11,36 @@ import {
   doc,
   getDoc,
   getDocs,
-  limit,
-  orderBy,
-  query,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
-  where,
 } from "firebase/firestore";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
+import {
+  buildJurnalistDocId,
+  buildJurnalistMovePayload,
+  buildStructuraKey,
+  isCompatibleJurnalistRecord,
+  isJurnalistAccreditedForYear,
+  mergeLastAcreditareFields,
+  normalizeJurnalistIdPart,
+  parseAcreditareNumar,
+  resolveAcreditareFieldsForStructura,
+  resolveJurnalistDocId,
+} from "@/lib/acreditari";
+import { acrLog, acrLogError, acrWarn } from "@/lib/acreditareClientLog";
+import {
+  findJurnalistiMatchingAcreditare,
+  recalcJurnalistLastAcreditare,
+  syncAcreditariIdentityForJurnalist,
+} from "@/lib/acreditariJurnalistDelete";
 
 type ActiveTab = "cerere" | "simplu";
 type JurnalistRecord = { id: string; nume?: string; email?: string; telefon?: string; redactie?: string; legit?: string; adresaRedactie?: string; lastAcreditareYear?: number };
 
-function normalizeLegitId(s: string) {
-  return String(s || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 80);
-}
-
-function normalizeIdFromValue(s: string) {
-  return normalizeLegitId(String(s || ""));
-}
-
-function normalizePhoneValue(s: string) {
-  return String(s || "").trim().replace(/[^\d+]/g, "");
-}
-
-function normalizeEmailValue(s: string) {
-  return String(s || "").trim().toLowerCase();
-}
-
 function normalizeRedactieValue(s: string) {
-  return normalizeIdFromValue(String(s || "").toLowerCase());
+  return normalizeJurnalistIdPart(String(s || "").toLowerCase());
 }
 
 function ddmmyyyySlashFromIso(iso: string) {
@@ -80,15 +73,6 @@ function safeFileName(name: string): string {
     .slice(0, 80);
 }
 
-function parseAcreditareNumar(v: any): number | null {
-  const s = String(v || "").trim();
-  if (!s) return null;
-  // accept digits only (preferred) or legacy dotted format "2.560.588"
-  if (/^\d+$/.test(s)) return Number(s);
-  if (/^\d{1,3}(\.\d{3})+$/.test(s)) return Number(s.replace(/\./g, ""));
-  return null;
-}
-
 function SimpleForm({
   db,
   auth,
@@ -101,7 +85,7 @@ function SimpleForm({
   db: ReturnType<typeof initFirebase>["db"];
   auth: ReturnType<typeof initFirebase>["auth"];
   onContinueComplex: (cerereId: string) => void;
-  prefill: { nume?: string; legit?: string; redactie?: string; email?: string; telefon?: string; sex?: "F" | "M"; dataIso?: string; numar?: string } | null;
+  prefill: { nume?: string; legit?: string; redactie?: string; email?: string; telefon?: string; sex?: "F" | "M"; dataIso?: string; numar?: string; jurnalistId?: string } | null;
   prefillKey: number;
   existingAcreditareId?: string | null;
   existingCerereId?: string | null;
@@ -122,21 +106,154 @@ function SimpleForm({
   const [msg, setMsg] = useState<string | null>(null);
   const [lastCerereId, setLastCerereId] = useState<string | null>(null);
   const [loadedAcreditareId, setLoadedAcreditareId] = useState<string | null>(null);
-  const [originalLegit, setOriginalLegit] = useState<string>("");
+  /** Snapshot of issued acreditare identity at load time — used when legit/contact fields change on edit. */
+  const [originalAcrIdentity, setOriginalAcrIdentity] = useState<{
+    nume: string;
+    legit: string;
+    email: string;
+    telefon: string;
+    redactie: string;
+  } | null>(null);
   const [jurnalisti, setJurnalisti] = useState<JurnalistRecord[]>([]);
   const [jurnalistiLoading, setJurnalistiLoading] = useState(false);
   const [jurnalistiSearch, setJurnalistiSearch] = useState("");
   const [selectedJurnalistId, setSelectedJurnalistId] = useState<string | null>(null);
 
-  function computeJurnalistId() {
-    if (selectedJurnalistId) return selectedJurnalistId;
-    const l = normalizeLegitId(legit);
-    const n = normalizeIdFromValue(String(nume || "").toLowerCase());
-    const r = normalizeRedactieValue(redactie);
-    const t = normalizeIdFromValue(normalizePhoneValue(telefon));
-    const base = [l, n, r, t].filter(Boolean).join("_");
-    const suffix = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    return normalizeLegitId(`${base}_${suffix}`) || `J_${suffix}`;
+  async function loadJurnalistLookup(extraIds: string[] = []) {
+    const existingById = new Map<string, Record<string, any>>();
+    for (const j of jurnalisti) existingById.set(j.id, j as Record<string, any>);
+
+    const { judetId, structuraId } = getTenantContext();
+    const base = `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti`;
+    for (const id of extraIds) {
+      const key = String(id || "").trim();
+      if (!key || existingById.has(key)) continue;
+      try {
+        const snap = await getDoc(doc(db, `${base}/${key}`));
+        if (snap.exists()) existingById.set(key, snap.data() as Record<string, any>);
+      } catch {}
+    }
+    return existingById;
+  }
+
+  /**
+   * Upsert jurnalist registry. If a journalist was selected and identity keys changed
+   * (e.g. legit), move the doc to the new id instead of leaving ID/legit out of sync.
+   */
+  async function upsertJurnalistRegistry(
+    input: { nume: string; redactie: string; email: string; telefon: string; legit: string },
+    extra: Record<string, any> = {},
+    selectedIdOverride?: string | null
+  ): Promise<string> {
+    const { judetId, structuraId } = getTenantContext();
+    const base = `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti`;
+    const preferred = buildJurnalistDocId(input);
+    const updatedAt = serverTimestamp();
+    const boundSelectedId =
+      selectedIdOverride !== undefined && selectedIdOverride !== null
+        ? selectedIdOverride
+        : selectedJurnalistId;
+
+    const existingById = await loadJurnalistLookup(
+      [preferred, boundSelectedId || ""].filter(Boolean) as string[]
+    );
+
+    let fromId: string | null = null;
+    let toId = resolveJurnalistDocId(input, existingById);
+
+    if (boundSelectedId) {
+      const selectedData = existingById.get(boundSelectedId) || null;
+      if (selectedData && isCompatibleJurnalistRecord(selectedData, input)) {
+        // Same person: keep selection unless preferred/resolved id moved (legit/email change).
+        toId = resolveJurnalistDocId(input, existingById);
+        if (toId !== boundSelectedId) fromId = boundSelectedId;
+        else toId = boundSelectedId;
+      }
+      // If incompatible with selection, ignore selection and use resolved toId (different person).
+    }
+
+    // Ensure target candidate is not an incompatible occupant we haven't loaded yet.
+    if (!existingById.has(toId)) {
+      try {
+        const snap = await getDoc(doc(db, `${base}/${toId}`));
+        if (snap.exists()) {
+          existingById.set(toId, snap.data() as Record<string, any>);
+          toId = resolveJurnalistDocId(input, existingById);
+          if (fromId && toId === fromId) fromId = null;
+        }
+      } catch {}
+    }
+
+    const toRef = doc(db, `${base}/${toId}`);
+
+    function withMergedYear(existing: Record<string, any> | null | undefined, patch: Record<string, any>) {
+      if (typeof patch.lastAcreditareYear !== "number") return patch;
+      const merged = mergeLastAcreditareFields(
+        existing,
+        patch.lastAcreditareYear,
+        String(patch.lastAcreditareNumar || "")
+      );
+      return { ...patch, ...merged };
+    }
+
+    if (fromId && fromId !== toId) {
+      const fromRef = doc(db, `${base}/${fromId}`);
+      const fromSnap = await getDoc(fromRef);
+      const existing = fromSnap.exists() ? (fromSnap.data() as Record<string, any>) : {};
+      const toSnap = await getDoc(toRef);
+      if (toSnap.exists() && !isCompatibleJurnalistRecord(toSnap.data() as any, input)) {
+        // Target taken by someone else — pick another disambiguated id.
+        existingById.set(toId, toSnap.data() as Record<string, any>);
+        toId = resolveJurnalistDocId(input, existingById);
+      }
+      const finalToRef = doc(db, `${base}/${toId}`);
+      const patch = withMergedYear(existing, extra);
+      const moved = buildJurnalistMovePayload(existing, input, updatedAt);
+      await setDoc(finalToRef, { ...moved, ...patch }, { merge: true });
+      if (fromId !== toId) await deleteDoc(fromRef);
+
+      setSelectedJurnalistId(toId);
+      setJurnalisti((prev) => {
+        const withoutFrom = prev.filter((j) => j.id !== fromId);
+        const idx = withoutFrom.findIndex((j) => j.id === toId);
+        const nextRow = {
+          id: toId,
+          nume: input.nume,
+          email: input.email,
+          telefon: input.telefon,
+          legit: input.legit,
+          redactie: input.redactie,
+          lastAcreditareYear:
+            typeof patch.lastAcreditareYear === "number"
+              ? patch.lastAcreditareYear
+              : (existing.lastAcreditareYear as number | undefined),
+        } as JurnalistRecord;
+        if (idx >= 0) {
+          const copy = [...withoutFrom];
+          copy[idx] = { ...copy[idx], ...nextRow };
+          return copy;
+        }
+        return [nextRow, ...withoutFrom];
+      });
+      return toId;
+    }
+
+    const toSnap = await getDoc(toRef);
+    const existingTo = toSnap.exists() ? (toSnap.data() as Record<string, any>) : null;
+    const patch = withMergedYear(existingTo, extra);
+    const payload: Record<string, any> = {
+      nume: input.nume,
+      email: input.email,
+      telefon: input.telefon,
+      legit: input.legit,
+      redactie: input.redactie,
+      updatedAt,
+      ...patch,
+    };
+    if (!toSnap.exists()) payload.createdAt = updatedAt;
+    await setDoc(toRef, payload, { merge: true });
+    setSelectedJurnalistId(toId);
+    return toId;
   }
 
   async function loadJurnalisti() {
@@ -165,10 +282,10 @@ function SimpleForm({
   }, [jurnalisti, jurnalistiSearch]);
 
   const jurnalistiMatches = useMemo(() => {
-    const l = normalizeLegitId(legit);
+    const l = normalizeJurnalistIdPart(legit);
     const r = normalizeRedactieValue(redactie);
     return jurnalisti.filter((j) => {
-      const jl = normalizeLegitId(String(j.legit || ""));
+      const jl = normalizeJurnalistIdPart(String(j.legit || ""));
       const jr = normalizeRedactieValue(String(j.redactie || ""));
       return l && r && jl === l && jr === r;
     });
@@ -192,8 +309,9 @@ function SimpleForm({
       const sSnap = await getDoc(settingsRef);
       const lastFromSettings = typeof (sSnap.data() as any)?.acreditareLastNumar === "number" ? Number((sSnap.data() as any).acreditareLastNumar) : 0;
 
+      // Full collection scan — last-N by createdAt can miss older docs with higher numar.
       const acrColl = collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Acreditari");
-      const snap = await getDocs(query(acrColl, orderBy("createdAt", "desc"), limit(50)));
+      const snap = await getDocs(acrColl);
       let max = 0;
       for (const d of snap.docs) {
         const n = parseAcreditareNumar((d.data() as any)?.numar);
@@ -231,6 +349,7 @@ function SimpleForm({
     setRedactie(prefill.redactie || "");
     setEmail(prefill.email || "");
     setTelefon(prefill.telefon || "");
+    if (prefill.jurnalistId) setSelectedJurnalistId(prefill.jurnalistId);
     if (prefill.dataIso) setDataIso(prefill.dataIso);
     if (prefill.numar) setNumarText(prefill.numar);
   }, [prefillKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -248,14 +367,28 @@ function SimpleForm({
         const d = snap.data() as any;
         if (!alive) return;
         setLoadedAcreditareId(id);
-        setNume(String(d?.nume || ""));
+        const identity = {
+          nume: String(d?.nume || ""),
+          legit: String(d?.legit || ""),
+          email: String(d?.email || ""),
+          telefon: String(d?.telefon || ""),
+          redactie: String(d?.redactie || ""),
+        };
+        setNume(identity.nume);
         setSex(String(d?.sex || "").toUpperCase() === "M" ? "M" : "F");
-        setLegit(String(d?.legit || ""));
-        setOriginalLegit(String(d?.legit || ""));
-        setRedactie(String(d?.redactie || ""));
-        setEmail(String(d?.email || ""));
-        setTelefon(String(d?.telefon || ""));
+        setLegit(identity.legit);
+        setOriginalAcrIdentity(identity);
+        setRedactie(identity.redactie);
+        setEmail(identity.email);
+        setTelefon(identity.telefon);
         setNumarText(String(parseAcreditareNumar(d?.numar) ?? d?.numar ?? ""));
+
+        // Bind registry selection so legit/email changes move the journalist instead of orphaning them.
+        try {
+          const matched = await findJurnalistiMatchingAcreditare(db, judetId, structuraId, identity);
+          if (!alive) return;
+          if (matched.length > 0) setSelectedJurnalistId(matched[0].id);
+        } catch {}
 
         // Try to convert stored DD/MM/YYYY to ISO for the date input.
         const rawDate = String(d?.data || "").trim();
@@ -267,12 +400,6 @@ function SimpleForm({
       alive = false;
     };
   }, [db, existingAcreditareId]);
-
-  function normalizePhoneForTel(v?: string): string {
-    const s = String(v || "").trim();
-    if (!s) return "";
-    return s.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "");
-  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -295,7 +422,8 @@ function SimpleForm({
     if (jurnalistiMatches.length > 0) {
       const matchIds = new Set(jurnalistiMatches.map((j) => j.id));
       if (!selectedJurnalistId || !matchIds.has(selectedJurnalistId)) {
-        setMsg("Atenție: există jurnaliști care se potrivesc după legitimație + redacție. Dacă vrei să actualizezi un jurnalist existent, selectează-l din listă.");
+        setMsg("Există jurnaliști care se potrivesc după legitimație + redacție. Selectează jurnalistul corect din listă înainte de salvare.");
+        return;
       }
     }
 
@@ -311,15 +439,29 @@ function SimpleForm({
 
     try {
       setSaving(true);
+      const jurnalistInput = { nume: nn, redactie: rd, email: em, telefon: tel, legit: lg };
+      acrLog("creaza-simple", "submit_start", {
+        mode: existingCerereId ? "edit_cerere" : loadedAcreditareId ? "edit_acreditare" : "create",
+        cerereId: existingCerereId || null,
+        acreditareId: loadedAcreditareId || null,
+        numar: chosenNumar,
+      });
+
       // If editing an existing cerere, update it instead of creating a new one.
       if (existingCerereId) {
         const okEdit = confirm("Sigur vrei să actualizezi această cerere?");
-        if (!okEdit) return;
+        if (!okEdit) {
+          acrLog("creaza-simple", "cancelled_confirm", { mode: "edit_cerere" });
+          return;
+        }
         const cerereRef = doc(db, "CereriAcreditare", existingCerereId);
+        const cerereSnap = await getDoc(cerereRef);
+        const cerereData = cerereSnap.exists() ? (cerereSnap.data() as any) : null;
+        const structuraKeys = Array.isArray(cerereData?.structuraKeys) ? cerereData.structuraKeys : [];
         const numarFormatted = String(chosenNumar);
-        await updateDoc(cerereRef, {
-          "acreditare.numar": numarFormatted,
-          "acreditare.data": dataLabel || null,
+        const cererePatch: Record<string, any> = {
+          [`statusByStructura.${currentKey}.acreditareNumar`]: numarFormatted,
+          [`statusByStructura.${currentKey}.acreditareData`]: dataLabel || null,
           "media.denumire": rd,
           "jurnalist.numePrenume": nn,
           "jurnalist.sex": sx,
@@ -327,36 +469,48 @@ function SimpleForm({
           "jurnalist.email": em,
           "jurnalist.telefon.mobil": tel,
           updatedAt: nowTs,
-        } as any);
+        };
+        // Multi-structure: never overwrite shared global acreditare from another tenant.
+        if (structuraKeys.length <= 1) {
+          cererePatch["acreditare.numar"] = numarFormatted;
+          cererePatch["acreditare.data"] = dataLabel || null;
+        }
+        await updateDoc(cerereRef, cererePatch as any);
         try {
-          const jurnalistId = computeJurnalistId();
-          const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jurnalistId}`);
-          await setDoc(
-            jurnalistRef,
-            {
-              nume: nn,
-              email: em,
-              telefon: tel,
-              legit: lg,
-              redactie: rd,
-              lastAcreditareYear: yearFromIso,
-              lastAcreditareNumar: numarFormatted,
-              updatedAt: nowTs,
-              createdAt: nowTs,
-            },
-            { merge: true }
-          );
+          await upsertJurnalistRegistry(jurnalistInput);
         } catch {}
+        acrLog("creaza-simple", "ok", { mode: "edit_cerere", cerereId: existingCerereId });
         setMsg("Cererea a fost actualizată.");
         return;
       }
 
       if (loadedAcreditareId) {
         const ok = confirm("Sigur vrei să actualizezi această acreditare? Modificările vor actualiza și datele jurnalistului.");
-        if (!ok) return;
+        if (!ok) {
+          acrLog("creaza-simple", "cancelled_confirm", { mode: "edit_acreditare" });
+          return;
+        }
         // Edit existing Acreditare (already approved / issued)
         const numarFormatted = String(chosenNumar);
         const acrRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Acreditari/${loadedAcreditareId}`);
+        const acrBeforeSnap = await getDoc(acrRef);
+        const acrBefore = acrBeforeSnap.exists() ? (acrBeforeSnap.data() as any) : null;
+        const beforeIdentity = originalAcrIdentity || {
+          nume: String(acrBefore?.nume || nn),
+          legit: String(acrBefore?.legit || lg),
+          email: String(acrBefore?.email || em),
+          telefon: String(acrBefore?.telefon || tel),
+          redactie: String(acrBefore?.redactie || rd),
+        };
+
+        // Journalists tied to the pre-edit identity (may need year recalc if not moved).
+        const previouslyMatched = await findJurnalistiMatchingAcreditare(db, judetId, structuraId, beforeIdentity);
+        if (!selectedJurnalistId && previouslyMatched.length > 0) {
+          setSelectedJurnalistId(previouslyMatched[0].id);
+        }
+        // Ensure upsert sees the selection even if setState hasn't flushed.
+        const boundSelectedId = selectedJurnalistId || previouslyMatched[0]?.id || null;
+
         await updateDoc(acrRef, {
           numar: numarFormatted,
           data: dataLabel || null,
@@ -370,70 +524,133 @@ function SimpleForm({
           updatedAt: nowTs,
         } as any);
 
-        // Keep Jurnalisti in sync (including phone)
-        const jurnalistId = computeJurnalistId();
-        const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jurnalistId}`);
-        await setDoc(
-          jurnalistRef,
+        const newJurnalistId = await upsertJurnalistRegistry(
+          jurnalistInput,
           {
-            nume: nn,
-            email: em,
-            telefon: tel,
-            legit: lg,
-            redactie: rd,
             lastAcreditareYear: yearFromIso,
             lastAcreditareNumar: numarFormatted,
-            updatedAt: nowTs,
-            createdAt: nowTs,
           },
-          { merge: true }
+          boundSelectedId
         );
 
+        // Propagate identity changes to other issued Acreditari for this journalist.
+        try {
+          await syncAcreditariIdentityForJurnalist({
+            db,
+            judetId,
+            structuraId,
+            previous: beforeIdentity,
+            next: jurnalistInput,
+          });
+        } catch {}
+
+        // Recalc year on any previous journalist left behind (not moved/deleted).
+        for (const j of previouslyMatched) {
+          if (j.id === newJurnalistId) continue;
+          try {
+            await recalcJurnalistLastAcreditare(db, judetId, structuraId, j.id, j);
+          } catch {}
+        }
+
+        // Keep linked cerere + per-structura fields in sync when present.
+        const cerereId = String(acrBefore?.source?.cerereId || "").trim();
+        if (cerereId) {
+          try {
+            const cerereRef = doc(db, "CereriAcreditare", cerereId);
+            const cerereSnap = await getDoc(cerereRef);
+            if (cerereSnap.exists()) {
+              const cerere = cerereSnap.data() as any;
+              const currentKey = buildStructuraKey(judetId, structuraId);
+              const statusByStructura = { ...(cerere.statusByStructura || {}) };
+              const currentStatus = { ...(statusByStructura[currentKey] || {}) };
+              if (currentStatus.status === "approved" || currentStatus.acreditareId === loadedAcreditareId) {
+                statusByStructura[currentKey] = {
+                  ...currentStatus,
+                  acreditareId: loadedAcreditareId,
+                  acreditareNumar: numarFormatted,
+                  acreditareData: dataLabel || currentStatus.acreditareData || null,
+                };
+              }
+              const structuraKeys = Array.isArray(cerere.structuraKeys) ? cerere.structuraKeys : [];
+              const cererePatch: Record<string, any> = {
+                "media.denumire": rd,
+                "jurnalist.numePrenume": nn,
+                "jurnalist.sex": sx,
+                "jurnalist.legitimatie.numar": lg,
+                "jurnalist.email": em,
+                "jurnalist.telefon.mobil": tel,
+                statusByStructura,
+                updatedAt: nowTs,
+              };
+              if (structuraKeys.length <= 1) {
+                cererePatch["acreditare.numar"] = numarFormatted;
+                cererePatch["acreditare.data"] = dataLabel || null;
+              }
+              await updateDoc(cerereRef, cererePatch as any);
+            }
+          } catch {}
+        }
+
+        setOriginalAcrIdentity({ nume: nn, legit: lg, email: em, telefon: tel, redactie: rd });
+
+        acrLog("creaza-simple", "ok", { mode: "edit_acreditare", acreditareId: loadedAcreditareId });
         setMsg("Acreditarea a fost actualizată. Datele jurnalistului au fost sincronizate.");
         return;
       }
 
-      // Allocate next number atomically (Settings/general.acreditareLastNumar)
       const settingsRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
+      const settingsSnap = await getDoc(settingsRef);
+      const lastFromSettings =
+        typeof (settingsSnap.data() as any)?.acreditareLastNumar === "number"
+          ? Number((settingsSnap.data() as any).acreditareLastNumar)
+          : 0;
+      const numberingFloor = Math.max(maxFromDocs || 0, lastFromSettings || 0);
+      if (numberingFloor > 0 && chosenNumar <= numberingFloor) {
+        acrWarn("creaza-simple", "numar_too_low", { chosenNumar, numberingFloor });
+        setMsg(`Numărul de acreditare trebuie să fie mai mare decât ${numberingFloor}.`);
+        return;
+      }
+
+      // Confirm before allocating — Cancel must not advance acreditareLastNumar.
+      const okCreate = confirm("Sigur vrei să salvezi această cerere de acreditare?");
+      if (!okCreate) {
+        acrLog("creaza-simple", "cancelled_confirm", { mode: "create" });
+        return;
+      }
+
       const allocated = await runTransaction(db, async (tx) => {
-        await tx.get(settingsRef);
-        // user-controlled numbering: set counter to whatever is in the input (can go up/down)
-        tx.set(settingsRef, { acreditareLastNumar: chosenNumar }, { merge: true });
+        const sSnap = await tx.get(settingsRef);
+        const last =
+          typeof (sSnap.data() as any)?.acreditareLastNumar === "number"
+            ? Number((sSnap.data() as any).acreditareLastNumar)
+            : 0;
+        const floor = Math.max(last || 0, maxFromDocs || 0);
+        if (floor > 0 && chosenNumar <= floor) {
+          throw new Error("numar_luat");
+        }
+        tx.set(settingsRef, { acreditareLastNumar: Math.max(floor, chosenNumar) }, { merge: true });
         return chosenNumar;
       });
       setNextNumar(allocated + 1);
       const numarFormatted = String(allocated);
       setNumarText(String(allocated + 1));
 
-      const okCreate = confirm("Sigur vrei să salvezi această cerere de acreditare?");
-      if (!okCreate) return;
-
-      // Upsert Jurnalist in structura (so it appears in /acreditari/jurnalisti)
+      // Upsert Jurnalist registry fields only; accreditation year/number is set at approve time.
       try {
-        const jurnalistId = computeJurnalistId();
-        const jurnalistRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${jurnalistId}`);
-        await setDoc(
-          jurnalistRef,
-          {
-            nume: nn,
-            email: em,
-            telefon: tel,
-            legit: lg,
-            redactie: rd,
-            lastAcreditareYear: yearFromIso,
-            lastAcreditareNumar: numarFormatted,
-            updatedAt: nowTs,
-            createdAt: nowTs,
-          },
-          { merge: true }
-        );
+        await upsertJurnalistRegistry(jurnalistInput);
       } catch {}
 
       // Create CereriAcreditare in the SAME schema as complex form (minimal fields)
       const cererePayload: any = {
         structuri: [{ judetId: String(judetId || "").toUpperCase(), structuraId: String(structuraId || "").toUpperCase(), display: `${structuraId} ${judetId}` }],
         structuraKeys: [currentKey],
-        statusByStructura: { [currentKey]: { status: "pending" } },
+        statusByStructura: {
+          [currentKey]: {
+            status: "pending",
+            acreditareNumar: numarFormatted,
+            acreditareData: dataLabel || null,
+          },
+        },
         createdAt: nowTs,
         submittedAt: nowTs,
         acreditare: { numar: numarFormatted, data: dataLabel || null },
@@ -467,9 +684,17 @@ function SimpleForm({
       const createdCerere = await addDoc(collection(db, "CereriAcreditare"), cererePayload);
       const cerereId = createdCerere.id;
       setLastCerereId(cerereId);
+      acrLog("creaza-simple", "ok", { mode: "create", cerereId, numar: numarFormatted });
       setMsg("Cerere salvată. Status: În așteptare. O poți aproba/respinge din „Cereri acreditare”.");
     } catch (e: any) {
-      setMsg("Nu am putut salva cererea. Încearcă din nou.");
+      acrLogError("creaza-simple", "failed", e, {
+        code: e?.message === "numar_luat" ? "numar_luat" : "save_failed",
+      });
+      if (e?.message === "numar_luat") {
+        setMsg("Numărul de acreditare a fost rezervat între timp. Alege un număr mai mare și încearcă din nou.");
+      } else {
+        setMsg("Nu am putut salva cererea. Încearcă din nou.");
+      }
     } finally {
       setSaving(false);
     }
@@ -707,16 +932,19 @@ export default function CreeazaAcreditarePage() {
     sex?: "F" | "M";
     dataIso?: string;
     numar?: string;
+    jurnalistId?: string;
   } | null>(null);
   const [simplePrefillKey, setSimplePrefillKey] = useState(0);
+  const [reaccreditJurnalistId, setReaccreditJurnalistId] = useState<string | null>(null);
 
-  // Allow deep-linking: /acreditari/creaza?tab=cerere&cerereId=...
+  // Allow deep-linking: /acreditari/creaza?tab=cerere&cerereId=... or ?from={jurnalistId}
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const url = new URL(window.location.href);
       const cerereId = (url.searchParams.get("cerereId") || "").trim();
       const acreditareId = (url.searchParams.get("edit") || "").trim();
+      const fromJurnalistId = (url.searchParams.get("from") || "").trim();
       const tab = (url.searchParams.get("tab") || "").trim();
       if (tab === "simplu") setActiveTab("simplu");
       if (tab === "cerere") setActiveTab("cerere");
@@ -726,13 +954,79 @@ export default function CreeazaAcreditarePage() {
       }
       if (cerereId) {
         setEditCerereId(cerereId);
-        // For edit view, start on Completare simplă
+        if (tab !== "cerere") setActiveTab("simplu");
+      }
+      if (fromJurnalistId && !cerereId && !acreditareId) {
+        setReaccreditJurnalistId(fromJurnalistId);
         setActiveTab("simplu");
-        }
-      } catch {}
+      }
+    } catch {}
     // run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!reaccreditJurnalistId) return;
+      try {
+        const { judetId, structuraId } = getTenantContext();
+        const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${reaccreditJurnalistId}`);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+          if (alive) alert("Jurnalistul selectat nu a fost găsit.");
+          return;
+        }
+        const j = snap.data() as any;
+        if (!alive) return;
+
+        const currentYear = new Date().getFullYear();
+        const warnKey = `acr_reacred_warned:${reaccreditJurnalistId}`;
+        let alreadyWarned = false;
+        try {
+          alreadyWarned = sessionStorage.getItem(warnKey) === "1";
+          sessionStorage.removeItem(warnKey);
+        } catch {}
+
+        if (!alreadyWarned && isJurnalistAccreditedForYear(j?.lastAcreditareYear, currentYear)) {
+          const ok = confirm(
+            [
+              `${String(j?.nume || "Jurnalistul")} este deja acreditat în ${currentYear}.`,
+              "",
+              "Continuarea poate crea o cerere/acreditare duplicată pentru același an.",
+              "",
+              "Sigur vrei să continui cu reacreditarea?",
+            ].join("\n")
+          );
+          if (!ok) {
+            setReaccreditJurnalistId(null);
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete("from");
+              window.history.replaceState({}, "", url.toString());
+            } catch {}
+            return;
+          }
+        }
+
+        setSimplePrefill({
+          jurnalistId: reaccreditJurnalistId,
+          nume: String(j?.nume || ""),
+          legit: String(j?.legit || ""),
+          redactie: String(j?.redactie || ""),
+          email: String(j?.email || ""),
+          telefon: String(j?.telefon || ""),
+          dataIso: isoToday(),
+        });
+        setSimplePrefillKey((k) => k + 1);
+      } catch {
+        if (alive) alert("Nu am putut încărca datele jurnalistului pentru reacreditare.");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [db, reaccreditJurnalistId]);
 
   useEffect(() => {
     let alive = true;
@@ -744,8 +1038,11 @@ export default function CreeazaAcreditarePage() {
         if (!snap.exists()) return;
         const d = snap.data() as any;
         if (!alive) return;
-        const acreditareNumar = String(d?.acreditare?.numar || "").trim();
-        const acreditareData = String(d?.acreditare?.data || "").trim();
+        const { judetId, structuraId } = getTenantContext();
+        const currentKey = buildStructuraKey(judetId, structuraId);
+        const fields = resolveAcreditareFieldsForStructura(d, currentKey);
+        const acreditareNumar = fields.numar;
+        const acreditareData = fields.data;
         const dataIso = isoFromDdMmYyyy(acreditareData);
         const sex = String(d?.jurnalist?.sex || "").toUpperCase() === "M" ? "M" : "F";
         setSimplePrefill({
@@ -815,7 +1112,11 @@ export default function CreeazaAcreditarePage() {
             </div>
             {activeTab === "cerere" ? "Cerere acreditare" : "Acreditare (PDF)"}
           </div>
-          <div className="text-sm text-gray-600 mt-1">Completează o cerere de acreditare pentru structura curentă</div>
+          <div className="text-sm text-gray-600 mt-1">
+            {reaccreditJurnalistId
+              ? "Reacreditare jurnalist — datele au fost precompletate din registrul existent"
+              : "Completează o cerere de acreditare pentru structura curentă"}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Temporar ascuns (cerut): Link cerere acreditare jurnalist / Deschide formular cerere */}
@@ -848,8 +1149,6 @@ export default function CreeazaAcreditarePage() {
       <div className="space-y-6">
         {/* Tabs */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Temporar ascuns (cerut): Cerere (formular complex) */}
-          {false && (
           <button
             type="button"
             onClick={() => setActiveTab("cerere")}
@@ -861,7 +1160,6 @@ export default function CreeazaAcreditarePage() {
           >
             Cerere (formular complex)
           </button>
-          )}
           <button
             type="button"
             onClick={() => setActiveTab("simplu")}

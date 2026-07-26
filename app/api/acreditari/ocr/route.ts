@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { requireBearerToken, lookupUserFromIdToken } from "@/lib/server/auth";
+import { requireBearerToken } from "@/lib/server/auth";
+import {
+  createAcreditareLogger,
+  errorLogFields,
+  newAcreditareRequestId,
+} from "@/lib/server/acreditareLogger";
+import { getStructuraSettings } from "@/lib/settings/getSettings";
 
 export const runtime = "nodejs";
 
@@ -35,39 +41,68 @@ function safeJsonParse(s: string): any | null {
   }
 }
 
+/** Optional comma/space-separated emails. When empty, any structura admin may use OCR. */
+function parseOcrEmailAllowlist(): string[] {
+  return String(process.env.OCR_ALLOWED_EMAILS || "")
+    .split(/[,;\s]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function requireOcrAccess(idToken: string, origin: string) {
+  const { tenant, structura } = await getStructuraSettings(idToken, origin);
+  if (!structura?.isAdmin) {
+    throw new Error("forbidden_admin");
+  }
+  const allowlist = parseOcrEmailAllowlist();
+  if (allowlist.length > 0) {
+    const email = String(tenant.email || "").trim().toLowerCase();
+    if (!email || !allowlist.includes(email)) {
+      throw new Error("forbidden_allowlist");
+    }
+  }
+  return tenant;
+}
+
 export async function POST(req: Request) {
-  const requestId =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any)?.crypto?.randomUUID?.() ||
-    `ocr_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const requestId = newAcreditareRequestId("acr_ocr");
+  let logger = createAcreditareLogger({ area: "ocr", requestId });
   try {
     const idToken = await requireBearerToken(req);
-    const authUser = await lookupUserFromIdToken(idToken);
-    if (String(authUser.email || "").toLowerCase() !== "irp.isudb@gmail.com") {
-      console.error("[OCR] Forbidden user", { requestId, email: authUser.email || null });
-      return NextResponse.json({ error: "Forbidden", requestId }, { status: 403 });
-    }
+    const origin = new URL(req.url).origin;
+    const tenant = await requireOcrAccess(idToken, origin);
+    logger = createAcreditareLogger({
+      area: "ocr",
+      requestId,
+      tenant: { judetId: tenant.judetId, structuraId: tenant.structuraId, uid: tenant.uid },
+    });
 
     const apiKey = process.env.OPENAI_API_KEY || "";
     if (!apiKey) {
-      console.error("[OCR] Missing OPENAI_API_KEY", { requestId });
+      logger.error("missing_openai_key");
       return NextResponse.json({ error: "Missing OPENAI_API_KEY", requestId }, { status: 500 });
     }
 
     const form = await req.formData();
     const files = form.getAll("images").filter((x) => x instanceof File) as File[];
-    if (!files.length) return NextResponse.json({ error: "No images uploaded" }, { status: 400 });
-    if (files.length > 2) return NextResponse.json({ error: "Max 2 images" }, { status: 400 });
+    if (!files.length) {
+      logger.warn("no_images");
+      return NextResponse.json({ error: "No images uploaded", requestId }, { status: 400 });
+    }
+    if (files.length > 2) {
+      logger.warn("too_many_images", { fileCount: files.length });
+      return NextResponse.json({ error: "Max 2 images", requestId }, { status: 400 });
+    }
     for (const f of files) {
       const mime = String(f.type || "");
       if (!["image/jpeg", "image/png"].includes(mime)) {
+        logger.warn("invalid_image_type", { mime });
         return NextResponse.json({ error: "Invalid image type. Use JPG/PNG.", requestId }, { status: 400 });
       }
     }
 
-    console.log("[OCR] Start", {
-      requestId,
-      email: authUser.email || null,
+    logger.info("start", {
+      email: tenant.email || null,
       fileCount: files.length,
       types: files.map((f) => f.type),
       sizes: files.map((f) => f.size),
@@ -143,7 +178,11 @@ export async function POST(req: Request) {
     if (!res.ok) {
       const t = await res.text().catch(() => "");
       const retryAfter = res.headers.get("retry-after") || "";
-      console.error("[OCR] OpenAI request failed", { requestId, status: res.status, retryAfter: retryAfter || null, detail: t.slice(0, 500) });
+      logger.error("openai_failed", {
+        status: res.status,
+        retryAfter: retryAfter || null,
+        detail: t.slice(0, 500),
+      });
       // Preserve upstream status (esp. 429 rate_limit_exceeded) so UI can show "try again later"
       return NextResponse.json(
         { error: "OpenAI request failed", requestId, status: res.status, retryAfter: retryAfter || null, detail: t.slice(0, 500) },
@@ -154,11 +193,11 @@ export async function POST(req: Request) {
     const content = String(data?.choices?.[0]?.message?.content || "").trim();
     const parsed = safeJsonParse(content);
     if (!parsed || typeof parsed !== "object") {
-      console.error("[OCR] Invalid OCR JSON", { requestId, raw: content.slice(0, 500) });
-      return NextResponse.json({ error: "Invalid OCR JSON", raw: content.slice(0, 500) }, { status: 500 });
+      logger.error("invalid_ocr_json", { raw: content.slice(0, 500) });
+      return NextResponse.json({ error: "Invalid OCR JSON", raw: content.slice(0, 500), requestId }, { status: 500 });
     }
 
-    console.log("[OCR] Success", { requestId });
+    logger.info("ok");
     return NextResponse.json({
       ok: true,
       requestId,
@@ -194,7 +233,15 @@ export async function POST(req: Request) {
     const msg = typeof e?.message === "string" ? e.message : "error";
     if (msg === "missing_auth") return NextResponse.json({ error: "Missing Authorization", requestId }, { status: 401 });
     if (msg === "invalid_token") return NextResponse.json({ error: "Invalid token", requestId }, { status: 401 });
-    console.error("[OCR] Failed", { requestId, msg });
+    if (msg === "missing_tenant") {
+      logger.warn("missing_tenant");
+      return NextResponse.json({ error: "Profil incomplet (judetId/structuraId).", requestId }, { status: 403 });
+    }
+    if (msg === "forbidden_admin" || msg === "forbidden_allowlist") {
+      logger.warn("forbidden", { code: msg });
+      return NextResponse.json({ error: "Forbidden", requestId }, { status: 403 });
+    }
+    logger.error("failed", errorLogFields(e));
     return NextResponse.json({ error: "OCR failed", detail: msg, requestId }, { status: 500 });
   }
 }

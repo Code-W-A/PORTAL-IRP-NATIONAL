@@ -3,11 +3,33 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { collection, deleteDoc, doc, getDoc, getDocs, serverTimestamp, setDoc, writeBatch } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
+import {
+  buildJurnalistMovePayload,
+  coerceAcreditareYear,
+  getJurnalistAccreditationStatus,
+  isCompatibleJurnalistRecord,
+  isJurnalistAccreditedForYear,
+  normalizePhoneForTel,
+  normalizePhoneForWhatsApp,
+  resolveJurnalistDocId,
+} from "@/lib/acreditari";
+import { acrLog, acrLogError } from "@/lib/acreditareClientLog";
+import { deleteJurnalistRegistry, syncAcreditariIdentityForJurnalist } from "@/lib/acreditariJurnalistDelete";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Users, Search, Filter, UserCheck, UserX, Building2, Mail, IdCard, RotateCcw, Pencil, Trash2, Save, X, LayoutGrid, Table, ChevronLeft, ChevronRight, Phone, Upload, Loader2, Download } from "lucide-react";
 
-type Journalist = { id: string; nume: string; email?: string; telefon?: string; legit?: string; redactie?: string; adresaRedactie?: string; lastAcreditareYear?: number; lastAcreditareNumar?: string };
+type Journalist = {
+  id: string;
+  nume: string;
+  email?: string;
+  telefon?: string;
+  legit?: string;
+  redactie?: string;
+  adresaRedactie?: string;
+  lastAcreditareYear?: number | string | null;
+  lastAcreditareNumar?: string;
+};
 type ImportRow = { redactie: string; adresaRedactie: string; numeJurnalist: string; telefon: string; email: string; legit: string };
 
 export default function JurnalistiPage() {
@@ -60,26 +82,6 @@ export default function JurnalistiPage() {
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view]);
-
-  function normalizeIdFromValue(value: string) {
-    return String(value || "")
-      .trim()
-      .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .slice(0, 80);
-  }
-
-  function normalizeId(nume: string, redactie: string, email?: string, telefon?: string, legit?: string) {
-    const l = normalizeIdFromValue(legit || "");
-    if (l) return l;
-    const em = normalizeIdFromValue(String(email || "").toLowerCase());
-    if (em) return em;
-    const tel = normalizeIdFromValue(String(telefon || "").replace(/[^\d+]/g, ""));
-    if (tel) return tel;
-    const nr = normalizeIdFromValue(`${nume || ""} ${redactie || ""}`);
-    return nr || `J_${Date.now()}`;
-  }
 
   function toTitleCase(text: string) {
     const s = String(text || "").trim().toLowerCase();
@@ -145,11 +147,13 @@ export default function JurnalistiPage() {
   async function handleImport(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
+    acrLog("jurnalisti", "import_start", { fileName: file.name, size: file.size });
     try {
       setImporting(true);
       const parsed = await parseFile(file);
       const cleaned = parsed.filter((r) => r.numeJurnalist);
       if (!cleaned.length) {
+        acrLog("jurnalisti", "import_empty");
         alert("Fișierul nu conține rânduri valide (coloane așteptate: redactie, adresaRedactie, numeJurnalist, telefon, email, legitimatie).");
         return;
       }
@@ -158,32 +162,87 @@ export default function JurnalistiPage() {
         alert("Profil incomplet (judetId/structuraId).");
         return;
       }
-      const batch = writeBatch(db);
+      // Preserve accreditation status fields on re-import (merge must not reset them).
+      // Resolve ids so two people with the same legit don't overwrite each other.
+      // Firestore batch limit is 500; chunk imports accordingly.
+      const existingSnap = await getDocs(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Jurnalisti"));
+      const existingById = new Map<string, Record<string, any>>();
+      for (const d of existingSnap.docs) existingById.set(d.id, d.data() as Record<string, any>);
+
+      const CHUNK = 450;
       let count = 0;
-      cleaned.forEach((r) => {
-        const id = normalizeId(r.numeJurnalist, r.redactie, r.email, r.telefon, r.legit);
-        const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`);
-        batch.set(
-          ref,
-          {
+      const syncJobs: Array<{
+        previous: { nume: string; email: string; telefon: string; legit: string; redactie: string };
+        next: { nume: string; email: string; telefon: string; legit: string; redactie: string };
+      }> = [];
+      for (let i = 0; i < cleaned.length; i += CHUNK) {
+        const chunk = cleaned.slice(i, i + CHUNK);
+        const batch = writeBatch(db);
+        for (const r of chunk) {
+          const emailIn = String(r.email || "").trim();
+          const telefonIn = String(r.telefon || "").trim();
+          const input = {
             nume: r.numeJurnalist,
-            email: r.email,
-            telefon: r.telefon,
+            redactie: r.redactie,
+            email: emailIn,
+            telefon: telefonIn,
+            legit: r.legit || "",
+          };
+          const id = resolveJurnalistDocId(input, existingById);
+          const previousRow = existingById.get(id) || null;
+          const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`);
+          // Omit empty contacts so merge does not wipe existing email/telefon.
+          const payload: Record<string, any> = {
+            nume: r.numeJurnalist,
             legit: r.legit || "",
             redactie: r.redactie,
             adresaRedactie: r.adresaRedactie,
-            lastAcreditareYear: null,
             updatedAt: serverTimestamp(),
-            createdAt: serverTimestamp(),
-          },
-          { merge: true }
-        );
-        count += 1;
-      });
-      await batch.commit();
+          };
+          if (emailIn) payload.email = emailIn;
+          if (telefonIn) payload.telefon = telefonIn;
+          batch.set(ref, payload, { merge: true });
+          const merged = { ...(previousRow || {}), ...payload };
+          if (previousRow) {
+            syncJobs.push({
+              previous: {
+                nume: String(previousRow.nume || ""),
+                email: String(previousRow.email || ""),
+                telefon: String(previousRow.telefon || ""),
+                legit: String(previousRow.legit || ""),
+                redactie: String(previousRow.redactie || ""),
+              },
+              next: {
+                nume: String(merged.nume || ""),
+                email: String(merged.email || ""),
+                telefon: String(merged.telefon || ""),
+                legit: String(merged.legit || ""),
+                redactie: String(merged.redactie || ""),
+              },
+            });
+          }
+          // So later rows in the same import see this identity and don't collide again.
+          existingById.set(id, merged);
+          count += 1;
+        }
+        await batch.commit();
+      }
+      for (const job of syncJobs) {
+        try {
+          await syncAcreditariIdentityForJurnalist({
+            db,
+            judetId,
+            structuraId,
+            previous: job.previous,
+            next: job.next,
+          });
+        } catch {}
+      }
       await load();
+      acrLog("jurnalisti", "import_ok", { count, syncJobs: syncJobs.length, judetId, structuraId });
       alert(`Import complet: ${count} înregistrări salvate în ${structuraId} ${judetId}.`);
-    } catch {
+    } catch (e) {
+      acrLogError("jurnalisti", "import_failed", e);
       alert("Nu am putut importa fișierul. Încearcă din nou cu un CSV simplu sau un XLSX standard.");
     } finally {
       setImporting(false);
@@ -192,13 +251,22 @@ export default function JurnalistiPage() {
   }
 
   const exportYears = useMemo(() => {
-    const years = Array.from(new Set(items.map((i) => i.lastAcreditareYear).filter(Boolean))) as number[];
+    const years = Array.from(
+      new Set(
+        items
+          .map((i) => coerceAcreditareYear(i.lastAcreditareYear))
+          .filter((y): y is number => y != null)
+      )
+    );
     years.sort((a, b) => b - a);
     return years;
   }, [items]);
 
   function exportRows(scope: "all" | "year") {
-    const list = scope === "year" ? items.filter((x) => x.lastAcreditareYear === exportYear) : items;
+    const list =
+      scope === "year"
+        ? items.filter((x) => isJurnalistAccreditedForYear(x.lastAcreditareYear, exportYear))
+        : items;
     return list.map((x) => ({
       nume: x.nume || "",
       email: x.email || "",
@@ -206,9 +274,9 @@ export default function JurnalistiPage() {
       legit: x.legit || "",
       redactie: x.redactie || "",
       adresaRedactie: x.adresaRedactie || "",
-      lastAcreditareYear: x.lastAcreditareYear || "",
+      lastAcreditareYear: coerceAcreditareYear(x.lastAcreditareYear) ?? x.lastAcreditareYear ?? "",
       lastAcreditareNumar: x.lastAcreditareNumar || "",
-      status: x.lastAcreditareYear === currentYear ? "Acreditat" : x.lastAcreditareYear ? `Neacreditat (${x.lastAcreditareYear})` : "Neacreditat",
+      status: getJurnalistAccreditationStatus(x.lastAcreditareYear, currentYear).label,
     }));
   }
 
@@ -298,57 +366,193 @@ export default function JurnalistiPage() {
     setEditDraft({ nume: "", email: "", telefon: "", legit: "", redactie: "" });
   }
 
-  function normalizePhoneForTel(v?: string): string {
-    const s = String(v || "").trim();
-    if (!s) return "";
-    // keep leading +, remove spaces/dashes/parentheses
-    return s.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "");
+  function confirmReacreditare(x: Journalist): boolean {
+    let ok: boolean;
+    if (isJurnalistAccreditedForYear(x.lastAcreditareYear, currentYear)) {
+      ok = confirm(
+        [
+          `${x.nume || "Jurnalistul"} este deja acreditat în ${currentYear}.`,
+          "",
+          "Continuarea poate crea o cerere/acreditare duplicată pentru același an.",
+          "",
+          "Sigur vrei să continui cu reacreditarea?",
+        ].join("\n")
+      );
+      acrLog("jurnalisti", ok ? "reacrediteaza_same_year_ok" : "reacrediteaza_same_year_cancelled", {
+        jurnalistId: x.id,
+        year: currentYear,
+      });
+    } else {
+      ok = confirm("Sigur vrei să reacreditezi acest jurnalist?");
+      acrLog("jurnalisti", ok ? "reacrediteaza_navigate" : "reacrediteaza_cancelled", {
+        jurnalistId: x.id,
+      });
+    }
+    // Avoid a second identical warning on /creaza?from=...
+    if (ok && typeof sessionStorage !== "undefined") {
+      try {
+        sessionStorage.setItem(`acr_reacred_warned:${x.id}`, "1");
+      } catch {}
+    }
+    return ok;
   }
 
   async function saveEdit(id: string) {
     const ok = confirm("Sigur vrei să salvezi modificările pentru acest jurnalist?");
-    if (!ok) return;
+    if (!ok) {
+      acrLog("jurnalisti", "save_cancelled", { jurnalistId: id });
+      return;
+    }
+    acrLog("jurnalisti", "save_start", { jurnalistId: id });
     try {
       const { judetId, structuraId } = getTenantContext();
       const fromId = id;
-      const toId = normalizeId(editDraft.nume, editDraft.redactie || "", editDraft.email, editDraft.telefon, editDraft.legit);
+      const fromList = items.find((j) => j.id === fromId);
+      const previousIdentity = {
+        nume: fromList?.nume || "",
+        email: fromList?.email || "",
+        telefon: fromList?.telefon || "",
+        legit: fromList?.legit || "",
+        redactie: fromList?.redactie || "",
+      };
+      const input = {
+        nume: editDraft.nume,
+        redactie: editDraft.redactie || "",
+        email: editDraft.email,
+        telefon: editDraft.telefon,
+        legit: editDraft.legit,
+      };
+      const existingById = new Map<string, Record<string, any>>(
+        items.map((j) => [j.id, { ...j }])
+      );
+      let toId = resolveJurnalistDocId(input, existingById);
       const updatedAt = serverTimestamp();
+
+      async function afterJurnalistSaved() {
+        try {
+          await syncAcreditariIdentityForJurnalist({
+            db,
+            judetId,
+            structuraId,
+            previous: previousIdentity,
+            next: input,
+          });
+        } catch {}
+      }
 
       if (toId && toId !== fromId) {
         const okMove = confirm("Ai schimbat câmpuri care afectează identificarea (legitimație/email/telefon). Vrei să mut jurnalistul pe un ID nou (recomandat) ca să evităm dubluri?");
         if (!okMove) return;
         const fromRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${fromId}`);
-        const toRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${toId}`);
-        const exists = await getDoc(toRef);
-        if (exists.exists()) {
-          alert("Există deja un jurnalist cu acest ID (probabil legitimație/email/telefon identic). Selectează-l din listă și actualizează-l pe acela.");
+        let toRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${toId}`);
+        const [fromSnap, toSnap] = await Promise.all([getDoc(fromRef), getDoc(toRef)]);
+        if (toSnap.exists()) {
+          const atTarget = toSnap.data() as Record<string, any>;
+          if (!isCompatibleJurnalistRecord(atTarget, input)) {
+            existingById.set(toId, atTarget);
+            toId = resolveJurnalistDocId(input, existingById);
+            toRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${toId}`);
+            const retrySnap = await getDoc(toRef);
+            if (retrySnap.exists() && !isCompatibleJurnalistRecord(retrySnap.data() as any, input)) {
+              alert("Nu am putut aloca un ID liber pentru acest jurnalist. Încearcă din nou.");
+              return;
+            }
+            if (retrySnap.exists() && toId !== fromId) {
+              alert("Există deja un jurnalist compatibil cu aceste date. Selectează-l din listă și actualizează-l pe acela.");
+              return;
+            }
+          } else {
+            alert("Există deja un jurnalist cu acest ID (probabil legitimație/email/telefon identic). Selectează-l din listă și actualizează-l pe acela.");
+            return;
+          }
+        }
+        if (toId === fromId) {
+          await setDoc(fromRef, { ...editDraft, updatedAt }, { merge: true });
+          await afterJurnalistSaved();
+          setItems((prev) => prev.map((j) => (j.id === fromId ? { ...j, ...editDraft } : j)));
+          cancelEdit();
           return;
         }
-        await setDoc(toRef, { ...editDraft, updatedAt, createdAt: updatedAt }, { merge: true });
+        const existing = fromSnap.exists() ? (fromSnap.data() as Record<string, any>) : {};
+        const moved = buildJurnalistMovePayload(existing, editDraft, updatedAt);
+        await setDoc(toRef, moved, { merge: true });
         await deleteDoc(fromRef);
-        setItems((prev) => prev.map((j) => (j.id === fromId ? ({ ...j, id: toId, ...editDraft } as any) : j)));
+        await afterJurnalistSaved();
+        acrLog("jurnalisti", "save_ok", { fromId, toId, moved: true });
+        setItems((prev) =>
+          prev.map((j) =>
+            j.id === fromId
+              ? ({
+                  ...j,
+                  id: toId,
+                  nume: String(moved.nume || ""),
+                  email: moved.email,
+                  telefon: moved.telefon,
+                  legit: moved.legit,
+                  redactie: moved.redactie,
+                  adresaRedactie: moved.adresaRedactie ?? j.adresaRedactie,
+                  lastAcreditareYear:
+                    typeof moved.lastAcreditareYear === "number"
+                      ? moved.lastAcreditareYear
+                      : moved.lastAcreditareYear === null
+                        ? undefined
+                        : j.lastAcreditareYear,
+                  lastAcreditareNumar: moved.lastAcreditareNumar ?? j.lastAcreditareNumar,
+                } as Journalist)
+              : j
+          )
+        );
         cancelEdit();
         return;
       }
 
       const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${fromId}`);
       await setDoc(ref, { ...editDraft, updatedAt }, { merge: true });
+      await afterJurnalistSaved();
+      acrLog("jurnalisti", "save_ok", { fromId, toId: fromId, moved: false });
       setItems((prev) => prev.map((j) => (j.id === fromId ? { ...j, ...editDraft } : j)));
       cancelEdit();
-    } catch {
+    } catch (e) {
+      acrLogError("jurnalisti", "save_failed", e, { jurnalistId: id });
       alert("Nu am putut salva modificările. Încearcă din nou.");
     }
   }
 
   async function onDelete(id: string) {
-    const ok = confirm("Sigur vrei să ștergi acest jurnalist? Acțiunea este ireversibilă.");
-    if (!ok) return;
+    acrLog("jurnalisti", "delete_start", { jurnalistId: id });
     try {
       const { judetId, structuraId } = getTenantContext();
-      await deleteDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`));
+      const fromList = items.find((x) => x.id === id);
+      let jurnalist: Journalist | null = fromList || null;
+      if (!jurnalist) {
+        const snap = await getDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Jurnalisti/${id}`));
+        if (!snap.exists()) {
+          setItems((prev) => prev.filter((x) => x.id !== id));
+          return;
+        }
+        jurnalist = { id: snap.id, ...(snap.data() as any) } as Journalist;
+      }
+
+      const result = await deleteJurnalistRegistry({
+        db,
+        judetId,
+        structuraId,
+        jurnalistId: id,
+        jurnalist,
+      });
+      if (!result.deleted) {
+        acrLog("jurnalisti", "delete_cancelled", { jurnalistId: id });
+        return;
+      }
+
+      acrLog("jurnalisti", "delete_ok", {
+        jurnalistId: id,
+        acreditariDeleted: result.acreditariDeleted,
+      });
       setItems((prev) => prev.filter((x) => x.id !== id));
       if (editingId === id) cancelEdit();
-    } catch {
+    } catch (e) {
+      acrLogError("jurnalisti", "delete_failed", e, { jurnalistId: id });
       alert("Nu am putut șterge jurnalistul. Încearcă din nou.");
     }
   }
@@ -356,7 +560,7 @@ export default function JurnalistiPage() {
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return items
-      .filter((x) => (onlyCurrent ? x.lastAcreditareYear === currentYear : true))
+      .filter((x) => (onlyCurrent ? isJurnalistAccreditedForYear(x.lastAcreditareYear, currentYear) : true))
       .filter((x) => !s || [x.nume, x.email, x.telefon, x.redactie, x.legit].filter(Boolean).map(String).some((v) => v.toLowerCase().includes(s)));
   }, [items, search, onlyCurrent, currentYear]);
 
@@ -574,7 +778,8 @@ export default function JurnalistiPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {paged.map((x) => {
-                      const isCurrent = x.lastAcreditareYear === currentYear;
+                      const acrStatus = getJurnalistAccreditationStatus(x.lastAcreditareYear, currentYear);
+                      const isCurrent = acrStatus.isCurrent;
                       const isEditing = editingId === x.id;
                       return (
                         <tr
@@ -619,7 +824,7 @@ export default function JurnalistiPage() {
                                   Apelează
                                 </a>
                                 <a
-                                  href={`https://wa.me/${normalizePhoneForTel(x.telefon)}`}
+                                  href={`https://wa.me/${normalizePhoneForWhatsApp(x.telefon)}`}
                                   onClick={(e) => e.stopPropagation()}
                                   className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors text-xs font-medium"
                                   title="Deschide WhatsApp"
@@ -678,7 +883,7 @@ export default function JurnalistiPage() {
                                 isCurrent ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
                               }`}
                             >
-                              {isCurrent ? "Acreditat" : x.lastAcreditareYear ? `Neacreditat (${x.lastAcreditareYear})` : "Neacreditat"}
+                              {acrStatus.label}
                             </span>
                           </td>
                           <td className="px-4 py-3">
@@ -688,8 +893,7 @@ export default function JurnalistiPage() {
                                 onClick={(e) => e.stopPropagation()}
                                 onClickCapture={(e) => {
                                   e.stopPropagation();
-                                  const ok = confirm("Sigur vrei să reacreditezi acest jurnalist?");
-                                  if (!ok) e.preventDefault();
+                                  if (!confirmReacreditare(x)) e.preventDefault();
                                 }}
                                 className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
                               >
@@ -759,7 +963,8 @@ export default function JurnalistiPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {paged.map((x) => {
-                const isCurrent = x.lastAcreditareYear === currentYear;
+                const acrStatus = getJurnalistAccreditationStatus(x.lastAcreditareYear, currentYear);
+                const isCurrent = acrStatus.isCurrent;
                 const isEditing = editingId === x.id;
                 return (
                   <div
@@ -793,7 +998,7 @@ export default function JurnalistiPage() {
                           ? "bg-green-200 text-green-800" 
                           : "bg-gray-200 text-gray-800"
                       }`}>
-                        {isCurrent ? "Acreditat" : x.lastAcreditareYear ? `Neacreditat (${x.lastAcreditareYear})` : "Neacreditat"}
+                        {acrStatus.label}
                       </div>
                     </div>
                     
@@ -821,7 +1026,7 @@ export default function JurnalistiPage() {
                             Apelează
                           </a>
                           <a
-                            href={`https://wa.me/${normalizePhoneForTel(x.telefon)}`}
+                            href={`https://wa.me/${normalizePhoneForWhatsApp(x.telefon)}`}
                             onClick={(e) => e.stopPropagation()}
                             className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors text-xs font-medium"
                             title="Deschide WhatsApp"
@@ -905,8 +1110,7 @@ export default function JurnalistiPage() {
                         onClick={(e) => e.stopPropagation()}
                         onClickCapture={(e) => {
                           e.stopPropagation();
-                          const ok = confirm("Sigur vrei să reacreditezi acest jurnalist?");
-                          if (!ok) e.preventDefault();
+                          if (!confirmReacreditare(x)) e.preventDefault();
                         }}
                         className="inline-flex items-center gap-2 flex-1 justify-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
                       >

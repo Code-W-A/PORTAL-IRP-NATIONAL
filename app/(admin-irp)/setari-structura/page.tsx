@@ -8,6 +8,7 @@ import { pdf } from "@react-pdf/renderer";
 import { BicpPdfDoc } from "@/app/(admin-irp)/components/pdf/BicpPdf";
 import { Star, Trash2, Settings, Building2, FileText, Image, Download } from "lucide-react";
 import { onAuthStateChanged, sendPasswordResetEmail, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider, signOut, type User } from "firebase/auth";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function SetariStructuraPage() {
@@ -40,12 +41,6 @@ export default function SetariStructuraPage() {
   const [purtatori, setPurtatori] = useState<{ nume: string }[]>([]);
   const [purtatorIndex, setPurtatorIndex] = useState<number>(0);
   const [newPurtator, setNewPurtator] = useState("");
-  const [acrSemnStFunctia, setAcrSemnStFunctia] = useState("");
-  const [acrSemnStGrad, setAcrSemnStGrad] = useState("");
-  const [acrSemnStNume, setAcrSemnStNume] = useState("");
-  const [acrSemnDrFunctia, setAcrSemnDrFunctia] = useState("");
-  const [acrSemnDrGrad, setAcrSemnDrGrad] = useState("");
-  const [acrSemnDrNume, setAcrSemnDrNume] = useState("");
   const [canInstall, setCanInstall] = useState(false);
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [emailChange, setEmailChange] = useState("");
@@ -196,15 +191,6 @@ export default function SetariStructuraPage() {
         setSemnatarIndex(typeof d.semnatarIndex === "number" ? d.semnatarIndex : 0);
         setPurtatori(Array.isArray(d.purtatori) ? d.purtatori : []);
         setPurtatorIndex(typeof d.purtatorIndex === "number" ? d.purtatorIndex : 0);
-
-        const st = d.acreditareSemnatarStanga || {};
-        const dr = d.acreditareSemnatarDreapta || {};
-        setAcrSemnStFunctia(st.functia || "");
-        setAcrSemnStGrad(st.grad || "");
-        setAcrSemnStNume(st.nume || "");
-        setAcrSemnDrFunctia(dr.functia || "");
-        setAcrSemnDrGrad(dr.grad || "");
-        setAcrSemnDrNume(dr.nume || "");
       }
       // dacă nu există headerLines salvate, precompletăm automat în funcție de structuraId
       setTimeout(() => {
@@ -334,16 +320,6 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
         semnatarIndex,
         purtatori,
         purtatorIndex,
-        acreditareSemnatarStanga: {
-          functia: acrSemnStFunctia,
-          grad: acrSemnStGrad,
-          nume: acrSemnStNume,
-        },
-        acreditareSemnatarDreapta: {
-          functia: acrSemnDrFunctia,
-          grad: acrSemnDrGrad,
-          nume: acrSemnDrNume,
-        },
         lastUpdated: serverTimestamp(),
       }, { merge: true });
       setMessage("Salvat");
@@ -716,83 +692,17 @@ Informații esențiale despre comportamentul adecvat înainte, în timpul și du
                 </div>
               </div>
 
-              <div className="mt-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Acreditare (PDF) — semnături</label>
-                <div className="text-sm text-gray-500 mb-4">
-                  Aceste câmpuri sunt folosite în certificatul „ACREDITARE”. Pentru „Funcția” poți folosi mai multe linii (Enter).
+              <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+                <div className="text-sm font-medium text-gray-900 mb-1">Acreditare (PDF) — semnături</div>
+                <div className="text-sm text-gray-600 mb-3">
+                  Numele, funcțiile și imaginile de semnătură pentru certificatul de acreditare se gestionează într-un singur loc (acces admin / salvare owner).
                 </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-                    <div className="text-sm font-semibold text-gray-900 mb-3">Semnatar stânga</div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Funcția (poate avea mai multe linii)</label>
-                        <textarea
-                          className="w-full min-h-[84px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                          placeholder={"Ex:\nINSPECTOR ȘEF\nal Inspectoratului..."}
-                          value={acrSemnStFunctia}
-                          onChange={(e) => setAcrSemnStFunctia(e.target.value)}
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Grad</label>
-                          <input
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                            placeholder="Ex: Colonel"
-                            value={acrSemnStGrad}
-                            onChange={(e) => setAcrSemnStGrad(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Nume</label>
-                          <input
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                            placeholder="Ex: FLOREA Cristian Claudiu"
-                            value={acrSemnStNume}
-                            onChange={(e) => setAcrSemnStNume(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-                    <div className="text-sm font-semibold text-gray-900 mb-3">Semnatar dreapta</div>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-xs font-medium text-gray-600 mb-1">Funcția (poate avea mai multe linii)</label>
-                        <textarea
-                          className="w-full min-h-[84px] border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                          placeholder={"Ex:\nOfițer relații publice"}
-                          value={acrSemnDrFunctia}
-                          onChange={(e) => setAcrSemnDrFunctia(e.target.value)}
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Grad</label>
-                          <input
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                            placeholder="Ex: Locotenent"
-                            value={acrSemnDrGrad}
-                            onChange={(e) => setAcrSemnDrGrad(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">Nume</label>
-                          <input
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-colors"
-                            placeholder="Ex: POPESCU Radu-Adrian"
-                            value={acrSemnDrNume}
-                            onChange={(e) => setAcrSemnDrNume(e.target.value)}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <Link
+                  href="/secret-settings"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
+                >
+                  Deschide setările de semnături PDF
+                </Link>
               </div>
 
               {/* Save Button */}

@@ -28,7 +28,8 @@ import {
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import type { CerereAcreditare, CerereStatus } from "@/lib/acreditari";
-import { normalizeLegitimatieAttachments } from "@/lib/acreditari";
+import { normalizeLegitimatieAttachments, resolveAcreditareFieldsForStructura } from "@/lib/acreditari";
+import { acrLog, acrLogError } from "@/lib/acreditareClientLog";
 
 type CerereRow = {
   id: string;
@@ -295,9 +296,14 @@ export default function CereriAcreditareAdminPage() {
     }
   }
 
-  async function callAction(cerereId: string, action: "approve" | "reject") {
+  async function callAction(cerereId: string, action: "approve" | "reject", opts?: { allowSameYearDuplicate?: boolean }) {
     if (actingId) return;
     setActingId(cerereId);
+    acrLog("cereri", "action_start", {
+      cerereId,
+      action,
+      allowSameYearDuplicate: opts?.allowSameYearDuplicate === true,
+    });
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) {
@@ -310,16 +316,57 @@ export default function CereriAcreditareAdminPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ judetId, structuraId }),
+        body: JSON.stringify({
+          judetId,
+          structuraId,
+          allowSameYearDuplicate: opts?.allowSameYearDuplicate === true,
+        }),
       });
       const data = await res.json().catch(() => ({}));
+      if (
+        action === "approve" &&
+        res.status === 409 &&
+        data?.code === "same_year_duplicate" &&
+        !opts?.allowSameYearDuplicate
+      ) {
+        const year = data?.year || new Date().getFullYear();
+        const nr = String(data?.existingNumar || "").trim();
+        const okForce = confirm(
+          [
+            `Jurnalistul are deja o acreditare emisă în ${year}${nr ? ` (nr. ${nr})` : ""}.`,
+            "",
+            "OK = emite totuși o a doua acreditare pentru același an.",
+            "Cancel = anulează aprobarea.",
+          ].join("\n")
+        );
+        if (!okForce) {
+          acrLog("cereri", "same_year_cancelled", { cerereId, requestId: data?.requestId || null });
+          return;
+        }
+        setActingId(null);
+        await callAction(cerereId, "approve", { allowSameYearDuplicate: true });
+        return;
+      }
       if (!res.ok) throw new Error(data?.error || "action_failed");
-      if (action === "approve" && data?.email?.sent) {
+      acrLog("cereri", "action_ok", {
+        cerereId,
+        action,
+        requestId: data?.requestId || null,
+        alreadyApproved: Boolean(data?.alreadyApproved),
+        alreadyRejected: Boolean(data?.alreadyRejected),
+        emailSent: Boolean(data?.email?.sent),
+      });
+      if (action === "approve" && data?.alreadyApproved) {
+        showToast("Cererea era deja aprobată. Nu s-a emis o acreditare duplicată.", "info");
+      } else if (action === "approve" && data?.email?.sent) {
         const to = String(data?.email?.to || "").trim();
         showToast(`Email transmis cu succes către ${to || "jurnalist"}.`, "success");
+      } else if (action === "reject" && data?.alreadyRejected) {
+        showToast("Cererea era deja respinsă.", "info");
       }
       await load();
     } catch (e: any) {
+      acrLogError("cereri", "action_failed", e, { cerereId, action });
       alert(typeof e?.message === "string" ? e.message : "Acțiune eșuată.");
     } finally {
       setActingId(null);
@@ -329,6 +376,7 @@ export default function CereriAcreditareAdminPage() {
   async function resendApprovalEmail(cerereId: string) {
     const key = `resend:${cerereId}`;
     setDownloadingKey(key);
+    acrLog("cereri", "resend_start", { cerereId });
     try {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Trebuie să fii autentificat.");
@@ -338,9 +386,11 @@ export default function CereriAcreditareAdminPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "resend_failed");
+      acrLog("cereri", "resend_ok", { cerereId, requestId: data?.requestId || null });
       const to = String(data?.email?.to || "").trim();
       showToast(`Email retransmis cu succes către ${to || "jurnalist"}.`, "success");
     } catch (e: any) {
+      acrLogError("cereri", "resend_failed", e, { cerereId });
       showToast(typeof e?.message === "string" ? e.message : "Nu am putut retrimite emailul.", "error");
     } finally {
       setDownloadingKey(null);
@@ -457,8 +507,7 @@ export default function CereriAcreditareAdminPage() {
             const nrLegit = String(r.data?.jurnalist?.legitimatie?.numar || "");
             const institutie = String(r.data?.media?.denumire || "");
             const emailJ = String((r.data as any)?.jurnalist?.email || "").trim();
-            const nrAcreditare = String((r.data as any)?.acreditare?.numar || "").trim();
-            const dataAcreditare = String((r.data as any)?.acreditare?.data || "").trim();
+            const { numar: nrAcreditare, data: dataAcreditare } = resolveAcreditareFieldsForStructura(r.data, currentKey);
             const createdAt = tsToLabel((r.data?.submittedAt as any) || (r.data?.createdAt as any));
             const legits = normalizeLegitimatieAttachments(r.data.attachments || null);
             const sigPath = (r.data.attachments as any)?.semnatura?.path as string | undefined;

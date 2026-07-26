@@ -6,27 +6,45 @@ import { requireBearerToken, lookupUserFromIdToken } from "@/lib/server/auth";
 import { firestoreGetDocAsJson } from "@/lib/server/firestoreRest";
 import { CerereAcreditarePdfDoc } from "@/app/(admin-irp)/components/pdf/CerereAcreditarePdf";
 import { buildStructuraKey, type CerereAcreditare } from "@/lib/acreditari";
+import {
+  createAcreditareLogger,
+  errorLogFields,
+  newAcreditareRequestId,
+} from "@/lib/server/acreditareLogger";
 
 export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const requestId = newAcreditareRequestId("acr_cerere_pdf");
+  let logger = createAcreditareLogger({ area: "cerere-pdf", requestId });
   try {
     const { id } = await ctx.params;
+    logger.info("start", { cerereId: id });
     const idToken = await requireBearerToken(req);
     const authUser = await lookupUserFromIdToken(idToken);
 
-    // Read user profile to determine tenant (and rely on Firestore rules for auth)
     const profile = await firestoreGetDocAsJson<{ judetId?: string; structuraId?: string }>(`users/${authUser.uid}`, idToken);
     const judetId = String(profile?.judetId || "").toUpperCase();
     const structuraId = String(profile?.structuraId || "").toUpperCase();
-    if (!judetId || !structuraId) return NextResponse.json({ error: "Profil incomplet (judetId/structuraId)." }, { status: 403 });
+    if (!judetId || !structuraId) {
+      logger.warn("forbidden_incomplete_profile");
+      return NextResponse.json({ error: "Profil incomplet (judetId/structuraId).", requestId }, { status: 403 });
+    }
+    logger = createAcreditareLogger({
+      area: "cerere-pdf",
+      requestId,
+      tenant: { judetId, structuraId, uid: authUser.uid },
+    });
     const currentKey = buildStructuraKey(judetId, structuraId);
 
     const cerere = await firestoreGetDocAsJson<CerereAcreditare>(`CereriAcreditare/${id}`, idToken);
-    if (!cerere) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!cerere) {
+      logger.warn("not_found", { cerereId: id });
+      return NextResponse.json({ error: "Not found", requestId }, { status: 404 });
+    }
     if (!Array.isArray((cerere as any).structuraKeys) || !(cerere as any).structuraKeys.includes(currentKey)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      logger.warn("forbidden_wrong_structure", { cerereId: id });
+      return NextResponse.json({ error: "Forbidden", requestId }, { status: 403 });
     }
 
-    // IMPORTANT: on Vercel, `origin` header can be missing; never fall back to localhost.
     const origin = new URL(req.url).origin;
     const submittedAt = (cerere as any).submittedAt || (cerere as any).createdAt;
 
@@ -48,18 +66,19 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     );
 
     const blob = await pdf(DocPdf).toBlob();
+    logger.info("ok", { cerereId: id, bytes: blob.size });
     return new NextResponse(blob, {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="cerere_${String((cerere as any)?.jurnalist?.numePrenume || id).replace(/\W+/g, "_")}.pdf"`,
+        "X-Request-Id": requestId,
       },
     });
   } catch (e: any) {
     const msg = typeof e?.message === "string" ? e.message : "error";
-    if (msg === "missing_auth") return NextResponse.json({ error: "Missing Authorization" }, { status: 401 });
-    if (msg === "invalid_token") return NextResponse.json({ error: "Invalid token" }, { status: 401 });
-    return NextResponse.json({ error: "PDF generation failed" }, { status: 500 });
+    logger.error("failed", errorLogFields(e));
+    if (msg === "missing_auth") return NextResponse.json({ error: "Missing Authorization", requestId }, { status: 401 });
+    if (msg === "invalid_token") return NextResponse.json({ error: "Invalid token", requestId }, { status: 401 });
+    return NextResponse.json({ error: "PDF generation failed", requestId }, { status: 500 });
   }
 }
-
-
