@@ -1,98 +1,106 @@
 import { NextResponse } from "next/server";
 import React from "react";
 import { pdf, Document } from "@react-pdf/renderer";
-import { doc, getDoc } from "firebase/firestore";
-import { initFirebase } from "@/lib/firebase";
-import { getTenantContext } from "@/lib/tenant";
-import { JUDETE } from "@/lib/judete";
+
 import { createBicpPage } from "@/app/(admin-irp)/components/pdf/BicpPdf";
+import { JUDETE } from "@/lib/judete";
 import { buildPurtatorSignatureUrl, normalizePurtatorSignatureKey } from "@/lib/pdf/purtatorSignatures";
+import { BULK_PDF_MAX_IDS } from "@/lib/bicp/bulkLimits";
+import { requireBearerToken } from "@/lib/server/auth";
+import { firestoreGetDocAsJson } from "@/lib/server/firestoreRest";
+import { getStructuraSettings } from "@/lib/settings/getSettings";
+
+export const runtime = "nodejs";
+
+function toDDMMYYYYDots(str?: string): string {
+  const s = String(str || "").trim();
+  if (!s) return "";
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  const m2 = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
+  if (m2) return `${m2[1]}.${m2[2]}.${m2[3]}`;
+  return s.replace(/-/g, ".").replace(/\//g, ".");
+}
 
 export async function POST(req: Request) {
   try {
-    const { ids, variant } = (await req.json()) as { ids: string[]; variant?: "signed" | "public" };
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    const idToken = await requireBearerToken(req);
+    const origin = new URL(req.url).origin;
+    const { tenant, settings, structura } = await getStructuraSettings(idToken, origin);
+    const judetId = tenant.judetId;
+    const structuraId = tenant.structuraId;
+
+    const body = (await req.json().catch(() => ({}))) as {
+      ids?: string[];
+      variant?: "signed" | "public";
+    };
+    const ids = Array.isArray(body.ids)
+      ? Array.from(new Set(body.ids.map((x) => String(x || "").trim()).filter(Boolean)))
+      : [];
+    if (!ids.length) {
       return NextResponse.json({ error: "No ids provided" }, { status: 400 });
     }
-
-    const v: "signed" | "public" = variant === "public" ? "public" : "signed";
-    const { db } = initFirebase();
-
-    const pages: React.ReactNode[] = [];
-    let meta: any = null;
-    try {
-      const { judetId, structuraId } = getTenantContext();
-      const ref = doc(db, `Judete/${judetId}/Structuri/${structuraId}/Settings/general`);
-      const s = await getDoc(ref);
-      meta = s.exists() ? s.data() : null;
-    } catch {}
-
-    const origin = new URL(req.url).origin;
-    const logoAbs = meta?.logoUrlPublic ? new URL(String(meta.logoUrlPublic), origin).toString() : undefined;
-    const structuraAdminCache = new Map<string, boolean>();
-    async function resolveStructuraIsAdmin(judetId?: string, structuraId?: string) {
-      if (!judetId || !structuraId) return false;
-      const cacheKey = `${judetId}::${structuraId}`;
-      if (structuraAdminCache.has(cacheKey)) return structuraAdminCache.get(cacheKey)!;
-      try {
-        const structuraRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}`);
-        const structuraSnap = await getDoc(structuraRef);
-        const isAdmin = structuraSnap.exists() && (structuraSnap.data() as any)?.isAdmin === true;
-        structuraAdminCache.set(cacheKey, isAdmin);
-        return isAdmin;
-      } catch {
-        structuraAdminCache.set(cacheKey, false);
-        return false;
-      }
+    if (ids.length > BULK_PDF_MAX_IDS) {
+      return NextResponse.json(
+        {
+          error: `Poți tipări maxim ${BULK_PDF_MAX_IDS} documente odată. Ai selectat ${ids.length}.`,
+          code: "bulk_too_many",
+          max: BULK_PDF_MAX_IDS,
+          requested: ids.length,
+        },
+        { status: 400 }
+      );
     }
 
+    const v: "signed" | "public" = body.variant === "public" ? "public" : "signed";
+    const meta = settings || (await firestoreGetDocAsJson<any>(
+      `Judete/${judetId}/Structuri/${structuraId}/Settings/general`,
+      idToken
+    ).catch(() => null));
+    const logoAbs = meta?.logoUrlPublic
+      ? new URL(String(meta.logoUrlPublic), origin).toString()
+      : undefined;
+    const structuraIsAdmin = structura?.isAdmin === true;
+    const judName = JUDETE.find((j) => j.id === judetId)?.name || judetId;
+    let structureDisplay = `${structuraId} ${judName}`;
+    if (String(structuraId || "").toUpperCase().includes("IGSU")) {
+      structureDisplay = String(structuraId || "");
+    }
+
+    const pages: React.ReactNode[] = [];
+    const missing: string[] = [];
+
     for (const id of ids) {
-      let snap = await (async () => {
-        try {
-          const { judetId, structuraId } = getTenantContext();
-          const ref = doc(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate", id);
-          const s = await getDoc(ref);
-          if (s.exists()) return s;
-        } catch {}
-        return await getDoc(doc(db, "Comunicate", id));
-      })();
-      if (!snap.exists()) continue;
-      const d = snap.data() as any;
-      const content = String(d?.comunicat || "");
-      // For bulk, always render signed variant logic below; chosen number uses registry number when v === signed
-      const chosenNumar = (v === "signed" && String(d?.numarRegistru || "").trim())
-        ? String(d.numarRegistru).trim()
-        : String(d?.numarComunicat ?? d?.numar ?? "");
-      // Build structure display per document
-      let effectiveJudetId: string | undefined = d?.judetId;
-      let effectiveStructuraId: string | undefined = d?.structuraId;
-      if (!(effectiveJudetId && effectiveStructuraId)) {
-        try {
-          const parts = (snap as any).ref?.path?.split("/") || [];
-          const jIdx = parts.indexOf("Judete");
-          const sIdx = parts.indexOf("Structuri");
-          if (jIdx >= 0 && sIdx >= 0 && parts[jIdx + 1] && parts[sIdx + 1]) {
-            effectiveJudetId = effectiveJudetId || parts[jIdx + 1];
-            effectiveStructuraId = effectiveStructuraId || parts[sIdx + 1];
-          }
-        } catch {}
+      let d =
+        (await firestoreGetDocAsJson<any>(
+          `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${id}`,
+          idToken
+        ).catch(() => null)) ||
+        (await firestoreGetDocAsJson<any>(`Comunicate/${id}`, idToken).catch(() => null));
+
+      if (!d) {
+        missing.push(id);
+        continue;
       }
-      const judName = JUDETE.find((j) => j.id === effectiveJudetId)?.name || (effectiveJudetId || "");
-      const structureDisplay = (effectiveStructuraId && judName) ? `${effectiveStructuraId} ${judName}` : undefined;
-      const structuraIsAdmin = await resolveStructuraIsAdmin(effectiveJudetId, effectiveStructuraId);
+
+      // Guard: if legacy root doc carries another tenant, skip rather than leaking.
+      const docJudet = String(d?.judetId || "").toUpperCase();
+      const docStruct = String(d?.structuraId || "").toUpperCase();
+      if (docJudet && docStruct && (docJudet !== judetId || docStruct !== structuraId)) {
+        missing.push(id);
+        continue;
+      }
+
+      const content = String(d?.comunicat || "");
+      const chosenNumar =
+        v === "signed" && String(d?.numarRegistru || "").trim()
+          ? String(d.numarRegistru).trim()
+          : String(d?.numarComunicat ?? d?.numar ?? "");
+
       const purtatorSemnaturaUrl =
         v === "signed" && structuraIsAdmin
           ? buildPurtatorSignatureUrl(normalizePurtatorSignatureKey(d?.purtatorSemnaturaKey), origin)
           : undefined;
-      function toDDMMYYYYDots(str?: string): string {
-        const s = String(str || "").trim();
-        if (!s) return "";
-        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (m) return `${m[3]}.${m[2]}.${m[1]}`;
-        const m2 = s.match(/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/);
-        if (m2) return `${m2[1]}.${m2[2]}.${m2[3]}`;
-        return s.replace(/-/g, ".").replace(/\//g, ".");
-      }
 
       pages.push(
         createBicpPage({
@@ -101,6 +109,7 @@ export async function POST(req: Request) {
             logoUrlPublic: logoAbs,
             secrecyLabel: meta?.secrecyLabel || "NESECRET",
             city: meta?.city,
+            email: meta?.email,
             phone: meta?.phone,
             footerLines: (meta?.footerLines as string[]) || [],
             unitLabel: meta?.unitLabel || "",
@@ -115,7 +124,13 @@ export async function POST(req: Request) {
             tipDocument: d?.nume || d?.tip || "",
             titlu: d?.titlu || "",
             continut: content,
-            semnatar: { pentru: d?.pentru || "", functia: d?.functia || "", grad: d?.grad || "", nume: d?.numeSemnatar || "" },
+            continutHtml: String(d?.comunicatHtml || ""),
+            semnatar: {
+              pentru: d?.pentru || "",
+              functia: d?.functia || "",
+              grad: d?.grad || "",
+              nume: d?.numeSemnatar || "",
+            },
           },
           variant: v,
         })
@@ -123,7 +138,10 @@ export async function POST(req: Request) {
     }
 
     if (!pages.length) {
-      return NextResponse.json({ error: "No valid documents" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Niciun document valid pentru tipărire.", missing, requested: ids.length },
+        { status: 404 }
+      );
     }
 
     const DocEl = <Document>{pages}</Document>;
@@ -131,11 +149,21 @@ export async function POST(req: Request) {
     return new NextResponse(blob, {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `inline; filename="comunicate_bulk.pdf"`,
+        "Content-Disposition": `inline; filename="comunicate_bulk_${v}.pdf"`,
+        "X-Bulk-Requested": String(ids.length),
+        "X-Bulk-Included": String(pages.length),
+        "X-Bulk-Missing": String(missing.length),
+        "X-Bulk-Missing-Ids": missing.slice(0, 20).join(","),
       },
     });
-  } catch (e) {
+  } catch (e: any) {
+    const msg = typeof e?.message === "string" ? e.message : "error";
+    if (msg === "missing_auth") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (msg === "invalid_token") return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    if (msg === "missing_tenant") {
+      return NextResponse.json({ error: "Profil incomplet (judetId/structuraId)." }, { status: 403 });
+    }
+    console.error("[comunicate][bulk-pdf] failed", msg);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
-

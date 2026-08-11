@@ -26,6 +26,7 @@ import {
   surface,
 } from "./constants/ui";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
+import { BULK_PDF_MAX_IDS, BULK_ZIP_CONCURRENCY } from "@/lib/bicp/bulkLimits";
 import { SendPublicPdfEmailDialog } from "./SendPublicPdfEmailDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Filters } from "./hooks/useBicpData";
@@ -85,6 +86,12 @@ export default function ListaBicpPage() {
   const [isPrinting, setIsPrinting] = useState(false);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [downloadingZipType, setDownloadingZipType] = useState<"signed" | "public" | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{
+    kind: "print" | "zip";
+    variant: "signed" | "public";
+    done: number;
+    total: number;
+  } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; ids: string[]; isBulk: boolean }>({ show: false, ids: [], isBulk: false });
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [sendDialogDoc, setSendDialogDoc] = useState<Bicp | null>(null);
@@ -154,176 +161,201 @@ export default function ListaBicpPage() {
   }, [router, searchParams]);
 
   async function downloadBulkPdfsAsZip(variant: "signed" | "public") {
-    if (!allSelectedIds.length || downloadingZipType) return;
-    
+    if (!allSelectedIds.length || downloadingZipType || isPrinting) return;
+    const n = allSelectedIds.length;
+    const label = variant === "signed" ? "cu semnături" : "fără semnături";
+    if (
+      !window.confirm(
+        `Descarci arhivă ZIP cu ${n} PDF-uri ${label}?\n\nPoate dura câteva momente pentru volume mari.`
+      )
+    ) {
+      return;
+    }
+
+    const { auth } = initFirebase();
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) {
+      showToast("Trebuie să fii autentificat.", "error");
+      return;
+    }
+
     setDownloadingZipType(variant);
-    showToast(
-      variant === "signed"
-        ? "Se pregătește arhiva ZIP cu PDF-urile semnate..."
-        : "Se pregătește arhiva ZIP cu PDF-urile fără semnături...",
-      "info",
-      2800
-    );
+    setBulkProgress({ kind: "zip", variant, done: 0, total: n });
+    showToast(`Se pregătește ZIP-ul (${n} documente ${label})...`, "info", 4000);
+
     try {
-      // Dynamically import JSZip
-      const JSZip = (await import('jszip')).default;
+      const JSZip = (await import("jszip")).default;
       const zip = new JSZip();
-    const { judetId, structuraId } = getTenantContext();
-      
-      // Get today's date for filename
+      const { judetId, structuraId } = getTenantContext();
       const today = new Date();
-      const dateStr = `${today.getDate().toString().padStart(2, '0')}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getFullYear()}`;
-      
-      // Helper function to generate filename same as server
+      const dateStr = `${today.getDate().toString().padStart(2, "0")}-${(today.getMonth() + 1)
+        .toString()
+        .padStart(2, "0")}-${today.getFullYear()}`;
+
       const slugifyFilename = (input: string): string => {
         const map: Record<string, string> = {
-          "ă": "a", "â": "a", "î": "i", "ș": "s", "ş": "s", "ț": "t", "ţ": "t",
-          "Ă": "A", "Â": "A", "Î": "I", "Ș": "S", "Ş": "S", "Ț": "T", "Ţ": "T",
+          ă: "a", â: "a", î: "i", ș: "s", ş: "s", ț: "t", ţ: "t",
+          Ă: "A", Â: "A", Î: "I", Ș: "S", Ş: "S", Ț: "T", Ţ: "T",
         };
-        const normalized = Array.from(input).map((ch) => map[ch] || ch).join("");
-        return normalized
-          .replace(/[^a-zA-Z0-9._\-\s]+/g, " ")
-          .replace(/\s{2,}/g, " ")
-          .trim()
-          .slice(0, 150) || "Document";
+        const normalized = Array.from(input)
+          .map((ch) => map[ch] || ch)
+          .join("");
+        return (
+          normalized
+            .replace(/[^a-zA-Z0-9._\-\s]+/g, " ")
+            .replace(/\s{2,}/g, " ")
+            .trim()
+            .slice(0, 150) || "Document"
+        );
       };
-      
-      // Download all PDFs and add to zip
-      let successCount = 0;
-      for (const id of allSelectedIds) {
-        try {
-      const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
-          const response = await fetch(url);
-          if (!response.ok) throw new Error(`Failed to fetch ${id}`);
-          
-          const blob = await response.blob();
-          
-          // Extract filename from Content-Disposition header (same as download)
-          const contentDisp = response.headers.get('Content-Disposition');
-          let filename = `document_${id}.pdf`;
-          
-          if (contentDisp) {
-            const filenameMatch = contentDisp.match(/filename="?([^"]+)"?/);
-            if (filenameMatch && filenameMatch[1]) {
-              filename = filenameMatch[1];
-            }
-          } else {
-            // Fallback: build filename like server does
-            const docInfo = items.find(item => item.id === id);
-            if (docInfo) {
-              const numar = String(docInfo.numarComunicat || docInfo.numar || "");
-              const tip = String(docInfo.nume || docInfo.tip || "");
-              const titlu = String(docInfo.titlu || "");
-              const baseFilename = slugifyFilename([numar, tip, titlu].filter(Boolean).join("-"));
-              filename = `${baseFilename}.pdf`;
-            }
-          }
-          
-          // If variant is public, add suffix to distinguish in ZIP
-          if (variant === "public") {
-            filename = filename.replace(/\.pdf$/i, "_fara_semnaturi.pdf");
-          }
-          
-          zip.file(filename, blob);
-          successCount++;
-        } catch (err) {
-          console.error(`Failed to download PDF ${id}:`, err);
+
+      const usedNames = new Set<string>();
+      const uniqueName = (name: string) => {
+        if (!usedNames.has(name)) {
+          usedNames.add(name);
+          return name;
         }
+        const base = name.replace(/\.pdf$/i, "");
+        let i = 2;
+        let next = `${base}_${i}.pdf`;
+        while (usedNames.has(next)) {
+          i += 1;
+          next = `${base}_${i}.pdf`;
+        }
+        usedNames.add(next);
+        return next;
+      };
+
+      let successCount = 0;
+      let failCount = 0;
+      let completed = 0;
+
+      const fetchOne = async (id: string) => {
+        const url = `/api/comunicate/${id}/pdf?variant=${variant === "public" ? "public" : "signed"}&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) throw new Error(`Failed to fetch ${id}`);
+        const blob = await response.blob();
+        const contentDisp = response.headers.get("Content-Disposition");
+        let filename = `document_${id}.pdf`;
+        if (contentDisp) {
+          const filenameMatch = contentDisp.match(/filename="?([^"]+)"?/i);
+          if (filenameMatch?.[1]) filename = filenameMatch[1];
+        } else {
+          const docInfo = items.find((item) => item.id === id);
+          if (docInfo) {
+            const numar = String(docInfo.numarComunicat || docInfo.numar || "");
+            const tip = String(docInfo.nume || docInfo.tip || "");
+            const titlu = String(docInfo.titlu || "");
+            filename = `${slugifyFilename([numar, tip, titlu].filter(Boolean).join("-"))}.pdf`;
+          }
+        }
+        if (variant === "public") {
+          filename = filename.replace(/\.pdf$/i, "_fara_semnaturi.pdf");
+        }
+        zip.file(uniqueName(filename), blob);
+        successCount += 1;
+      };
+
+      for (let i = 0; i < allSelectedIds.length; i += BULK_ZIP_CONCURRENCY) {
+        const chunk = allSelectedIds.slice(i, i + BULK_ZIP_CONCURRENCY);
+        const results = await Promise.allSettled(chunk.map((id) => fetchOne(id)));
+        for (const r of results) {
+          if (r.status === "rejected") {
+            failCount += 1;
+            console.error("Failed to download PDF for ZIP:", r.reason);
+          }
+          completed += 1;
+        }
+        setBulkProgress({ kind: "zip", variant, done: completed, total: n });
       }
-      
+
       if (successCount === 0) {
         showToast("Nu s-a putut descărca niciun PDF.", "error");
         return;
       }
-      
-      // Generate zip file
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      
-      // Create download link
+
+      const zipBlob = await zip.generateAsync({ type: "blob" });
       const downloadUrl = URL.createObjectURL(zipBlob);
-      const link = document.createElement('a');
+      const link = document.createElement("a");
       link.href = downloadUrl;
-      link.download = `Documente_${variant === 'signed' ? 'Semnate' : 'Fara_Semnaturi'}_${dateStr}.zip`;
+      link.download = `Documente_${variant === "signed" ? "Semnate" : "Fara_Semnaturi"}_${dateStr}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(downloadUrl);
-      
-      showToast(`Au fost descărcate ${successCount} din ${allSelectedIds.length} documente în arhiva ZIP.`, "success", 4500);
+
+      if (failCount > 0) {
+        showToast(
+          `ZIP descărcat: ${successCount} din ${n} documente (${failCount} eșuate).`,
+          "info",
+          5500
+        );
+      } else {
+        showToast(`ZIP descărcat: ${successCount} documente.`, "success", 4000);
+      }
     } catch (err) {
       console.error("Error creating ZIP:", err);
       showToast("Eroare la crearea arhivei ZIP.", "error");
     } finally {
       setDownloadingZipType(null);
+      setBulkProgress(null);
     }
-  }
-
-  async function bulkPrintUrls(urls: string[]) {
-    if (!urls.length) return;
-    setIsPrinting(true);
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.right = "0";
-    iframe.style.bottom = "0";
-    iframe.style.width = "0";
-    iframe.style.height = "0";
-    iframe.style.opacity = "0";
-    iframe.style.pointerEvents = "none";
-    document.body.appendChild(iframe);
-
-    for (const rawUrl of urls) {
-      const url = rawUrl.includes("?") ? `${rawUrl}&disposition=inline` : `${rawUrl}?disposition=inline`;
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise<void>((resolve) => {
-        let done = false;
-        const finish = () => {
-          if (done) return;
-          done = true;
-          try { iframe.onload = null; } catch {}
-          resolve();
-        };
-        iframe.onload = () => {
-          try {
-            const win = iframe.contentWindow;
-            if (!win) return finish();
-            const onAfterPrint = () => {
-              try { win.removeEventListener("afterprint", onAfterPrint as any); } catch {}
-              finish();
-            };
-            try { win.addEventListener("afterprint", onAfterPrint as any); } catch {}
-            // Așteaptă o clipă ca PDF-ul să se așeze înainte de print
-            setTimeout(() => {
-              try { win.focus(); } catch {}
-              try { win.print(); } catch { onAfterPrint(); }
-              // Fallback dacă afterprint nu se declanșează
-              setTimeout(onAfterPrint, 4000);
-            }, 350);
-          } catch {
-            finish();
-          }
-        };
-        iframe.src = url;
-      });
-      // mică pauză între printuri
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 200));
-    }
-
-    try { document.body.removeChild(iframe); } catch {}
-    setIsPrinting(false);
   }
 
   async function startBulkPrint(variant: "signed" | "public") {
-    if (!allSelectedIds.length || isPrinting) return;
+    if (!allSelectedIds.length || isPrinting || downloadingZipType) return;
+    const n = allSelectedIds.length;
+    if (n > BULK_PDF_MAX_IDS) {
+      showToast(
+        `Poți tipări maxim ${BULK_PDF_MAX_IDS} documente odată. Ai selectat ${n}. Deselectează câteva sau folosește ZIP.`,
+        "error",
+        6000
+      );
+      return;
+    }
+
+    const label = variant === "signed" ? "cu semnături" : "fără semnături";
+    if (
+      !window.confirm(
+        `Tipărești ${n} documente ${label} într-un singur PDF combinat?\n\nSe va deschide dialogul de tipărire al browserului.`
+      )
+    ) {
+      return;
+    }
+
+    const { auth } = initFirebase();
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) {
+      showToast("Trebuie să fii autentificat.", "error");
+      return;
+    }
+
     setIsPrinting(true);
-    showToast("Se pregătește PDF-ul combinat pentru tipărire...", "info", 2800);
+    setBulkProgress({ kind: "print", variant, done: 0, total: n });
+    showToast(`Se generează PDF-ul combinat (${n} documente ${label})...`, "info", 5000);
+
     try {
       const res = await fetch(`/api/comunicate/bulk-pdf`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ ids: allSelectedIds, variant }),
       });
-      if (!res.ok) throw new Error("bulk pdf failed");
+
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => null)) as { error?: string } | null;
+        showToast(errBody?.error || "Eroare la generarea PDF-ului combinat.", "error", 5500);
+        return;
+      }
+
+      const included = Number(res.headers.get("X-Bulk-Included") || "0");
+      const missing = Number(res.headers.get("X-Bulk-Missing") || "0");
+      setBulkProgress({ kind: "print", variant, done: included || n, total: n });
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const iframe = document.createElement("iframe");
@@ -341,33 +373,58 @@ export default function ListaBicpPage() {
       });
       const win = iframe.contentWindow;
       const cleanup = () => {
-        try { document.body.removeChild(iframe); } catch {}
-        try { URL.revokeObjectURL(url); } catch {}
+        try {
+          document.body.removeChild(iframe);
+        } catch {}
+        try {
+          URL.revokeObjectURL(url);
+        } catch {}
       };
       const afterPrintPromise = new Promise<void>((resolve) => {
         const handler = () => {
-          try { win?.removeEventListener("afterprint", handler as any); } catch {}
-          try { window.removeEventListener("focus", onFocus, { capture: true } as any); } catch {}
+          try {
+            win?.removeEventListener("afterprint", handler as any);
+          } catch {}
+          try {
+            window.removeEventListener("focus", onFocus, { capture: true } as any);
+          } catch {}
           resolve();
         };
         const onFocus = () => {
-          // După închiderea dialogului de print, focus revine la fereastră
           handler();
         };
-        try { win?.addEventListener("afterprint", handler as any); } catch {}
-        try { window.addEventListener("focus", onFocus, { once: true, capture: true } as any); } catch {}
-        // Fallback maxim 20s
+        try {
+          win?.addEventListener("afterprint", handler as any);
+        } catch {}
+        try {
+          window.addEventListener("focus", onFocus, { once: true, capture: true } as any);
+        } catch {}
         setTimeout(handler, 20000);
       });
-      try { win?.focus(); } catch {}
-      try { win?.print(); } catch {}
+      try {
+        win?.focus();
+      } catch {}
+      try {
+        win?.print();
+      } catch {}
       await afterPrintPromise;
       cleanup();
-      showToast("PDF-ul combinat a fost trimis către dialogul de tipărire.", "success");
-    } catch (e) {
+
+      if (missing > 0) {
+        showToast(
+          `Tipărire: ${included} din ${n} documente (lipsă: ${missing}).`,
+          "info",
+          5500
+        );
+      } else {
+        showToast(`PDF combinat (${included} documente) trimis la tipărire.`, "success", 4000);
+      }
+    } catch {
       showToast("Eroare la generarea PDF-ului combinat.", "error");
+    } finally {
+      setIsPrinting(false);
+      setBulkProgress(null);
     }
-    setIsPrinting(false);
   }
 
   async function printSingle(id: string, variant: "signed" | "public" = "signed") {
@@ -565,61 +622,154 @@ export default function ListaBicpPage() {
                 </div>
 
                 {allSelectedIds.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleSelectPage(!allPageSelected)}
-                      className={btnSecondary}
-                      title={allPageSelected ? "Deselectează pagina curentă" : "Selectează pagina curentă"}
-                    >
-                      {allPageSelected ? "Deselectează pagina" : "Selectează pagina"}
-                    </button>
-                    <span className={chipBase}>
-                      Selectate: <span className="font-semibold">{allSelectedIds.length}</span>
+                  <div className="flex flex-col gap-2 w-full">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => setSelected({})}
-                        className="inline-flex items-center justify-center w-5 h-5 rounded hover:bg-[#E5E7EB] text-[#64748B]"
-                        title="Deselectează toate"
-                        aria-label="Deselectează toate"
+                        onClick={() => toggleSelectPage(!allPageSelected)}
+                        className={btnSecondary}
+                        title={allPageSelected ? "Deselectează pagina curentă" : "Selectează pagina curentă"}
                       >
-                        <X size={12} />
+                        {allPageSelected ? "Deselectează pagina" : "Selectează pagina"}
                       </button>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => downloadBulkPdfsAsZip("signed")}
-                      disabled={downloadingZipType !== null}
-                      className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {downloadingZipType === "signed" ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
-                      {downloadingZipType === "signed" ? "Se creează..." : "PDF semnate (ZIP)"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => downloadBulkPdfsAsZip("public")}
-                      disabled={downloadingZipType !== null}
-                      className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {downloadingZipType === "public" ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
-                      {downloadingZipType === "public" ? "Se creează..." : "PDF fără semnături (ZIP)"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => startBulkPrint("signed")}
-                      disabled={isPrinting}
-                      className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      {isPrinting ? <Loader2 className="animate-spin" size={16} /> : <Printer size={16} />}
-                      {isPrinting ? "Se printează..." : "Printează"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => showDeleteConfirmation(allSelectedIds, true)}
-                      className={`${btnBase} bg-[#DC2626] hover:bg-[#B91C1C] text-white border border-[#DC2626]`}
-                    >
-                      <Trash2 size={16} /> Șterge
-                    </button>
+                      <span className={chipBase}>
+                        Selectate: <span className="font-semibold">{allSelectedIds.length}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelected({})}
+                          className="inline-flex items-center justify-center w-5 h-5 rounded hover:bg-[#E5E7EB] text-[#64748B]"
+                          title="Deselectează toate"
+                          aria-label="Deselectează toate"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startBulkPrint("signed")}
+                        disabled={
+                          isPrinting ||
+                          downloadingZipType !== null ||
+                          allSelectedIds.length > BULK_PDF_MAX_IDS
+                        }
+                        className={`${btnPrimaryGreen} disabled:opacity-50 disabled:cursor-not-allowed`}
+                        title={
+                          allSelectedIds.length > BULK_PDF_MAX_IDS
+                            ? `Maxim ${BULK_PDF_MAX_IDS} documente la tipărire combinată — folosește ZIP`
+                            : `Tipărește ${allSelectedIds.length} documente cu semnături într-un PDF combinat`
+                        }
+                      >
+                        {isPrinting && bulkProgress?.variant === "signed" ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : (
+                          <Printer size={16} />
+                        )}
+                        {isPrinting && bulkProgress?.kind === "print" && bulkProgress.variant === "signed"
+                          ? "Se generează..."
+                          : `Printează ${allSelectedIds.length} cu semnături`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startBulkPrint("public")}
+                        disabled={
+                          isPrinting ||
+                          downloadingZipType !== null ||
+                          allSelectedIds.length > BULK_PDF_MAX_IDS
+                        }
+                        className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                        title={
+                          allSelectedIds.length > BULK_PDF_MAX_IDS
+                            ? `Maxim ${BULK_PDF_MAX_IDS} documente la tipărire combinată — folosește ZIP`
+                            : `Tipărește ${allSelectedIds.length} documente fără semnături într-un PDF combinat`
+                        }
+                      >
+                        {isPrinting && bulkProgress?.variant === "public" ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : (
+                          <Printer size={16} />
+                        )}
+                        {isPrinting && bulkProgress?.kind === "print" && bulkProgress.variant === "public"
+                          ? "Se generează..."
+                          : `Printează ${allSelectedIds.length} fără semnături`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadBulkPdfsAsZip("signed")}
+                        disabled={downloadingZipType !== null || isPrinting}
+                        className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {downloadingZipType === "signed" ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : (
+                          <Download size={16} />
+                        )}
+                        {downloadingZipType === "signed"
+                          ? bulkProgress
+                            ? `ZIP ${bulkProgress.done}/${bulkProgress.total}...`
+                            : "Se creează..."
+                          : `ZIP semnate (${allSelectedIds.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => downloadBulkPdfsAsZip("public")}
+                        disabled={downloadingZipType !== null || isPrinting}
+                        className={`${btnSecondary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        {downloadingZipType === "public" ? (
+                          <Loader2 className="animate-spin" size={16} />
+                        ) : (
+                          <Download size={16} />
+                        )}
+                        {downloadingZipType === "public"
+                          ? bulkProgress
+                            ? `ZIP ${bulkProgress.done}/${bulkProgress.total}...`
+                            : "Se creează..."
+                          : `ZIP fără semnături (${allSelectedIds.length})`}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => showDeleteConfirmation(allSelectedIds, true)}
+                        disabled={isPrinting || downloadingZipType !== null}
+                        className={`${btnBase} bg-[#DC2626] hover:bg-[#B91C1C] text-white border border-[#DC2626] disabled:opacity-50 disabled:cursor-not-allowed`}
+                      >
+                        <Trash2 size={16} /> Șterge
+                      </button>
+                    </div>
+                    {bulkProgress && (
+                      <div className="w-full max-w-md">
+                        <div className="flex items-center justify-between text-xs text-[#64748B] mb-1">
+                          <span>
+                            {bulkProgress.kind === "print"
+                              ? "Generare PDF combinat"
+                              : "Descărcare PDF-uri în ZIP"}
+                          </span>
+                          <span>
+                            {bulkProgress.done}/{bulkProgress.total}
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-[#E5E7EB] overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-[#059669] transition-[width] duration-200"
+                            style={{
+                              width: `${Math.min(
+                                100,
+                                Math.round((bulkProgress.done / Math.max(1, bulkProgress.total)) * 100)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                        {bulkProgress.kind === "print" && allSelectedIds.length > BULK_PDF_MAX_IDS && (
+                          <p className="text-xs text-[#B45309] mt-1">
+                            Maxim {BULK_PDF_MAX_IDS} documente la tipărire combinată.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                    {!bulkProgress && allSelectedIds.length > BULK_PDF_MAX_IDS && (
+                      <p className="text-xs text-[#B45309]">
+                        Tipărirea combinată e limitată la {BULK_PDF_MAX_IDS} documente. Folosește ZIP pentru volume mai mari.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
