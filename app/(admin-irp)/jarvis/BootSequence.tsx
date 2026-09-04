@@ -42,6 +42,7 @@ export default function BootSequence({ onDone }: { onDone: () => void }) {
   const [clock, setClock] = useState("");
   const timersRef = useRef<number[]>([]);
   const progressRef = useRef<number | null>(null);
+  const startedRef = useRef(false);
 
   const rain = useMemo(
     () =>
@@ -124,6 +125,12 @@ export default function BootSequence({ onDone }: { onDone: () => void }) {
       // Visual boot still runs if audio is blocked.
     }
   }
+
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    void engage();
+  }, []);
 
   const visibleLogs = LOG_LINES.slice(0, Math.max(0, step - 3));
   const visibleLetters = phase === "idle" ? LETTERS.length : Math.min(LETTERS.length, Math.max(1, step));
