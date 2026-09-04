@@ -5,8 +5,6 @@ import Link from "next/link";
 import { collection, doc, getDocs } from "firebase/firestore";
 import { Copy, Check, Loader2, ArrowLeft } from "lucide-react";
 
-import { listActivityEvents } from "@/app/(admin-irp)/calendar-activitati/services/activityEvents.service";
-import { expandEventsForRange } from "@/app/(admin-irp)/calendar-activitati/utils/recurrence";
 import { listPublicInfoRequests } from "@/app/(admin-irp)/registru-informatii-publice/_core/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { buildReportingExport, type ReportingExport } from "@/lib/jarvis/reportingExport";
@@ -53,26 +51,11 @@ export default function ExportClient() {
       const { db } = initFirebase();
       const { judetId, structuraId } = getTenantContext();
       const tenantRef = doc(db, `Judete/${judetId}/Structuri/${structuraId}`);
-      const rangeStart = new Date(`${periodStart}T00:00:00`);
-      const rangeEnd = new Date(`${periodEnd}T23:59:59.999`);
 
-      const [comunicateSnap, monitorizareSnap, foia, events, raportariSnap, mapeSnap] = await Promise.all([
+      const [comunicateSnap, foia] = await Promise.all([
         getDocs(collection(tenantRef, "Comunicate")),
-        getDocs(collection(tenantRef, "MonitorizarePresa")),
         listPublicInfoRequests(db).catch(() => []),
-        listActivityEvents(db).catch(() => []),
-        getDocs(collection(tenantRef, "Raportari")),
-        getDocs(collection(tenantRef, "MapePresa")),
       ]);
-
-      const occurrences = expandEventsForRange(events, { start: rangeStart, end: rangeEnd }).map((item) => ({
-        id: item.occurrenceId,
-        title: item.title,
-        description: item.description,
-        startDateTime: item.startDateTime,
-        location: item.location,
-        category: item.category,
-      }));
 
       setPayload(
         buildReportingExport({
@@ -81,11 +64,7 @@ export default function ExportClient() {
           periodStart,
           periodEnd,
           comunicate: asDocs(comunicateSnap),
-          monitorizare: asDocs(monitorizareSnap),
           foia,
-          calendar: occurrences,
-          raportari: asDocs(raportariSnap),
-          mape: asDocs(mapeSnap),
         })
       );
     } catch (err) {
@@ -108,7 +87,6 @@ export default function ExportClient() {
   }
 
   const irp = payload?.indicators.activitateIrp;
-  const media = payload?.indicators.media;
   const nullCount = payload?.dataQuality.missingFields.length ?? 0;
 
   return (
@@ -159,11 +137,9 @@ export default function ExportClient() {
             <section className="j-glass j-section">
               <p className="jarvis-label">Rezumat</p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                <Kpi label="Presă" value={`${media?.presa.total ?? 0}`} hint={`${media?.presa.favorabile}/${media?.presa.neutre}/${media?.presa.defavorabile}`} />
-                <Kpi label="TV" value={`${media?.tv.total ?? 0}`} hint={`${media?.tv.favorabile}/${media?.tv.neutre}/${media?.tv.defavorabile}`} />
-                <Kpi label="Radio" value={`${media?.radio.total ?? 0}`} hint={`${media?.radio.favorabile}/${media?.radio.neutre}/${media?.radio.defavorabile}`} />
                 <Kpi label="Comunicate" value={`${irp?.comunicate ?? 0}`} />
                 <Kpi label="Buletine" value={`${irp?.buletine ?? 0}`} />
+                <Kpi label="Total com. + buletine" value={`${irp?.totalComunicateBuletine ?? 0}`} />
                 <Kpi label="Conferințe" value={`${irp?.conferinte ?? 0}`} />
                 <Kpi label="544 scrise" value={`${irp?.solicitari544Scrise ?? 0}`} />
                 <Kpi label="544 verbale" value={`${irp?.solicitari544Verbale ?? 0}`} />
@@ -193,12 +169,11 @@ export default function ExportClient() {
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Kpi({ label, value }: { label: string; value: string }) {
   return (
     <div className="j-glass px-3 py-3">
       <p className="jarvis-label">{label}</p>
       <p className="jarvis-display mt-1 text-3xl text-teal-100">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">F / N / D · {hint}</p> : null}
     </div>
   );
 }
