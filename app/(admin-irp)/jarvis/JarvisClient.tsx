@@ -451,9 +451,14 @@ function ReportsSection({
           </div>
         ))}
       </dl>
-      <Link href="/dashboard/raportari" className="j-iconbtn primary mt-4">
-        Generează raportarea
-      </Link>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link href="/jarvis/export" className="j-iconbtn primary">
+          Export raportare
+        </Link>
+        <Link href="/dashboard/raportari" className="j-iconbtn">
+          Generează raportarea
+        </Link>
+      </div>
     </section>
   );
 }
