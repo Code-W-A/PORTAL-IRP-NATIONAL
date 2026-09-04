@@ -90,6 +90,174 @@ function collectionUrl(collectionPath: string) {
   return base + collectionPath.split("/").map(encodeURIComponent).join("/");
 }
 
+function runQueryUrl(parentDocPath?: string) {
+  const pid = getProjectId();
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(pid)}/databases/(default)/documents`;
+  if (!parentDocPath) return `${base}:runQuery`;
+  return `${base}/${parentDocPath.split("/").map(encodeURIComponent).join("/")}:runQuery`;
+}
+
+function docIdFromName(name: string): string {
+  const parts = String(name || "").split("/");
+  return parts[parts.length - 1] || "";
+}
+
+export type FirestoreFieldFilterOp =
+  | "LESS_THAN"
+  | "LESS_THAN_OR_EQUAL"
+  | "GREATER_THAN"
+  | "GREATER_THAN_OR_EQUAL"
+  | "EQUAL"
+  | "NOT_EQUAL";
+
+export type FirestoreQueryFilter = {
+  field: string;
+  op: FirestoreFieldFilterOp;
+  value: any;
+};
+
+function toStructuredFilter(filter: FirestoreQueryFilter) {
+  return {
+    fieldFilter: {
+      field: { fieldPath: filter.field },
+      op: filter.op,
+      value: encodeValue(filter.value),
+    },
+  };
+}
+
+/**
+ * Read-only collection query via Firestore REST `runQuery`.
+ * `parentDocPath` is the parent document, e.g. `Judete/DB/Structuri/ISU`.
+ */
+export async function firestoreQueryCollection<T = any>(
+  parentDocPath: string,
+  collectionId: string,
+  idToken: string,
+  opts?: {
+    filters?: FirestoreQueryFilter[];
+    orderBy?: { field: string; direction?: "ASCENDING" | "DESCENDING" };
+    pageSize?: number;
+    maxDocs?: number;
+  }
+): Promise<Array<{ id: string; data: T }>> {
+  const pageSize = Math.min(300, Math.max(1, opts?.pageSize || 200));
+  const maxDocs = Math.min(2000, Math.max(1, opts?.maxDocs || 1500));
+  const filters = opts?.filters || [];
+  const out: Array<{ id: string; data: T }> = [];
+  let cursor: FirestoreValue[] | null = null;
+
+  while (out.length < maxDocs) {
+    const structuredQuery: Record<string, any> = {
+      from: [{ collectionId }],
+      limit: Math.min(pageSize, maxDocs - out.length),
+    };
+
+    if (filters.length === 1) {
+      structuredQuery.where = toStructuredFilter(filters[0]);
+    } else if (filters.length > 1) {
+      structuredQuery.where = {
+        compositeFilter: {
+          op: "AND",
+          filters: filters.map(toStructuredFilter),
+        },
+      };
+    }
+
+    if (opts?.orderBy) {
+      structuredQuery.orderBy = [
+        { field: { fieldPath: opts.orderBy.field }, direction: opts.orderBy.direction || "ASCENDING" },
+      ];
+    }
+
+    if (cursor) {
+      structuredQuery.startAt = { values: cursor, before: false };
+    }
+
+    const res = await fetch(runQueryUrl(parentDocPath), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ structuredQuery }),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`firestore_query_failed:${res.status}`);
+
+    const rows = (await res.json()) as Array<{ document?: FirestoreRestDoc }>;
+    const docs = (Array.isArray(rows) ? rows : []).filter((row) => row?.document?.name);
+    if (!docs.length) break;
+
+    let lastDoc: FirestoreRestDoc | null = null;
+    let added = 0;
+    for (const row of docs) {
+      const doc = row.document!;
+      const id = docIdFromName(doc.name);
+      lastDoc = doc;
+      if (out.some((item) => item.id === id)) continue;
+      const fields = doc.fields || {};
+      const data: Record<string, any> = {};
+      for (const [k, v] of Object.entries(fields)) data[k] = decodeValue(v as any);
+      out.push({ id, data: data as T });
+      added += 1;
+      if (out.length >= maxDocs) break;
+    }
+
+    if (!lastDoc || added === 0 || docs.length < structuredQuery.limit) break;
+    if (!opts?.orderBy) break;
+    const lastVal = lastDoc.fields?.[opts.orderBy.field];
+    if (!lastVal) break;
+    cursor = [lastVal];
+  }
+
+  return out;
+}
+
+function decodeRestDoc(doc: FirestoreRestDoc): { id: string; data: Record<string, any> } {
+  const fields = doc.fields || {};
+  const data: Record<string, any> = {};
+  for (const [k, v] of Object.entries(fields)) data[k] = decodeValue(v as any);
+  return { id: docIdFromName(doc.name), data };
+}
+
+/** Read-only list of a collection, e.g. `Judete/DB/Structuri/ISU/Comunicate`. */
+export async function firestoreListCollection<T = any>(
+  collectionPath: string,
+  idToken: string,
+  opts?: { pageSize?: number; maxDocs?: number }
+): Promise<Array<{ id: string; data: T }>> {
+  const pageSize = Math.min(300, Math.max(1, opts?.pageSize || 200));
+  const maxDocs = Math.min(2000, Math.max(1, opts?.maxDocs || 400));
+  const out: Array<{ id: string; data: T }> = [];
+  let pageToken = "";
+
+  while (out.length < maxDocs) {
+    const limit = Math.min(pageSize, maxDocs - out.length);
+    const params = new URLSearchParams({ pageSize: String(limit) });
+    if (pageToken) params.set("pageToken", pageToken);
+    const res = await fetch(`${collectionUrl(collectionPath)}?${params.toString()}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${idToken}` },
+      cache: "no-store",
+    });
+    if (res.status === 404) break;
+    if (!res.ok) throw new Error(`firestore_list_failed:${res.status}`);
+    const json = (await res.json()) as { documents?: FirestoreRestDoc[]; nextPageToken?: string };
+    const docs = Array.isArray(json.documents) ? json.documents : [];
+    for (const doc of docs) {
+      if (!doc?.name) continue;
+      const decoded = decodeRestDoc(doc);
+      out.push({ id: decoded.id, data: decoded.data as T });
+      if (out.length >= maxDocs) break;
+    }
+    pageToken = String(json.nextPageToken || "");
+    if (!pageToken || docs.length < limit) break;
+  }
+
+  return out;
+}
+
 export async function firestoreGetDocAsJson<T = any>(docPath: string, idToken: string): Promise<T | null> {
   const res = await fetch(docUrl(docPath), {
     method: "GET",

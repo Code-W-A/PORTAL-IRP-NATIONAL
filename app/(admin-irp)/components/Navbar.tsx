@@ -190,6 +190,7 @@ export function TopNavbar() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [openGroupIds, setOpenGroupIds] = useState<string[]>(["bicp"]);
+  const isJarvis = pathname.startsWith("/jarvis");
 
   const visibleGroups = useMemo(
     () => SIDEBAR_GROUPS.filter((group) => canAccess(group, isAdmin, dbIsuAllowed)),
@@ -223,20 +224,32 @@ export function TopNavbar() {
 
   return (
     <>
-      <nav className="sticky top-0 z-30 w-full border-b border-gray-200 bg-white/90 backdrop-blur">
+      <nav
+        className={`sticky top-0 z-30 w-full border-b backdrop-blur ${
+          isJarvis
+            ? "border-sky-400/15 bg-[#020308]/90 text-sky-50"
+            : "border-gray-200 bg-white/90"
+        }`}
+      >
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4">
           <button
             type="button"
             aria-label="Deschide meniul"
             onClick={() => setSidebarOpen(true)}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 text-gray-700 transition-colors hover:bg-gray-100"
+            className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border transition-colors ${
+              isJarvis
+                ? "border-sky-400/25 text-sky-100 hover:bg-sky-400/10"
+                : "border-gray-200 text-gray-700 hover:bg-gray-100"
+            }`}
           >
             <Menu size={18} />
           </button>
 
           <Link
-            href="/lista-BICP"
-            className="inline-flex min-w-0 items-center text-gray-900 font-semibold tracking-tight"
+            href="/"
+            className={`inline-flex min-w-0 items-center font-semibold tracking-tight ${
+              isJarvis ? "text-sky-50" : "text-gray-900"
+            }`}
           >
             <img
               src="/logo-aplicatie/sigla-aplicatie-svg.svg"
@@ -251,7 +264,11 @@ export function TopNavbar() {
           <button
             aria-label="Logout"
             onClick={handleLogout}
-            className="inline-flex h-9 items-center rounded-md border border-gray-200 px-3 text-gray-900 hover:bg-gray-100 md:hidden"
+            className={`inline-flex h-9 items-center rounded-md border px-3 md:hidden ${
+              isJarvis
+                ? "border-sky-400/25 text-sky-100 hover:bg-sky-400/10"
+                : "border-gray-200 text-gray-900 hover:bg-gray-100"
+            }`}
           >
             <LogOut size={18} />
             <span className="ml-2 hidden sm:inline">Logout</span>
