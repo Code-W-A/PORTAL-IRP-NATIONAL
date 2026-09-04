@@ -1,5 +1,4 @@
 import { firestoreGetDocAsJson, firestoreListCollection } from "@/lib/server/firestoreRest";
-import { getFirebaseAdmin } from "@/lib/server/firebaseAdmin";
 import { JARVIS_ISU_DB_TENANT } from "@/lib/server/jarvisMakeAuth";
 
 export const STRUCTURA_SOURCES = [
@@ -219,41 +218,6 @@ function createRestReader(idToken: string, parent: string): CollectionReader {
   };
 }
 
-function adminValue(value: unknown): unknown {
-  if (value == null) return value;
-  if (typeof value === "object" && value && "toDate" in value && typeof (value as { toDate: () => Date }).toDate === "function") {
-    try {
-      return (value as { toDate: () => Date }).toDate().toISOString();
-    } catch {
-      return value;
-    }
-  }
-  return value;
-}
-
-function createAdminReader(parent: string): CollectionReader {
-  const { db } = getFirebaseAdmin();
-  return {
-    async list(collectionId, maxDocs) {
-      const snap = await db.collection(`${parent}/${collectionId}`).limit(maxDocs).get();
-      return snap.docs.map((doc) => {
-        const raw = doc.data();
-        const data: Record<string, any> = {};
-        for (const [key, value] of Object.entries(raw)) data[key] = adminValue(value);
-        return { id: doc.id, data };
-      });
-    },
-    async get(docPath) {
-      const snap = await db.doc(`${parent}/${docPath}`).get();
-      if (!snap.exists) return null;
-      const raw = snap.data() || {};
-      const data: Record<string, any> = {};
-      for (const [key, value] of Object.entries(raw)) data[key] = adminValue(value);
-      return data;
-    },
-  };
-}
-
 async function loadSource(reader: CollectionReader, source: StructuraSource, from?: string, to?: string) {
   const applyRange = (items: Array<Record<string, any>>) =>
     items.filter((item) => inRange(sourceDate(source, item), from, to));
@@ -302,14 +266,10 @@ async function loadSource(reader: CollectionReader, source: StructuraSource, fro
   }
 }
 
-export async function buildJarvisStructuraSnapshot(opts: {
-  mode: "user" | "make";
-  idToken?: string;
-}) {
+export async function buildJarvisStructuraSnapshot(idToken: string) {
   const tenant = JARVIS_ISU_DB_TENANT;
   const parent = `Judete/${tenant.judetId}/Structuri/${tenant.structuraId}`;
-  const reader =
-    opts.mode === "make" ? createAdminReader(parent) : createRestReader(String(opts.idToken || ""), parent);
+  const reader = createRestReader(idToken, parent);
   const sources = [...STRUCTURA_SOURCES];
   const data: Record<string, unknown> = {};
   const counts: Record<string, number> = {};

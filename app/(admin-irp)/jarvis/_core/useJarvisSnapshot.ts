@@ -31,6 +31,26 @@ import type {
 
 const DEFAULT_FOIA_TERM_DAYS = 10;
 
+type ComunicatFirestoreDoc = {
+  id: string;
+  dataTimestamp?: { toDate?: () => Date };
+  data?: unknown;
+};
+
+type MonitorizarePresaFirestoreDoc = {
+  id: string;
+  sentiment?: unknown;
+  titlu?: unknown;
+  canal?: unknown;
+  data?: unknown;
+};
+
+function parseMediaSentiment(raw: unknown): JarvisMediaItem["sentiment"] {
+  const value = String(raw || "neutru");
+  if (value === "favorabil" || value === "defavorabil") return value;
+  return "neutru";
+}
+
 function isOpenFoia(nature: string) {
   const value = nature.toLowerCase();
   return !value || value.includes("lucru") || value.includes("nesolu") || value === "nespecificat";
@@ -100,8 +120,11 @@ export function useJarvisSnapshot() {
       const overdueFoia = openFoia.filter((item) => item.overdue);
       const dueSoonFoia = openFoia.filter((item) => !item.overdue && (item.daysLeft ?? 99) <= 5);
 
-      const comunicate = comunicateSnap
-        ? comunicateSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
+      const comunicate: ComunicatFirestoreDoc[] = comunicateSnap
+        ? comunicateSnap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<ComunicatFirestoreDoc, "id">),
+          }))
         : [];
       const comunicateThisMonth = comunicate.filter((item) => {
         const date = parseBicpDate(item);
@@ -112,23 +135,21 @@ export function useJarvisSnapshot() {
         return date && startOfDay(date).getTime() === today.getTime();
       });
 
-      const mediaRaw = mediaSnap
-        ? mediaSnap.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) }))
+      const mediaRaw: MonitorizarePresaFirestoreDoc[] = mediaSnap
+        ? mediaSnap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<MonitorizarePresaFirestoreDoc, "id">),
+          }))
         : [];
       const media: JarvisMediaItem[] = mediaRaw
-        .map((item) => {
-          const sentimentRaw = String(item.sentiment || "neutru");
-          const sentiment =
-            sentimentRaw === "favorabil" || sentimentRaw === "defavorabil" ? sentimentRaw : "neutru";
-          return {
-            id: String(item.id),
-            title: String(item.titlu || "Material fără titlu"),
-            sentiment,
-            canal: String(item.canal || "presa"),
-            dateLabel: typeof item.data === "string" ? item.data : formatShortDateRo(now),
-            href: "/monitorizare/lista",
-          };
-        })
+        .map((item) => ({
+          id: String(item.id),
+          title: String(item.titlu || "Material fără titlu"),
+          sentiment: parseMediaSentiment(item.sentiment),
+          canal: String(item.canal || "presa"),
+          dateLabel: typeof item.data === "string" ? item.data : formatShortDateRo(now),
+          href: "/monitorizare/lista",
+        }))
         .slice(0, 8);
 
       const mediaToday = mediaRaw.filter((item) => {
