@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, doc, getCountFromServer, getDocs, query, where } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
-import { BarChart3, CalendarDays, TrendingUp, FileText, Grid3x3, PieChart, Copy } from "lucide-react";
+import { BarChart3, CalendarDays, TrendingUp, FileText, Grid3x3, PieChart, Copy, Check } from "lucide-react";
 import { JUDETE } from "@/lib/judete";
 
 type MonthCount = { month: number; count: number };
@@ -104,6 +104,7 @@ export default function StatisticiBicpPage() {
   const [activeTab, setActiveTab] = useState<TabType>("lunar");
   const [selectedMonth, setSelectedMonth] = useState<number | "all">(now.getMonth());
   const [copied, setCopied] = useState(false);
+  const [reportCopyFeedback, setReportCopyFeedback] = useState<{ key: string; message: string; success: boolean } | null>(null);
   
   // Category statistics state
   const [categoryDatePreset, setCategoryDatePreset] = useState<string>("last30");
@@ -121,6 +122,29 @@ export default function StatisticiBicpPage() {
     () => selectedMonth === "all" ? yearTotal : (months.find((m) => m.month === selectedMonth)?.count || 0),
     [months, selectedMonth, yearTotal]
   );
+
+  const reportCells = useMemo(() => {
+    const count = (type: string) => selectedMonthCounts[type] || 0;
+    return [
+      { key: "mai-comunicate", label: "Comunicate", value: count("Comunicat de Presă") },
+      { key: "mai-buletine", label: "Buletine informative", value: count("Buletin Informativ") },
+      { key: "mai-stiri", label: "Știri", value: count("Știre") },
+      { key: "mai-conferinte", label: "Conferință de presă", value: count("Conferință de presă") },
+      { key: "mai-declaratii", label: "Declarații de presă", value: count("Declarație de presă") },
+      { key: "mai-invitatii", label: "Invitații de presă", value: count("Invitație") },
+      { key: "mai-evaluari", label: "Evaluare conferință", value: count("Evaluare conferință de presă") },
+      {
+        key: "mai-alte",
+        label: "Alte",
+        value: ["Interviu", "Anunț", "Eveniment de presă", "Drept la replică", "Informare de presă", "Punct de vedere"]
+          .reduce((total, type) => total + count(type), 0),
+      },
+      { key: "site-buletine-comunicate", label: "Buletine informative / comunicate de presă", value: count("Buletin Informativ") + count("Comunicat de Presă") },
+      { key: "site-stiri", label: "Știri locale", value: count("Știre") },
+      { key: "site-conferinte", label: "Conferință de presă pe site", value: count("Conferință de presă") },
+      { key: "dsu-total", label: "Numărul materialelor postate în aplicația DSU", value: null as number | null },
+    ];
+  }, [selectedMonthCounts]);
 
   const yearsOptions = useMemo(() => {
     const current = now.getFullYear();
@@ -163,6 +187,16 @@ export default function StatisticiBicpPage() {
   function phraseFor(key: string, count: number): string {
     const label = count === 1 ? (singularMap[key] || key.toLowerCase()) : (pluralMap[key] || key.toLowerCase());
     return `${count} ${label};`;
+  }
+
+  async function copyReportValue(key: string, label: string, value: number) {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(String(value));
+      setReportCopyFeedback({ key, message: `Copiat: ${label} (${value})`, success: true });
+    } catch {
+      setReportCopyFeedback({ key, message: "Nu am putut copia. Verifică permisiunea clipboardului și încearcă din nou.", success: false });
+    }
   }
 
   const copyText = useMemo(() => {
@@ -717,25 +751,24 @@ export default function StatisticiBicpPage() {
             <span className="text-xs text-slate-500">Unitate: {structDisplay}</span>
           </div>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="min-w-[1500px] w-full border-collapse text-sm">
+            <table className="min-w-[1560px] w-full border-collapse text-sm">
               <thead>
+                <tr className="bg-blue-100 text-slate-950">
+                  <th rowSpan={2} className="min-w-36 border-r border-slate-300 bg-amber-500 px-3 py-3 text-center text-xs font-bold">UNITATE</th>
+                  <th colSpan={8} scope="colgroup" className="border-r border-slate-300 px-3 py-3 text-center text-base font-bold">PLATFORMA MAI</th>
+                  <th colSpan={3} scope="colgroup" className="border-r border-slate-300 px-3 py-3 text-center text-base font-bold">SITE OFICIAL</th>
+                  <th colSpan={1} scope="colgroup" className="px-3 py-3 text-center text-base font-bold">APLICAȚIA DSU</th>
+                </tr>
                 <tr className="bg-amber-500 text-slate-950">
                   {[
-                    "UNITATE",
-                    "Comunicate",
-                    "Buletine informative",
-                    "Știri",
-                    "Conferințe de presă",
-                    "Declarații de presă",
-                    "Invitații de presă",
-                    "Evaluare conferință",
-                    "Alte (documentar/interviu, precizări, anunțuri)",
-                    "Buletine informative / comunicate postate",
-                    "Știri locale postate",
-                    "Conferințe postate",
+                    ...reportCells.slice(0, 7).map((cell) => cell.label),
+                    "Alte (Documentar/interviu, invitații de presă, precizări, anunțuri)",
+                    reportCells[8].label,
+                    reportCells[9].label,
+                    reportCells[10].label,
                     "Numărul materialelor postate",
                   ].map((heading) => (
-                    <th key={heading} className="border-r border-amber-600 px-3 py-3 text-center text-xs font-bold last:border-r-0">
+                    <th key={heading} scope="col" className="min-w-28 border-r border-amber-600 px-3 py-3 text-center text-xs font-bold last:border-r-0">
                       {heading}
                     </th>
                   ))}
@@ -746,32 +779,41 @@ export default function StatisticiBicpPage() {
                   <th scope="row" className="whitespace-nowrap bg-slate-50 px-3 py-3 text-left font-semibold text-slate-900">
                     {structDisplay}
                   </th>
-                  {[
-                    selectedMonthCounts["Comunicat de Presă"] || 0,
-                    selectedMonthCounts["Buletin Informativ"] || 0,
-                    selectedMonthCounts["Știre"] || 0,
-                    selectedMonthCounts["Conferință de presă"] || 0,
-                    selectedMonthCounts["Declarație de presă"] || 0,
-                    selectedMonthCounts["Invitație"] || 0,
-                    selectedMonthCounts["Evaluare conferință de presă"] || 0,
-                    ["Interviu", "Anunț", "Eveniment de presă", "Drept la replică", "Informare de presă", "Punct de vedere"]
-                      .reduce((total, type) => total + (selectedMonthCounts[type] || 0), 0),
-                    null,
-                    null,
-                    null,
-                    null,
-                  ].map((value, index) => (
-                    <td key={index} className={`px-3 py-3 text-center font-semibold ${value === null ? "text-slate-400" : "text-slate-900"}`}>
-                      {loading ? "…" : value === null ? "—" : value}
+                  {reportCells.map((cell) => (
+                    <td key={cell.key} className="border-r border-slate-200 px-2 py-2 text-center last:border-r-0">
+                      {loading ? <span className="text-slate-400">…</span> : cell.value === null ? (
+                        <span className="text-slate-400" aria-label="Fără date disponibile">—</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void copyReportValue(cell.key, cell.label, cell.value as number)}
+                          title={`Copiază ${cell.value}`}
+                          aria-label={`Copiază valoarea pentru ${cell.label}: ${cell.value}`}
+                          className={`group inline-flex min-w-16 items-center justify-center gap-1.5 rounded-md border px-3 py-2 font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${
+                            reportCopyFeedback?.key === cell.key && reportCopyFeedback.success
+                              ? "border-green-300 bg-green-50 text-green-800"
+                              : "border-transparent text-slate-900 hover:border-blue-200 hover:bg-blue-50"
+                          }`}
+                        >
+                          <span>{cell.value}</span>
+                          {reportCopyFeedback?.key === cell.key && reportCopyFeedback.success ? <Check size={14} aria-hidden="true" /> : <Copy size={13} className="opacity-0 transition-opacity group-hover:opacity-60" aria-hidden="true" />}
+                        </button>
+                      )}
                     </td>
                   ))}
                 </tr>
               </tbody>
             </table>
           </div>
-          <p className="mt-3 text-xs text-slate-500">
-            „—” înseamnă că Firebase nu înregistrează dacă materialul a fost postat pe platforma MAI, pe site-ul oficial sau în aplicația DSU; aceste valori nu pot fi deduse doar din tipul documentului BICP.
-          </p>
+          <div className="mt-3 flex flex-wrap items-start justify-between gap-2 text-xs text-slate-500">
+            <p>„Alte” nu repetă invitațiile, care sunt numărate în coloana dedicată. Apasă pe un număr pentru a-l copia.</p>
+            <p>„—” indică faptul că Firebase nu salvează publicarea în aplicația DSU.</p>
+          </div>
+          {reportCopyFeedback && (
+            <p role="status" aria-live="polite" className={`mt-2 text-sm ${reportCopyFeedback.success ? "text-green-700" : "text-red-700"}`}>
+              {reportCopyFeedback.message}
+            </p>
+          )}
         </section>
       </div>
     </div>
@@ -957,4 +999,3 @@ function Legend({ types }: { types: string[] }) {
     </div>
   );
 }
-
