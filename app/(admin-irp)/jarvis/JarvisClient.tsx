@@ -13,6 +13,7 @@ import {
   Newspaper,
   Plus,
   RefreshCw,
+  Download,
   Send,
   Siren,
   Sparkles,
@@ -175,6 +176,9 @@ export default function JarvisClient() {
             <button type="button" className="j-iconbtn" onClick={() => void reload()} aria-label="Sync">
               {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             </button>
+            <Link href="/jarvis/export" className="j-iconbtn">
+              <Download size={15} /> Export
+            </Link>
             <button type="button" className="j-iconbtn primary" onClick={() => setIntakeOpen(true)}>
               <Plus size={15} /> Nou
             </button>
