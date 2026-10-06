@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBicpData, type Bicp } from "@/app/(admin-irp)/lista-BICP/hooks/useBicpData";
-import { deleteDoc, doc, collection } from "firebase/firestore";
+import { deleteDoc, doc, collection, serverTimestamp, updateDoc } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, Download, Mail, MoreVertical } from "lucide-react";
@@ -96,6 +96,8 @@ export default function ListaBicpPage() {
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [sendDialogDoc, setSendDialogDoc] = useState<Bicp | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
+  const [savingDsuIds, setSavingDsuIds] = useState<Record<string, boolean>>({});
+  const [dsuStatusOverrides, setDsuStatusOverrides] = useState<Record<string, boolean>>({});
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deniedHandledRef = useRef(false);
 
@@ -117,6 +119,27 @@ export default function ListaBicpPage() {
     setToast({ type, message });
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToast(null), durationMs);
+  }
+
+  async function updateDsuStatus(item: Bicp, checked: boolean) {
+    setSavingDsuIds((current) => ({ ...current, [item.id]: true }));
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      await updateDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${item.id}`), {
+        incarcatDSU: checked,
+        updatedAt: serverTimestamp(),
+      });
+      setDsuStatusOverrides((current) => ({ ...current, [item.id]: checked }));
+      showToast(checked ? "Document marcat ca încărcat în DSU." : "Document marcat ca neîncărcat în DSU.", "success");
+    } catch {
+      showToast("Nu s-a putut salva starea Încărcat DSU. Încearcă din nou.", "error");
+    } finally {
+      setSavingDsuIds((current) => {
+        const next = { ...current };
+        delete next[item.id];
+        return next;
+      });
+    }
   }
 
   useEffect(() => {
@@ -885,6 +908,9 @@ export default function ListaBicpPage() {
           ) : (
             <TableView
               items={items}
+              dsuStatusOverrides={dsuStatusOverrides}
+              savingDsuIds={savingDsuIds}
+              onToggleDsu={updateDsuStatus}
               selectMode={selectMode}
               selected={selected}
               setSelected={setSelected}
@@ -1143,6 +1169,7 @@ function TableSkeletons() {
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B]">Document</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-32">Tip</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-28">Data</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-[#64748B] w-36">Încărcat DSU</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-40">Acțiuni</th>
             </tr>
           </thead>
@@ -1159,6 +1186,7 @@ function TableSkeletons() {
                 </td>
                 <td className="px-3 py-3"><div className="h-5 w-24 rounded bg-[#E5E7EB] animate-pulse" /></td>
                 <td className="px-3 py-3"><div className="h-4 w-20 rounded bg-[#E5E7EB] animate-pulse" /></td>
+                <td className="px-3 py-3"><div className="mx-auto h-4 w-4 rounded bg-[#E5E7EB] animate-pulse" /></td>
                 <td className="px-3 py-3"><div className="h-8 w-24 rounded bg-[#E5E7EB] animate-pulse" /></td>
               </tr>
             ))}
@@ -1171,6 +1199,9 @@ function TableSkeletons() {
 
 function TableView({
   items,
+  dsuStatusOverrides,
+  savingDsuIds,
+  onToggleDsu,
   selectMode,
   selected,
   setSelected,
@@ -1186,6 +1217,9 @@ function TableView({
   showToast,
 }: {
   items: Bicp[];
+  dsuStatusOverrides: Record<string, boolean>;
+  savingDsuIds: Record<string, boolean>;
+  onToggleDsu: (item: Bicp, checked: boolean) => void;
   selectMode: boolean;
   selected: Record<string, boolean>;
   setSelected: (m: Record<string, boolean>) => void;
@@ -1253,6 +1287,7 @@ function TableView({
               <SortableHeader column="titlu">Document</SortableHeader>
               <SortableHeader column="nume" className="w-36">Tip</SortableHeader>
               <SortableHeader column="data" className="w-28">Data</SortableHeader>
+              <th className={`${headerClass} w-36 text-center`}>Încărcat DSU</th>
               <th className={`${headerClass} w-44`}>Acțiuni</th>
             </tr>
           </thead>
@@ -1300,6 +1335,17 @@ function TableView({
                   </td>
                   <td className="px-3 py-3 w-28 align-middle text-[13px] text-[#64748B] whitespace-nowrap">
                     {formatDate(x)}
+                  </td>
+                  <td className="px-3 py-3 w-36 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={dsuStatusOverrides[x.id] ?? x.incarcatDSU === true}
+                      disabled={!!savingDsuIds[x.id]}
+                      onChange={(e) => onToggleDsu(x, e.currentTarget.checked)}
+                      className="h-4 w-4 cursor-pointer rounded border-[#CBD5E1] text-[#1D4ED8] focus:ring-[#1D4ED8] disabled:cursor-wait disabled:opacity-50"
+                      aria-label={`Încărcat DSU pentru document ${x.numarComunicat ?? x.numar}`}
+                      title={savingDsuIds[x.id] ? "Se salvează…" : "Marchează dacă documentul este încărcat în DSU"}
+                    />
                   </td>
                   <td className="px-3 py-3 align-middle w-44" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">

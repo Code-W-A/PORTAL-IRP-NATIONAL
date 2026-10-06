@@ -519,6 +519,7 @@ export default function CreateBicpPage() {
         // CREATE new document
       await addDoc(collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate"), {
         ...payload,
+        incarcatDSU: false,
         judetId,
         structuraId,
           createdAt: serverTimestamp(),
@@ -931,4 +932,3 @@ export default function CreateBicpPage() {
     </div>
   );
 }
-

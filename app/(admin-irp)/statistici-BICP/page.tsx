@@ -101,6 +101,8 @@ export default function StatisticiBicpPage() {
   const [months, setMonths] = useState<MonthCount[]>(Array.from({ length: 12 }, (_, i) => ({ month: i, count: 0 })));
   const [yearTypeCounts, setYearTypeCounts] = useState<TypeCounts>({});
   const [monthlyTypeCounts, setMonthlyTypeCounts] = useState<Record<number, TypeCounts>>({});
+  const [yearDsuCount, setYearDsuCount] = useState(0);
+  const [monthlyDsuCounts, setMonthlyDsuCounts] = useState<Record<number, number>>({});
   const [activeTab, setActiveTab] = useState<TabType>("lunar");
   const [selectedMonth, setSelectedMonth] = useState<number | "all">(now.getMonth());
   const [copied, setCopied] = useState(false);
@@ -122,6 +124,7 @@ export default function StatisticiBicpPage() {
     () => selectedMonth === "all" ? yearTotal : (months.find((m) => m.month === selectedMonth)?.count || 0),
     [months, selectedMonth, yearTotal]
   );
+  const selectedDsuCount = selectedMonth === "all" ? yearDsuCount : (monthlyDsuCounts[selectedMonth] || 0);
 
   const reportCells = useMemo(() => {
     const count = (type: string) => selectedMonthCounts[type] || 0;
@@ -142,9 +145,9 @@ export default function StatisticiBicpPage() {
       { key: "site-buletine-comunicate", label: "Buletine informative / comunicate de presă", value: count("Buletin Informativ") + count("Comunicat de Presă") },
       { key: "site-stiri", label: "Știri locale", value: count("Știre") },
       { key: "site-conferinte", label: "Conferință de presă pe site", value: count("Conferință de presă") },
-      { key: "dsu-total", label: "Numărul materialelor postate în aplicația DSU", value: null as number | null },
+      { key: "dsu-total", label: "Numărul materialelor postate în aplicația DSU", value: selectedDsuCount },
     ];
-  }, [selectedMonthCounts]);
+  }, [selectedMonthCounts, selectedDsuCount]);
 
   const yearsOptions = useMemo(() => {
     const current = now.getFullYear();
@@ -212,6 +215,8 @@ export default function StatisticiBicpPage() {
     (async () => {
       setLoading(true);
       setError(null);
+      setYearDsuCount(0);
+      setMonthlyDsuCounts({});
       try {
         const { judetId, structuraId } = getTenantContext();
         const base = collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate");
@@ -237,7 +242,10 @@ export default function StatisticiBicpPage() {
         const docsSnap = await getDocs(qYear);
         const byTypeYear: TypeCounts = {};
         const byTypeMonthly: Record<number, TypeCounts> = {};
+        const byDsuMonthly: Record<number, number> = {};
+        let byDsuYear = 0;
         for (let i = 0; i < 12; i += 1) byTypeMonthly[i] = {};
+        for (let i = 0; i < 12; i += 1) byDsuMonthly[i] = 0;
 
         docsSnap.docs.forEach((d) => {
           const data: any = d.data();
@@ -245,6 +253,10 @@ export default function StatisticiBicpPage() {
           let dt: Date | null = null;
           try { dt = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null); } catch { dt = null; }
           const monthIdx = dt ? dt.getMonth() : 0;
+          if (data?.incarcatDSU === true) {
+            byDsuYear += 1;
+            byDsuMonthly[monthIdx] = (byDsuMonthly[monthIdx] || 0) + 1;
+          }
           const typeLabel: string = normalizeTypeLabel(data);
           byTypeYear[typeLabel] = (byTypeYear[typeLabel] || 0) + 1;
           const monthMap = byTypeMonthly[monthIdx] || (byTypeMonthly[monthIdx] = {});
@@ -252,6 +264,8 @@ export default function StatisticiBicpPage() {
         });
         setYearTypeCounts(byTypeYear);
         setMonthlyTypeCounts(byTypeMonthly);
+        setYearDsuCount(byDsuYear);
+        setMonthlyDsuCounts(byDsuMonthly);
       } catch (e) {
         setError("Eroare la încărcarea statisticilor");
       } finally {

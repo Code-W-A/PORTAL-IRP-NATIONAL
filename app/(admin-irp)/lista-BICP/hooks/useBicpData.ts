@@ -29,6 +29,7 @@ export type Bicp = {
   pdfLink?: string;
   wordLink?: string;
   categorie?: string; // categoria incidentului/evenimentului
+  incarcatDSU?: boolean;
 };
 
 export type Filters = {
@@ -258,4 +259,3 @@ export function useBicpData() {
 
   return { loading, error, filters, setFilters, items: paged.items, total: paged.total, availableYears, reload };
 }
-
