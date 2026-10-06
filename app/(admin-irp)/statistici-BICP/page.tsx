@@ -21,7 +21,9 @@ const DOCUMENT_TYPES = [
   "Anunț",
   "Eveniment de presă",
   "Drept la replică",
-  "Informare de presă"
+  "Informare de presă",
+  "Evaluare conferință de presă",
+  "Punct de vedere",
 ] as const;
 
 const CATEGORII = [
@@ -702,6 +704,75 @@ export default function StatisticiBicpPage() {
             )}
           </div>
         )}
+
+        {/* Tabel de raportare după structura din fișierul Excel */}
+        <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Centralizator activitate media</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                {selectedMonth === "all" ? `Anul ${year}` : `${monthLabelsFull[selectedMonth]} ${year}`} · valorile disponibile sunt calculate din documentele BICP salvate în Firebase.
+              </p>
+            </div>
+            <span className="text-xs text-slate-500">Unitate: {structDisplay}</span>
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-[1500px] w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-amber-500 text-slate-950">
+                  {[
+                    "UNITATE",
+                    "Comunicate",
+                    "Buletine informative",
+                    "Știri",
+                    "Conferințe de presă",
+                    "Declarații de presă",
+                    "Invitații de presă",
+                    "Evaluare conferință",
+                    "Alte (documentar/interviu, precizări, anunțuri)",
+                    "Buletine informative / comunicate postate",
+                    "Știri locale postate",
+                    "Conferințe postate",
+                    "Numărul materialelor postate",
+                  ].map((heading) => (
+                    <th key={heading} className="border-r border-amber-600 px-3 py-3 text-center text-xs font-bold last:border-r-0">
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="divide-x divide-slate-200">
+                  <th scope="row" className="whitespace-nowrap bg-slate-50 px-3 py-3 text-left font-semibold text-slate-900">
+                    {structDisplay}
+                  </th>
+                  {[
+                    selectedMonthCounts["Comunicat de Presă"] || 0,
+                    selectedMonthCounts["Buletin Informativ"] || 0,
+                    selectedMonthCounts["Știre"] || 0,
+                    selectedMonthCounts["Conferință de presă"] || 0,
+                    selectedMonthCounts["Declarație de presă"] || 0,
+                    selectedMonthCounts["Invitație"] || 0,
+                    selectedMonthCounts["Evaluare conferință de presă"] || 0,
+                    ["Interviu", "Anunț", "Eveniment de presă", "Drept la replică", "Informare de presă", "Punct de vedere"]
+                      .reduce((total, type) => total + (selectedMonthCounts[type] || 0), 0),
+                    null,
+                    null,
+                    null,
+                    null,
+                  ].map((value, index) => (
+                    <td key={index} className={`px-3 py-3 text-center font-semibold ${value === null ? "text-slate-400" : "text-slate-900"}`}>
+                      {loading ? "…" : value === null ? "—" : value}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            „—” înseamnă că Firebase nu înregistrează dacă materialul a fost postat pe platforma MAI, pe site-ul oficial sau în aplicația DSU; aceste valori nu pot fi deduse doar din tipul documentului BICP.
+          </p>
+        </section>
       </div>
     </div>
   );
@@ -886,5 +957,4 @@ function Legend({ types }: { types: string[] }) {
     </div>
   );
 }
-
 
