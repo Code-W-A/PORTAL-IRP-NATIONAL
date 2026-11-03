@@ -1,0 +1,10 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Preserve the current portal policy outside the new guide collection.
+    // Admin SDK requests are authorized in the guide API, never by these client rules.
+    match /{collection}/{document=**} {
+      allow read: if collection != 'GhidComunicare';
+      allow write: if collection != 'GhidComunicare' && request.auth != null;
+    }
+  }
+}

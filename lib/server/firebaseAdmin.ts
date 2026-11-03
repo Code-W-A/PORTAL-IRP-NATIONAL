@@ -26,14 +26,17 @@ export function getFirebaseAdmin(): FirebaseAdminServices {
   const projectId = process.env.FIREBASE_ADMIN_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   if (!projectId) throw new Error("missing_env:FIREBASE_ADMIN_PROJECT_ID");
 
+  const emulated = process.env.FIRESTORE_EMULATOR_HOST && process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  if (emulated && !projectId.startsWith("demo-")) throw new Error("emulator_requires_demo_project");
+
   const app =
     getApps()[0] ||
     initializeApp({
-      credential: cert({
+      ...(emulated ? {} : { credential: cert({
         projectId,
         clientEmail: requiredEnv("FIREBASE_ADMIN_CLIENT_EMAIL"),
         privateKey: getPrivateKey(),
-      }),
+      }) }),
       projectId,
     });
 

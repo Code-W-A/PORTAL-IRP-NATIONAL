@@ -44,3 +44,7 @@ yarn-error.log*
 next-env.d.ts
 node_modules/
 .next/
+
+# Local Firebase emulator downloads and logs
+.firebase-emulators/
+*-debug.log

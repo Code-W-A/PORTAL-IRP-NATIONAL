@@ -10,7 +10,8 @@
     "lint": "next lint",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:guide": "firebase emulators:exec --project demo-irp-guide --config firebase.guide-test.json \"playwright test --config=playwright.guide.config.ts\""
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",

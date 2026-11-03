@@ -1,6 +1,6 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
-import { getFirestore, type Firestore } from "firebase/firestore";
+import { connectAuthEmulator, getAuth, type Auth } from "firebase/auth";
+import { connectFirestoreEmulator, getFirestore, type Firestore } from "firebase/firestore";
 
 type FirebaseServices = {
   app: FirebaseApp;
@@ -18,13 +18,19 @@ export function initFirebase(): FirebaseServices {
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "",
   };
 
-  const app = getApps()[0] || initializeApp(firebaseConfig);
+  const existing = getApps()[0];
+  const app = existing || initializeApp(firebaseConfig);
   const auth = getAuth(app);
   try {
     // Localize Firebase Auth flows (emails, errors) to the device/browser language
     auth.useDeviceLanguage();
   } catch {}
   const db = getFirestore(app);
+  if (!existing && process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === "true") {
+    if (!firebaseConfig.projectId.startsWith("demo-")) throw new Error("Emulatorul necesită un proiect demo.");
+    connectAuthEmulator(auth, "http://127.0.0.1:9098", { disableWarnings: true });
+    connectFirestoreEmulator(db, "127.0.0.1", 8088);
+  }
   return { app, auth, db };
 }
 

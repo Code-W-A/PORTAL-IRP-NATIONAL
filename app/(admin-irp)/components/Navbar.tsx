@@ -16,6 +16,7 @@ import {
   Menu,
   FolderOpen,
   ScrollText,
+  BookOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { signOut } from "firebase/auth";
@@ -119,6 +120,7 @@ const SIDEBAR_GROUPS: NavGroup[] = [
 ];
 
 const SIDEBAR_LINKS: NavItem[] = [
+  { href: "/ghid-comunicare", label: "Ghid de comunicare", icon: BookOpen },
   { href: "/proceduri-lucru", label: "Proceduri", icon: CalendarDays, adminOnly: true },
   {
     href: "/dashboard/raportari",
