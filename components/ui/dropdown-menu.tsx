@@ -1,10 +1,13 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
 
 type DropdownMenuContextValue = {
   open: boolean;
   setOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  rootRef: React.RefObject<HTMLDivElement | null>;
+  contentRef: React.RefObject<HTMLDivElement | null>;
 };
 
 const DropdownMenuContext = React.createContext<DropdownMenuContextValue | null>(null);
@@ -20,11 +23,13 @@ function useDropdownMenuContext() {
 function DropdownMenu({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     function onDocumentClick(event: MouseEvent) {
       if (!rootRef.current) return;
       if (rootRef.current.contains(event.target as Node)) return;
+      if (contentRef.current?.contains(event.target as Node)) return;
       setOpen(false);
     }
     function onEscape(event: KeyboardEvent) {
@@ -39,7 +44,7 @@ function DropdownMenu({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <DropdownMenuContext.Provider value={{ open, setOpen }}>
+    <DropdownMenuContext.Provider value={{ open, setOpen, rootRef, contentRef }}>
       <div ref={rootRef} className="relative inline-block">{children}</div>
     </DropdownMenuContext.Provider>
   );
@@ -74,21 +79,47 @@ function DropdownMenuTrigger({ asChild = false, children, ...props }: DropdownMe
 
 type DropdownMenuContentProps = React.HTMLAttributes<HTMLDivElement> & {
   align?: "start" | "end";
+  portal?: boolean;
 };
 
-function DropdownMenuContent({ className, align = "end", ...props }: DropdownMenuContentProps) {
-  const { open } = useDropdownMenuContext();
+function DropdownMenuContent({ className, align = "end", portal = false, style, ...props }: DropdownMenuContentProps) {
+  const { open, rootRef, contentRef } = useDropdownMenuContext();
+  const [position, setPosition] = React.useState({ top: 0, left: 0 });
+  React.useLayoutEffect(() => {
+    if (!open || !portal) return;
+    const reposition = () => {
+      const anchor = rootRef.current?.getBoundingClientRect();
+      const menu = contentRef.current?.getBoundingClientRect();
+      if (!anchor || !menu) return;
+      const below = anchor.bottom + 8;
+      const above = anchor.top - menu.height - 8;
+      const top = below + menu.height <= window.innerHeight - 8 ? below
+        : above >= 8 ? above : Math.max(8, window.innerHeight - menu.height - 8);
+      const preferredLeft = align === "end" ? anchor.right - menu.width : anchor.left;
+      setPosition({ top, left: Math.max(8, Math.min(preferredLeft, window.innerWidth - menu.width - 8)) });
+    };
+    reposition();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open, portal, align, rootRef, contentRef]);
   if (!open) return null;
-  return (
+  const content = (
     <div
+      ref={contentRef}
       className={cn(
-        "absolute z-50 mt-2 min-w-[180px] rounded-md border border-gray-200 bg-white p-1 shadow-lg",
-        align === "end" ? "right-0" : "left-0",
+        "z-50 min-w-[180px] rounded-md border border-gray-200 bg-white p-1 shadow-lg",
+        portal ? "fixed" : `absolute mt-2 ${align === "end" ? "right-0" : "left-0"}`,
         className
       )}
+      style={portal ? { ...style, ...position, maxWidth: "calc(100vw - 16px)" } : style}
       {...props}
     />
   );
+  return portal ? createPortal(content, document.body) : content;
 }
 
 function DropdownMenuLabel({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

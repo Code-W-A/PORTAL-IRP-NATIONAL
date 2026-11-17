@@ -3,19 +3,33 @@ import { collectionGroup, doc, documentId, getDoc, getDocs, limit, query, where 
 import { initFirebase } from "@/lib/firebase";
 import { buildBicpDocx } from "@/app/(admin-irp)/components/docx/BicpDocx";
 import { getTenantContext } from "@/lib/tenant";
-import { doc as docRef2 } from "firebase/firestore";
 import { JUDETE } from "@/lib/judete";
+import { BICP_DOCX_VARIANTS, parseBicpDocxVariant } from "@/lib/bicp/docxVariants";
+import { buildPurtatorSignatureUrl, normalizePurtatorSignatureKey } from "@/lib/pdf/purtatorSignatures";
+
+export const runtime = "nodejs";
 
 export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  try {
+    return await generateDocxResponse(_req, ctx);
+  } catch {
+    console.error("[DOCX] Document generation failed");
+    return NextResponse.json({ error: "Nu s-a putut genera documentul DOCX. Încearcă din nou." }, { status: 500 });
+  }
+}
+
+async function generateDocxResponse(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const url = new URL(_req.url);
+  const variant = parseBicpDocxVariant(url.searchParams.get("variant"));
+  if (!variant) return NextResponse.json({ error: "Variantă DOCX necunoscută." }, { status: 400 });
   const qpJudet = url.searchParams.get("judetId") || undefined;
   const qpStruct = url.searchParams.get("structuraId") || undefined;
   const debug = url.searchParams.get("debug") === "1" || process.env.NODE_ENV !== "production";
   const { db } = initFirebase();
   const tried: string[] = [];
   // Try tenant-scoped first (prefer query params), fallback to root collection, then collection group
-  let snap = await (async () => {
+  const snap = await (async () => {
     if (qpJudet && qpStruct) {
       const ref = doc(doc(db, `Judete/${qpJudet}/Structuri/${qpStruct}`), "Comunicate", id);
       const s = await getDoc(ref);
@@ -90,7 +104,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     if (m) return `${m[1]}.${m[2]}.${m[3]}`;
     return ddmmyyyy.replace(/-/g, ".");
   }
-  const chosenNumar = (String(d?.numarRegistru || "").trim())
+  const chosenNumar = (variant === "signed" && String(d?.numarRegistru || "").trim())
     ? String(d.numarRegistru).trim()
     : String(d?.numarComunicat ?? d?.numar ?? "");
   let displayDate = "";
@@ -108,18 +122,25 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     displayDate = ddmmyyyyWithDots(String(d?.data || ""));
   }
 
-  // Build absolute logo URL and fetch into ArrayBuffer
-  let logoArrayBuffer: ArrayBuffer | null = null;
-  try {
-    const origin = new URL(_req.url).origin;
-    const logoUrl = metaSettings?.logoUrlPublic ? new URL(String(metaSettings.logoUrlPublic), origin).toString() : undefined;
-    if (logoUrl) {
-      const res = await fetch(logoUrl);
-      if (res.ok) {
-        logoArrayBuffer = await res.arrayBuffer();
-      }
+  // Simple documents do not depend on letterhead or signature assets.
+  const origin = new URL(_req.url).origin;
+  async function readImage(imageUrl: string): Promise<ArrayBuffer> {
+    const res = await fetch(imageUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) throw new Error("DOCX image unavailable");
+    return res.arrayBuffer();
+  }
+  const logoArrayBuffer = variant !== "simple" && metaSettings?.logoUrlPublic
+    ? await readImage(new URL(String(metaSettings.logoUrlPublic), origin).toString()) : null;
+  let purtatorSignatureArrayBuffer: ArrayBuffer | null = null;
+  if (variant === "signed" && metaSettings?.showSpokespersonBlock !== false && effectiveJudetId && effectiveStructuraId) {
+    // Match the existing PDF: only eligible structures receive a signature image.
+    const structure = await getDoc(doc(db, `Judete/${effectiveJudetId}/Structuri/${effectiveStructuraId}`));
+    if (structure.exists() && structure.data()?.isAdmin === true) {
+      purtatorSignatureArrayBuffer = await readImage(buildPurtatorSignatureUrl(
+        normalizePurtatorSignatureKey(d?.purtatorSemnaturaKey), origin,
+      ));
     }
-  } catch {}
+  }
 
   // Compute structure display similar to PDF
   let structureDisplay: string | undefined;
@@ -143,17 +164,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
       unitLabel: metaSettings?.unitLabel || undefined,
       structureDisplay,
       showSpokespersonBlock: metaSettings?.showSpokespersonBlock,
+      showHeaderTricolor: metaSettings?.showHeaderTricolor,
+      showTricolorFooter: metaSettings?.showTricolorFooter,
     },
     {
       numar: chosenNumar,
       dateLabel: displayDate,
       purtator: d?.["purtator-cuvant"] || "",
+      purtatorSignatureArrayBuffer,
       tipDocument: d?.nume || d?.tip || "",
       titlu: d?.titlu || "",
       continut: String(d?.comunicat || ""),
       continutHtml: String(d?.comunicatHtml || ""),
       semnatar: { pentru: d?.pentru || "", functia: d?.functia || "", grad: d?.grad || "", nume: d?.numeSemnatar || "" },
-    }
+    },
+    variant,
   );
   const uint8 = new Uint8Array(buffer);
   function buildNameByFormat(fmt: string | undefined, parts: { numar: string; tip: string; titlu: string; data: string }): string {
@@ -192,7 +217,8 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
   return new Response(uint8, {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "Content-Disposition": `attachment; filename="${slugifyFilename(base)}.docx"`,
+      "Content-Disposition": `attachment; filename="${slugifyFilename(base)}_${BICP_DOCX_VARIANTS.find((item) => item.value === variant)!.suffix}.docx"`,
+      "Cache-Control": "private, no-store",
     },
   });
 }

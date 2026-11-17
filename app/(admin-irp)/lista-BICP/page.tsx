@@ -30,6 +30,8 @@ import { BULK_PDF_MAX_IDS, BULK_ZIP_CONCURRENCY } from "@/lib/bicp/bulkLimits";
 import { SendPublicPdfEmailDialog } from "./SendPublicPdfEmailDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Filters } from "./hooks/useBicpData";
+import { BICP_DOCX_VARIANTS, type BicpDocxVariant } from "@/lib/bicp/docxVariants";
+import { downloadBicpDocx } from "@/lib/bicp/downloadDocx";
 
 // Helper function to format date consistently as DD/MM/YYYY
 function formatDate(doc: any): string {
@@ -1516,6 +1518,7 @@ function DocumentActionsMenu({
   hideDelete?: boolean;
   compact?: boolean;
 }) {
+  const [downloadingDocx, setDownloadingDocx] = useState<BicpDocxVariant | null>(null);
   const { judetId, structuraId } = getTenantContext();
   const signedPdfUrl = `/api/comunicate/${item.id}/pdf?variant=signed&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
   const publicPdfUrl = `/api/comunicate/${item.id}/pdf?variant=public&judetId=${encodeURIComponent(judetId)}&structuraId=${encodeURIComponent(structuraId)}&debug=1`;
@@ -1534,7 +1537,7 @@ function DocumentActionsMenu({
       >
         <MoreVertical size={compact ? 14 : 16} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
+      <DropdownMenuContent portal align="end" className="w-72 max-h-[75vh] overflow-y-auto">
         <DropdownMenuLabel>Acțiuni document</DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -1567,14 +1570,26 @@ function DocumentActionsMenu({
             </DropdownMenuItem>
           </>
         )}
-        <DropdownMenuItem
-          className="inline-flex items-center gap-2"
-          onClick={() => {
-            if (openInNewTab(docxUrl, showToast)) showToast("Se deschide fișierul DOCX...", "info");
-          }}
-        >
-          <FileText size={14} /> DOCX
-        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {BICP_DOCX_VARIANTS.map(({ value, label }) => (
+          <DropdownMenuItem
+            key={value}
+            className="inline-flex items-center gap-2"
+            disabled={downloadingDocx !== null}
+            onClick={() => {
+              setDownloadingDocx(value);
+              showToast("Se pregătește documentul DOCX...", "info");
+              void downloadBicpDocx(docxUrl, value)
+                .then(() => showToast("Documentul DOCX a fost descărcat.", "success"))
+                .catch((error: unknown) => showToast(error instanceof Error ? error.message : "Eroare la descărcarea DOCX.", "error"))
+                .finally(() => setDownloadingDocx(null));
+            }}
+          >
+            {downloadingDocx === value ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />}
+            {label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           className="inline-flex items-center gap-2"
           onClick={() => onPrint(item.id)}
