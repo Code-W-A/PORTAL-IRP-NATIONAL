@@ -4,9 +4,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
-import type { GuidePage, SituationSummary } from "@/lib/ghid-comunicare/types";
+import type { SituationSummary } from "@/lib/ghid-comunicare/types";
 import { WITHDRAWN_TITLE } from "@/lib/ghid-comunicare/types";
-import { ErrorNotice, errorMessage, fieldClass, guideUrl, useGuideApi } from "./shared";
+import { ErrorNotice, errorMessage, fieldClass, guideUrl, useGuide } from "./shared";
 
 type ListPosition = { query: string; count: number; scroll: number };
 export default function GuideList() {
@@ -14,7 +14,7 @@ export default function GuideList() {
   const query = params.get("q") || "";
   const router = useRouter();
   const { user } = useAuth();
-  const api = useGuideApi();
+  const guide = useGuide();
   const [input, setInput] = useState(query);
   const [items, setItems] = useState<SituationSummary[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -34,7 +34,8 @@ export default function GuideList() {
   }, [input, query, router]);
 
   useEffect(() => {
-    if (!storageKey) return;
+    if (!storageKey || !guide) return;
+    const service = guide;
     const controller = new AbortController();
     generation.current += 1;
     loadLock.current = true;
@@ -48,9 +49,7 @@ export default function GuideList() {
         let next: string | null = null;
         const collected: SituationSummary[] = [];
         do {
-          const search = new URLSearchParams({ q: query });
-          if (next) search.set("cursor", next);
-          const page = await api<GuidePage<SituationSummary>>(`?${search}`, { signal: controller.signal });
+          const page = await service.list(query, next, controller.signal);
           collected.push(...page.items);
           next = page.nextCursor;
         } while (next && collected.length < targetCount);
@@ -62,19 +61,18 @@ export default function GuideList() {
     }
     void load();
     return () => controller.abort();
-  }, [query, api, storageKey, retry]);
+  }, [query, guide, storageKey, retry]);
 
   function savePosition() {
     if (!storageKey) return;
     try { sessionStorage.setItem(storageKey, JSON.stringify({ query, count: items.length, scroll: window.scrollY })); } catch {}
   }
   async function more() {
-    if (!cursor || loadLock.current) return;
+    if (!guide || !cursor || loadLock.current) return;
     const currentGeneration = generation.current;
     loadLock.current = true; setLoading(true); setError("");
     try {
-      const search = new URLSearchParams({ q: query, cursor });
-      const page = await api<GuidePage<SituationSummary>>(`?${search}`);
+      const page = await guide.list(query, cursor);
       if (generation.current !== currentGeneration) return;
       setItems(previous => [...previous, ...page.items.filter(item => !previous.some(old => old.id === item.id))]);
       setCursor(page.nextCursor);

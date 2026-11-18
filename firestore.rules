@@ -1,10 +1,163 @@
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Preserve the current portal policy outside the new guide collection.
-    // Admin SDK requests are authorized in the guide API, never by these client rules.
+    // Keep the existing portal policy outside the guide.
     match /{collection}/{document=**} {
       allow read: if collection != 'GhidComunicare';
       allow write: if collection != 'GhidComunicare' && request.auth != null;
+    }
+
+    function validId(value) {
+      return value is string && value.matches('^[a-zA-Z0-9_-]{1,128}$');
+    }
+
+    function validCreationId(value) {
+      return value.matches('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$');
+    }
+
+    function hasIrpProfile() {
+      return request.auth != null && validProfile(
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+      );
+    }
+
+    function validProfile(profile) {
+      return validId(profile.judetId) && validId(profile.structuraId);
+    }
+
+    function text(value, max) {
+      return value is string && value.size() > 0 && value.size() <= max;
+    }
+
+    function isoDate(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$');
+    }
+
+    function owns(data) {
+      return data.author.uid == request.auth.uid;
+    }
+
+    function validAuthor(data) {
+      return data.author is map && data.author.keys().hasOnly(['uid', 'name'])
+        && owns(data) && text(data.author.name, 300);
+    }
+
+    function validFollowUp(pair) {
+      return pair.question is string && pair.answer is string;
+    }
+
+    function validFollowUps(pairs) {
+      return pairs is list && pairs.size() <= 30 && validFollowUpEntries(pairs, pairs.size());
+    }
+
+    function validFollowUpEntries(pairs, count) {
+      // Rules have no iteration over lists. Check each supported position.
+      return (count <= 0 || validFollowUp(pairs[0])) &&
+        (count <= 1 || validFollowUp(pairs[1])) &&
+        (count <= 2 || validFollowUp(pairs[2])) &&
+        (count <= 3 || validFollowUp(pairs[3])) &&
+        (count <= 4 || validFollowUp(pairs[4])) &&
+        (count <= 5 || validFollowUp(pairs[5])) &&
+        (count <= 6 || validFollowUp(pairs[6])) &&
+        (count <= 7 || validFollowUp(pairs[7])) &&
+        (count <= 8 || validFollowUp(pairs[8])) &&
+        (count <= 9 || validFollowUp(pairs[9])) &&
+        (count <= 10 || validFollowUp(pairs[10])) &&
+        (count <= 11 || validFollowUp(pairs[11])) &&
+        (count <= 12 || validFollowUp(pairs[12])) &&
+        (count <= 13 || validFollowUp(pairs[13])) &&
+        (count <= 14 || validFollowUp(pairs[14])) &&
+        (count <= 15 || validFollowUp(pairs[15])) &&
+        (count <= 16 || validFollowUp(pairs[16])) &&
+        (count <= 17 || validFollowUp(pairs[17])) &&
+        (count <= 18 || validFollowUp(pairs[18])) &&
+        (count <= 19 || validFollowUp(pairs[19])) &&
+        (count <= 20 || validFollowUp(pairs[20])) &&
+        (count <= 21 || validFollowUp(pairs[21])) &&
+        (count <= 22 || validFollowUp(pairs[22])) &&
+        (count <= 23 || validFollowUp(pairs[23])) &&
+        (count <= 24 || validFollowUp(pairs[24])) &&
+        (count <= 25 || validFollowUp(pairs[25])) &&
+        (count <= 26 || validFollowUp(pairs[26])) &&
+        (count <= 27 || validFollowUp(pairs[27])) &&
+        (count <= 28 || validFollowUp(pairs[28])) &&
+        (count <= 29 || validFollowUp(pairs[29]));
+    }
+
+    function validSituation(data) {
+      return data.status == 'active' && text(data.question, 1000) && text(data.answer, 20000)
+        && validFollowUps(data.followUps) && data.searchText is string && data.searchText.size() <= 1000000;
+    }
+
+    function withdrawnSituation(data) {
+      return data.status == 'withdrawn' && data.question == '' && data.answer == ''
+        && data.followUps == [] && data.searchText == '';
+    }
+
+    match /GhidComunicare/{situationId} {
+      function situationPath() {
+        return /databases/$(database)/documents/GhidComunicare/$(situationId);
+      }
+
+      function completionPath(completionId) {
+        return /databases/$(database)/documents/GhidComunicare/$(situationId)/Completari/$(completionId);
+      }
+
+      function editsSituation() {
+        let data = request.resource.data;
+        return owns(resource.data) && resource.data.status == 'active'
+          && data.diff(resource.data).affectedKeys().hasOnly(
+            ['question', 'answer', 'followUps', 'searchText', 'status', 'updatedAt']
+          )
+          && isoDate(data.updatedAt) && (validSituation(data) || withdrawnSituation(data));
+      }
+
+      function updatesCompletionCount() {
+        let data = request.resource.data;
+        return data.diff(resource.data).affectedKeys().hasOnly(['completionCount', 'completionChangeId'])
+          && data.completionCount is int && data.completionCount >= 0 && validId(data.completionChangeId)
+          && matchesCompletionChange(completionPath(data.completionChangeId));
+      }
+
+      function matchesCompletionChange(path) {
+        let change = request.resource.data.completionCount - resource.data.completionCount;
+        return (change == 1 && resource.data.status == 'active' && !exists(path)
+            && existsAfter(path) && owns(getAfter(path).data))
+          || (change == -1 && exists(path) && owns(get(path).data) && !existsAfter(path));
+      }
+
+      function countChangedFor(completionId, change) {
+        let before = get(situationPath()).data;
+        let after = getAfter(situationPath()).data;
+        return after.completionChangeId == completionId
+          && after.completionCount == before.completionCount + change
+          && (change == -1 || before.status == 'active');
+      }
+
+      allow read: if hasIrpProfile();
+      allow create: if hasIrpProfile() && validCreationId(situationId)
+        && request.resource.data.keys().hasOnly(
+          ['question', 'answer', 'followUps', 'searchText', 'status', 'author', 'createdAt', 'updatedAt', 'completionCount']
+        )
+        && validAuthor(request.resource.data) && validSituation(request.resource.data)
+        && request.resource.data.completionCount is int && request.resource.data.completionCount == 0
+        && isoDate(request.resource.data.createdAt)
+        && request.resource.data.createdAt == request.resource.data.updatedAt;
+      allow update: if hasIrpProfile() && (editsSituation() || updatesCompletionCount());
+
+      match /Completari/{completionId} {
+        allow read: if hasIrpProfile();
+        allow create: if hasIrpProfile() && validCreationId(completionId)
+          && request.resource.data.keys().hasOnly(['text', 'author', 'createdAt', 'updatedAt'])
+          && validAuthor(request.resource.data) && text(request.resource.data.text, 10000)
+          && isoDate(request.resource.data.createdAt)
+          && request.resource.data.createdAt == request.resource.data.updatedAt
+          && countChangedFor(completionId, 1);
+        allow update: if hasIrpProfile() && owns(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt'])
+          && text(request.resource.data.text, 10000) && isoDate(request.resource.data.updatedAt);
+        allow delete: if hasIrpProfile() && owns(resource.data) && countChangedFor(completionId, -1);
+      }
     }
   }
 }

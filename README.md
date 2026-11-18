@@ -66,26 +66,17 @@ completări. Drepturile de autor se aplică UID-ului contului Firebase; conturil
 comune unei structuri au aceeași identitate de autor.
 
 Datele sunt în colecția globală `GhidComunicare/{id}` și subcolecția
-`Completari/{id}`. API-urile `/api/ghid-comunicare` verifică tokenul, profilul IRP
-și autorul pe server, prin infrastructura Firebase Admin existentă. Sunt necesare
-`FIREBASE_ADMIN_CLIENT_EMAIL`, `FIREBASE_ADMIN_PRIVATE_KEY` și
-`FIREBASE_ADMIN_PROJECT_ID` (sau `NEXT_PUBLIC_FIREBASE_PROJECT_ID`). Nu există
-migrare sau conținut introdus automat în baza de date.
+`Completari/{id}`. Ghidul folosește SDK-ul Firebase din browser și sesiunea
+Firebase a utilizatorului. Regulile Firestore verifică profilul IRP, autorul
+conținutului și actualizarea contorului în aceeași tranzacție cu publicarea
+sau ștergerea unei completări. Documentele existente pot fi folosite direct.
 
 ### Reguli Firestore înainte de lansare
 
-`firestore.rules` păstrează politica existentă a portalului pentru celelalte colecții
-și exclude întreaga colecție `GhidComunicare`, inclusiv completările, din accesul
-direct al clienților. Admin SDK accesează datele numai prin API-urile protejate.
-Regulile au fost pregătite pe baza versiunii live inspectate la 3 noiembrie 2026;
-**nu au fost aplicate în producție** prin această implementare.
-
-Înainte de lansare, salvează regulile active și compară-le cu această versiune,
-apoi integrează excluderea ghidului în toate regulile generale care i-ar putea
-acorda acces. O regulă separată `allow ...: if false` nu anulează o altă regulă
-permisivă. Aplică regulile revizuite înainte de a publica funcționalitatea și
-verifică respingerea accesului direct. Până la aplicarea lor, regulile live
-permisive permit ocolirea verificărilor API prin acces direct la Firestore.
+Integrează regulile dedicate ghidului din `firestore.rules` în regulile active
+înainte de a publica aplicația. Exclude `GhidComunicare` din regulile generale
+permisive, inclusiv pentru completări, deoarece o regulă mai largă poate acorda
+acces independent de regulile dedicate.
 
 ### Verificare locală izolată
 

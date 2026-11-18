@@ -23,7 +23,6 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 180000,
     env: {
-      FIREBASE_ADMIN_PROJECT_ID: projectId,
       GCLOUD_PROJECT: projectId,
       NEXT_PUBLIC_FIREBASE_PROJECT_ID: projectId,
       NEXT_PUBLIC_FIREBASE_API_KEY: "demo-api-key",

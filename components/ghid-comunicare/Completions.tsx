@@ -2,23 +2,23 @@
 import { useCallback, useRef, useState } from "react";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
-import type { Completion, GuidePage } from "@/lib/ghid-comunicare/types";
-import { AuthorLine, ErrorNotice, errorMessage, fieldClass, useGuideApi } from "./shared";
+import type { Completion } from "@/lib/ghid-comunicare/types";
+import { AuthorLine, ErrorNotice, errorMessage, fieldClass, useGuide } from "./shared";
 
-function CompletionItem({ item, path, onChange }: { item: Completion; path: string; onChange: () => Promise<void> }) {
+function CompletionItem({ item, situationId, onChange }: { item: Completion; situationId: string; onChange: () => Promise<void> }) {
   const { user } = useAuth();
-  const api = useGuideApi();
+  const guide = useGuide();
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(item.text);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const lock = useRef(false);
   async function mutate(remove: boolean) {
-    if (lock.current) return;
+    if (!guide || lock.current) return;
     if (remove && !window.confirm("Ștergi această completare?")) return;
     lock.current = true; setSaving(true); setError("");
     try {
-      await api(`${path}/${item.id}`, { method: remove ? "DELETE" : "PATCH", ...(remove ? {} : { body: JSON.stringify({ text }) }) });
+      await guide.changeCompletion(situationId, item.id, remove ? undefined : { text });
       setEditing(false);
       await onChange();
     } catch (e) { setError(errorMessage(e)); }
@@ -40,8 +40,7 @@ function CompletionItem({ item, path, onChange }: { item: Completion; path: stri
   </li>;
 }
 export default function Completions({ id, count, withdrawn, refreshSituation }: { id: string; count: number; withdrawn: boolean; refreshSituation: () => Promise<void> }) {
-  const api = useGuideApi();
-  const path = `/${id}/completari`;
+  const guide = useGuide();
   const [open, setOpen] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [items, setItems] = useState<Completion[]>([]);
@@ -57,23 +56,23 @@ export default function Completions({ id, count, withdrawn, refreshSituation }: 
   const creationId = useRef<string | null>(null);
 
   const load = useCallback(async (next: string | null = null) => {
-    if (loadLock.current) return;
+    if (!guide || loadLock.current) return;
     loadLock.current = true; setLoading(true); setError("");
     try {
-      const page = await api<GuidePage<Completion>>(`${path}${next ? `?cursor=${encodeURIComponent(next)}` : ""}`);
+      const page = await guide.completions(id, next);
       setItems(previous => next ? [...previous, ...page.items.filter(item => !previous.some(old => old.id === item.id))] : page.items);
       setCursor(page.nextCursor); setLoaded(true);
     } catch (e) { setError(errorMessage(e)); }
     finally { loadLock.current = false; setLoading(false); }
-  }, [api, path]);
+  }, [guide, id]);
   async function refresh() { await Promise.all([load(), refreshSituation()]); }
   async function publish(event: React.FormEvent) {
     event.preventDefault();
-    if (saveLock.current) return;
+    if (!guide || saveLock.current) return;
     saveLock.current = true; setSaving(true); setFormError("");
     creationId.current ||= crypto.randomUUID();
     try {
-      await api(path, { method: "POST", body: JSON.stringify({ id: creationId.current, text }) });
+      await guide.createCompletion(id, { id: creationId.current, text });
       setText(""); setFormOpen(false); setOpen(true); creationId.current = null;
       await refresh();
     } catch (e) { setFormError(errorMessage(e)); }
@@ -93,7 +92,7 @@ export default function Completions({ id, count, withdrawn, refreshSituation }: 
       onClick={() => { setOpen(previous => !previous); if (!loaded && !open) void load(); }}>{open ? "Ascunde completările" : "Vezi completările"} ({count})</Button>
     {open ? <div id="completions-list" className="space-y-3" aria-busy={loading}>
       {error ? <div className="space-y-2"><ErrorNotice>{error}</ErrorNotice><Button size="lg" variant="outline" onClick={() => void load()}>Încearcă din nou</Button></div> : null}
-      <ul className="space-y-3">{items.map(item => <CompletionItem key={item.id} item={item} path={path} onChange={refresh} />)}</ul>
+      <ul className="space-y-3">{items.map(item => <CompletionItem key={item.id} item={item} situationId={id} onChange={refresh} />)}</ul>
       {loading ? <p role="status">Se încarcă completările…</p> : null}
       {loaded && !loading && !error && !items.length ? <p className="text-gray-600">Nu există încă completări.</p> : null}
       {cursor ? <Button variant="outline" size="lg" className="w-full" disabled={loading} onClick={() => void load(cursor)}>Arată mai multe completări</Button> : null}

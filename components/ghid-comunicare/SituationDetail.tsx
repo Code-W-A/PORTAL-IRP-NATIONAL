@@ -6,32 +6,33 @@ import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
 import type { Situation } from "@/lib/ghid-comunicare/types";
 import { WITHDRAWN_TITLE } from "@/lib/ghid-comunicare/types";
-import { AuthorLine, BackLink, CopyAnswer, ErrorNotice, errorMessage, guideUrl, useGuideApi } from "./shared";
+import { AuthorLine, BackLink, CopyAnswer, ErrorNotice, errorMessage, guideUrl, useGuide } from "./shared";
 import Completions from "./Completions";
 
 export default function SituationDetail({ id }: { id: string }) {
   const query = useSearchParams().get("q") || "";
   const { user } = useAuth();
-  const api = useGuideApi();
+  const guide = useGuide();
   const [item, setItem] = useState<Situation | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [retry, setRetry] = useState(0);
   const lock = useRef(false);
-  const refresh = useCallback(async () => { setItem(await api<Situation>(`/${id}`)); }, [api, id]);
+  const refresh = useCallback(async () => { if (guide) setItem(await guide.get(id)); }, [guide, id]);
   useEffect(() => {
+    if (!guide) return;
     const controller = new AbortController();
     setLoading(true); setError(""); setItem(null);
-    api<Situation>(`/${id}`, { signal: controller.signal }).then(value => { if (!controller.signal.aborted) setItem(value); })
+    guide.get(id).then(value => { if (!controller.signal.aborted) setItem(value); })
       .catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [api, id, retry]);
+  }, [guide, id, retry]);
   async function withdraw() {
-    if (lock.current || !window.confirm("Ștergi această situație? Întrebarea, răspunsul și continuările tale vor fi retrase. Completările colegilor vor fi păstrate.")) return;
+    if (!guide || lock.current || !window.confirm("Ștergi această situație? Întrebarea, răspunsul și continuările tale vor fi retrase. Completările colegilor vor fi păstrate.")) return;
     lock.current = true; setDeleting(true); setError("");
-    try { await api(`/${id}`, { method: "DELETE" }); await refresh(); }
+    try { await guide.withdraw(id); await refresh(); }
     catch (e) { setError(errorMessage(e)); }
     finally { lock.current = false; setDeleting(false); }
   }

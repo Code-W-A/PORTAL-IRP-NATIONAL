@@ -4,14 +4,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
-import type { Situation, FollowUp } from "@/lib/ghid-comunicare/types";
-import { BackLink, ErrorNotice, errorMessage, fieldClass, guideUrl, useGuideApi } from "./shared";
+import type { FollowUp } from "@/lib/ghid-comunicare/types";
+import { BackLink, ErrorNotice, errorMessage, fieldClass, guideUrl, useGuide } from "./shared";
 
 export default function SituationForm({ id }: { id?: string }) {
   const query = useSearchParams().get("q") || "";
   const router = useRouter();
   const { user } = useAuth();
-  const api = useGuideApi();
+  const guide = useGuide();
   const [question, setQuestion] = useState(id ? "" : query);
   const [answer, setAnswer] = useState("");
   const [followUps, setFollowUps] = useState<(FollowUp & { key: string })[]>([]);
@@ -25,10 +25,10 @@ export default function SituationForm({ id }: { id?: string }) {
   const cancelUrl = guideUrl(query, id ? `/${id}` : "");
 
   useEffect(() => {
-    if (!id) return;
+    if (!guide || !id) return;
     const controller = new AbortController();
     setLoading(true); setError("");
-    api<Situation>(`/${id}`, { signal: controller.signal }).then(item => {
+    guide.get(id).then(item => {
       if (controller.signal.aborted) return;
       if (item.author.uid !== user?.uid || item.status !== "active") {
         setAllowed(false); setError("Poți edita doar situațiile active publicate de tine."); return;
@@ -38,16 +38,16 @@ export default function SituationForm({ id }: { id?: string }) {
     }).catch(e => { if (!controller.signal.aborted) setError(errorMessage(e)); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id, api, user?.uid, retry]);
+  }, [id, guide, user?.uid, retry]);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
-    if (lock.current) return;
+    if (!guide || lock.current) return;
     lock.current = true; setSaving(true); setError("");
     creationId.current ||= crypto.randomUUID();
     try {
-      const saved = await api<Situation>(id ? `/${id}` : "", { method: id ? "PATCH" : "POST",
-        body: JSON.stringify({ id: creationId.current, question, answer, followUps: followUps.map(({ question, answer }) => ({ question, answer })) }) });
+      const draft = { question, answer, followUps: followUps.map(({ question, answer }) => ({ question, answer })) };
+      const saved = id ? await guide.update(id, draft) : await guide.create({ ...draft, id: creationId.current });
       router.replace(guideUrl(query, `/${saved.id}`), { scroll: true });
     } catch (e) { setError(errorMessage(e)); setSaving(false); lock.current = false; }
   }

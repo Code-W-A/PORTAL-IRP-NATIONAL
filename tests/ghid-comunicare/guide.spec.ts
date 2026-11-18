@@ -1,7 +1,11 @@
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { deleteApp, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { deleteApp as deleteClientApp, initializeApp as initializeClientApp, type FirebaseApp } from "firebase/app";
+import { connectAuthEmulator, getAuth as getClientAuth, signInWithEmailAndPassword } from "firebase/auth";
+import { connectFirestoreEmulator, doc, getDocFromServer, getFirestore as getClientFirestore, setDoc, terminate, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
+import { GuideService } from "../../lib/ghid-comunicare/service";
 import { randomUUID } from "node:crypto";
 import { searchText } from "../../lib/ghid-comunicare/validation";
 
@@ -18,16 +22,20 @@ const users = [
   { uid: "guide-colleague", email: "colleague@example.test", displayName: "", judetId: "B", structuraId: "ISU" },
   { uid: "guide-no-profile", email: "noprofile@example.test", displayName: "", judetId: "", structuraId: "" },
 ];
-const tokens: string[] = [];
+const clients: { app: FirebaseApp; db: Firestore; guide?: GuideService }[] = [];
 const seededIds: string[] = [];
-async function api(request: APIRequestContext, index: number, path = "", method = "GET", data?: unknown) {
-  return request.fetch(`/api/ghid-comunicare${path}`, { method, headers: { Authorization: `Bearer ${tokens[index]}` }, ...(data === undefined ? {} : { data }) });
+async function makeClient(index?: number) {
+  const clientApp = initializeClientApp({ projectId: PROJECT, apiKey: "demo-api-key" }, `guide-client-${index}`);
+  const clientAuth = getClientAuth(clientApp);
+  connectAuthEmulator(clientAuth, `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`, { disableWarnings: true });
+  const clientDb = getClientFirestore(clientApp);
+  const [host, port] = process.env.FIRESTORE_EMULATOR_HOST!.split(":");
+  connectFirestoreEmulator(clientDb, host, Number(port));
+  const user = index === undefined ? null : (await signInWithEmailAndPassword(clientAuth, users[index].email, password)).user;
+  clients.push({ app: clientApp, db: clientDb, guide: user ? new GuideService(clientDb, user) : undefined });
 }
-async function create(request: APIRequestContext, index = 0, question = "Întrebare de test", answer = "Răspuns verificat", followUps: { question: string; answer: string }[] = []) {
-  const response = await api(request, index, "", "POST", { id: randomUUID(), question, answer, followUps });
-  expect(response.status(), await response.text()).toBe(200);
-  return response.json();
-}
+const create = (index = 0, question = "Întrebare de test", answer = "Răspuns verificat") =>
+  clients[index].guide!.create({ id: randomUUID(), question, answer, followUps: [] });
 async function login(page: Page, index = 0) {
   await page.goto("/login");
   await page.getByLabel("Email", { exact: true }).fill(users[index].email);
@@ -49,13 +57,9 @@ test.beforeAll(async () => {
       await db.doc(`Judete/${user.judetId}/Structuri/${user.structuraId}`).set({ isAdmin: user.judetId === "DB" });
       await db.doc(`Judete/${user.judetId}/Structuri/${user.structuraId}/Settings/general`).set({ structureDisplay: `ISU ${user.judetId}` });
     }
-    const response = await fetch(`http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-api-key`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: user.email, password, returnSecureToken: true }),
-    });
-    const data = await response.json();
-    if (!data.idToken) throw new Error("Autentificarea în emulator a eșuat.");
-    tokens.push(data.idToken);
+    await makeClient(users.indexOf(user));
   }
+  await makeClient();
   const batch = db.batch();
   for (let i = 0; i < 125; i++) {
     const id = randomUUID(); seededIds.push(id);
@@ -71,95 +75,119 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  await Promise.all(clients.map(async client => { await terminate(client.db); await deleteClientApp(client.app); }));
   await db.terminate();
   await deleteApp(app);
 });
 
-test("API: authentication, validation and full-collection search", async ({ request }) => {
-  expect((await request.get("/api/ghid-comunicare")).status()).toBe(401);
-  expect((await request.get("/api/ghid-comunicare", { headers: { Authorization: "Bearer invalid" } })).status()).toBe(401);
-  expect((await api(request, 2)).status()).toBe(403);
-  expect((await api(request, 0, "", "POST", { id: randomUUID(), question: " ", answer: "x" })).status()).toBe(400);
-  expect((await api(request, 0, "", "POST", { id: randomUUID(), question: "x", answer: "y", followUps: [{ question: "fără răspuns" }] })).status()).toBe(400);
-  const first = await (await api(request, 0)).json();
+test("SDK: validation, pagination and full-collection search", async () => {
+  const author = clients[0].guide!;
+  const colleague = clients[1].guide!;
+  await expect(author.create({ id: randomUUID(), question: " ", answer: "x", followUps: [] })).rejects.toMatchObject({ status: 400 });
+  await expect(author.create({ id: randomUUID(), question: "x", answer: "y", followUps: [{ question: "fără răspuns", answer: "" }] })).rejects.toMatchObject({ status: 400 });
+  const first = await author.list("", null);
   expect(first.items).toHaveLength(20);
-  expect(first.items.some((item: { id: string }) => item.id === seededIds[124])).toBe(false);
+  expect(first.items.some(item => item.id === seededIds[124])).toBe(false);
   for (const q of ["INTARZIATA", "intarziere", "verificarea informatiilor", "interventia confirmate"]) {
-    const response = await api(request, 1, `?q=${encodeURIComponent(q)}`);
-    expect(response.status()).toBe(200);
-    expect((await response.json()).items.some((item: { id: string }) => item.id === seededIds[124])).toBe(true);
+    const result = await colleague.list(q, null);
+    expect(result.items.some(item => item.id === seededIds[124])).toBe(true);
   }
-  const seen = new Set(first.items.map((item: { id: string }) => item.id));
+  const seen = new Set(first.items.map(item => item.id));
   let cursor = first.nextCursor;
   while (cursor) {
-    const next = await (await api(request, 0, `?cursor=${encodeURIComponent(cursor)}`)).json();
+    const next = await author.list("", cursor);
     for (const item of next.items) { expect(seen.has(item.id)).toBe(false); seen.add(item.id); }
     cursor = next.nextCursor;
   }
   expect(seen.size).toBe(125);
-  expect((await api(request, 0, "?cursor=invalid")).status()).toBe(400);
+  await expect(author.list("", "invalid")).rejects.toMatchObject({ status: 400 });
 });
 
-test("API: cross-structure collaboration, ownership and retry-safe publication", async ({ request }) => {
+test("SDK: cross-structure collaboration, ownership and retry-safe publication", async () => {
+  const author = clients[0].guide!;
+  const colleague = clients[1].guide!;
   const id = randomUUID();
-  const payload = { id, question: "Acces comun", answer: "Text inițial", author: { uid: users[1].uid }, followUps: [] };
-  const pair = await Promise.all([api(request, 0, "", "POST", payload), api(request, 0, "", "POST", payload)]);
-  expect(pair.every(response => response.status() === 200)).toBe(true);
-  const item = await (await api(request, 1, `/${id}`)).json();
-  expect(item.author).toEqual({ uid: users[0].uid, name: "Autor test" });
-  expect((await api(request, 1, `/${id}`, "PATCH", { question: "atac", answer: "atac" })).status()).toBe(403);
-  expect((await api(request, 1, `/${id}`, "DELETE")).status()).toBe(403);
+  const payload = { id, question: "Acces comun", answer: "Text inițial", followUps: [] };
+  const pair = await Promise.all([author.create(payload), author.create(payload)]);
+  expect(pair.map(item => item.id)).toEqual([id, id]);
+  expect((await colleague.get(id)).author).toEqual({ uid: users[0].uid, name: "Autor test" });
+  await expect(colleague.update(id, payload)).rejects.toMatchObject({ status: 403 });
+  await expect(colleague.withdraw(id)).rejects.toMatchObject({ status: 403 });
   const completionId = randomUUID();
   const completion = { id: completionId, text: "Observație de la coleg" };
-  await Promise.all([api(request, 1, `/${id}/completari`, "POST", completion), api(request, 1, `/${id}/completari`, "POST", completion)]);
-  expect((await (await api(request, 0, `/${id}`)).json()).completionCount).toBe(1);
-  const comments = await (await api(request, 0, `/${id}/completari`)).json();
-  expect(comments.items[0].author.name).toBe("ISU B");
-  // The situation's author is an admin structure, but still cannot alter the colleague's text.
-  expect((await api(request, 0, `/${id}/completari/${completionId}`, "PATCH", { text: "atac" })).status()).toBe(403);
-  expect((await api(request, 0, `/${id}/completari/${completionId}`, "DELETE")).status()).toBe(403);
-  expect((await api(request, 1, `/${id}/completari/${completionId}`, "PATCH", { text: "Completare corectată" })).status()).toBe(200);
-  expect((await api(request, 0, `/${id}`, "PATCH", { question: "Întrebare actualizată", answer: "Răspuns actualizat" })).status()).toBe(200);
-  expect((await api(request, 0, `/${id}`, "DELETE")).status()).toBe(200);
-  const retired = await (await api(request, 1, `/${id}`)).json();
-  expect(retired).toMatchObject({ status: "withdrawn", question: "", answer: "", followUps: [], completionCount: 1 });
+  await Promise.all([colleague.createCompletion(id, completion), colleague.createCompletion(id, completion)]);
+  expect((await author.get(id)).completionCount).toBe(1);
+  expect((await author.completions(id, null)).items[0].author.name).toBe("ISU B");
+  const authorCompletion = { id: randomUUID(), text: "Completarea autorului" };
+  const colleagueCompletion = { id: randomUUID(), text: "A doua completare a colegului" };
+  await Promise.all([author.createCompletion(id, authorCompletion), colleague.createCompletion(id, colleagueCompletion)]);
+  expect((await author.get(id)).completionCount).toBe(3);
+  await Promise.all([author.changeCompletion(id, authorCompletion.id), colleague.changeCompletion(id, colleagueCompletion.id)]);
+  expect((await author.get(id)).completionCount).toBe(1);
+  await expect(author.changeCompletion(id, completionId, { text: "text modificat" })).rejects.toMatchObject({ status: 403 });
+  await expect(author.changeCompletion(id, completionId)).rejects.toMatchObject({ status: 403 });
+  await colleague.changeCompletion(id, completionId, { text: "Completare corectată" });
+  const followUps = Array.from({ length: 30 }, (_, index) => ({ question: `Întrebarea ${index}`, answer: "Răspuns" }));
+  const edited = await author.update(id, { ...payload, question: "Întrebare actualizată", followUps });
+  expect(edited.followUps).toEqual(followUps);
+  await author.withdraw(id);
+  expect(await colleague.get(id)).toMatchObject({ status: "withdrawn", question: "", answer: "", followUps: [], completionCount: 1 });
   expect((await db.doc(`GhidComunicare/${id}`).get()).data()?.searchText).toBe("");
-  expect((await (await api(request, 1, `/${id}/completari`)).json()).items[0].text).toBe("Completare corectată");
-  expect((await api(request, 1, `/${id}/completari`, "POST", { id: randomUUID(), text: "nou" })).status()).toBe(409);
-  expect((await api(request, 1, `/${id}/completari/${completionId}`, "PATCH", { text: "Corectată după retragere" })).status()).toBe(200);
-  expect((await api(request, 1, `/${id}/completari/${completionId}`, "DELETE")).status()).toBe(200);
-  expect((await (await api(request, 0, `/${id}`)).json()).completionCount).toBe(0);
+  expect((await colleague.completions(id, null)).items[0].text).toBe("Completare corectată");
+  await expect(colleague.createCompletion(id, { id: randomUUID(), text: "nou" })).rejects.toMatchObject({ status: 409 });
+  await colleague.changeCompletion(id, completionId, { text: "Corectată după retragere" });
+  await colleague.changeCompletion(id, completionId);
+  expect((await author.get(id)).completionCount).toBe(0);
 });
 
-test("API: simultaneous completion publication and withdrawal preserves every accepted completion", async ({ request }) => {
-  const item = await create(request);
-  const id = randomUUID();
-  const [published, withdrawn] = await Promise.all([
-    api(request, 1, `/${item.id}/completari`, "POST", { id, text: "Completare concurentă" }),
-    api(request, 0, `/${item.id}`, "DELETE"),
+test("SDK: simultaneous completion publication and withdrawal preserves every accepted completion", async () => {
+  const author = clients[0].guide!;
+  const colleague = clients[1].guide!;
+  const item = await create();
+  const [published, withdrawn] = await Promise.allSettled([
+    colleague.createCompletion(item.id, { id: randomUUID(), text: "Completare concurentă" }),
+    author.withdraw(item.id),
   ]);
-  expect(withdrawn.status()).toBe(200);
-  expect([200, 409]).toContain(published.status());
-  const result = await (await api(request, 0, `/${item.id}`)).json();
-  const comments = await (await api(request, 0, `/${item.id}/completari`)).json();
+  expect(withdrawn.status).toBe("fulfilled");
+  if (published.status === "rejected") expect(published.reason).toMatchObject({ status: 409 });
+  const result = await author.get(item.id);
+  const comments = await author.completions(item.id, null);
   expect(result.status).toBe("withdrawn");
   expect(result.completionCount).toBe(comments.items.length);
-  expect(comments.items.length).toBe(published.status() === 200 ? 1 : 0);
+  expect(comments.items.length).toBe(published.status === "fulfilled" ? 1 : 0);
 });
 
-test("Firestore rules: guide and descendants denied to clients; other portal paths retain policy", async () => {
-  const root = `http://${process.env.FIRESTORE_EMULATOR_HOST}/v1/projects/${PROJECT}/databases/(default)/documents`;
-  for (const token of [null, tokens[0], tokens[1]]) {
-    const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
-    for (const path of [`GhidComunicare/${seededIds[0]}`, `GhidComunicare/${seededIds[0]}/Completari/blocked`]) {
-      expect((await fetch(`${root}/${path}`, { headers })).status).toBe(403);
-      expect((await fetch(`${root}/${path}`, { method: "PATCH", headers, body: JSON.stringify({ fields: { text: { stringValue: "bypass" } } }) })).status).toBe(403);
-      expect((await fetch(`${root}/${path}`, { method: "DELETE", headers })).status).toBe(403);
-    }
+test("Firestore rules: direct access follows profile and ownership and keeps the count atomic", async () => {
+  const [author, colleague, noProfile, anonymous] = clients.map(client => client.db);
+  const id = seededIds[0];
+  const situationRef = (client: Firestore) => doc(client, "GhidComunicare", id);
+  const completionId = randomUUID();
+  const now = new Date().toISOString();
+  const completion = { text: "Completare", author: { uid: users[1].uid, name: "ISU B" }, createdAt: now, updatedAt: now };
+  for (const client of [noProfile, anonymous]) {
+    await expect(getDocFromServer(situationRef(client))).rejects.toMatchObject({ code: "permission-denied" });
+    await expect(getDocFromServer(doc(situationRef(client), "Completari", completionId))).rejects.toMatchObject({ code: "permission-denied" });
   }
-  expect((await fetch(`${root}/users/${users[0].uid}`)).status).toBe(200);
-  expect((await fetch(`${root}/GuideRulesProbe/probe`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fields: {} }) })).status).toBe(403);
-  expect((await fetch(`${root}/GuideRulesProbe/probe`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${tokens[0]}` }, body: JSON.stringify({ fields: {} }) })).status).toBe(200);
+  expect((await getDocFromServer(situationRef(colleague))).exists()).toBe(true);
+  await expect(updateDoc(situationRef(colleague), { question: "Modificare nepermisă" })).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(updateDoc(situationRef(author), { "author.uid": users[1].uid })).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(updateDoc(situationRef(author), { followUps: [{ question: "Lipsește răspunsul" }] })).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(updateDoc(situationRef(author), { completionCount: 1, completionChangeId: completionId })).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(setDoc(doc(situationRef(colleague), "Completari", completionId), completion)).rejects.toMatchObject({ code: "permission-denied" });
+
+  const folded = writeBatch(colleague);
+  folded.update(situationRef(colleague), { completionCount: 1, completionChangeId: completionId });
+  folded.set(doc(situationRef(colleague), "Completari", completionId), { ...completion, author: { uid: users[0].uid, name: "Alt autor" } });
+  await expect(folded.commit()).rejects.toMatchObject({ code: "permission-denied" });
+
+  await clients[1].guide!.createCompletion(id, { id: completionId, text: completion.text });
+  const authorCompletionRef = doc(situationRef(author), "Completari", completionId);
+  await expect(updateDoc(authorCompletionRef, { text: "Modificare nepermisă" })).rejects.toMatchObject({ code: "permission-denied" });
+  await clients[1].guide!.changeCompletion(id, completionId);
+
+  expect((await getDocFromServer(doc(anonymous, "users", users[0].uid))).exists()).toBe(true);
+  await expect(setDoc(doc(anonymous, "GuideRulesProbe", "probe"), {})).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(setDoc(doc(author, "GuideRulesProbe", "probe"), {})).resolves.toBeUndefined();
 });
 
 test("mobile: menu, search beyond first page, main and follow-up copy, colleague contribution", async ({ page, context }) => {
@@ -208,27 +236,25 @@ test("mobile: restore loaded rows and scroll after opening a situation", async (
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(scrollBefore - 100);
 });
 
-test("mobile: empty search prefill, error retains text, minimal form and follow-up editing", async ({ page, request }) => {
+test("mobile: empty search prefill, error retains text, minimal form and follow-up editing", async ({ page }) => {
   await login(page);
   await page.getByRole("searchbox").fill("Întrebarea fără rezultat unic");
   await expect(page.getByText("Nu am găsit această situație.")).toBeVisible();
   await page.getByRole("link", { name: "Adaugă o situație", exact: true }).last().click();
   await expect(page.getByLabel("Ce te poate întreba?", { exact: true })).toHaveValue("Întrebarea fără rezultat unic");
   await page.getByLabel("Ce poți răspunde?", { exact: true }).fill("Răspuns scris pe telefon.");
-  let posts = 0;
-  await page.route("**/api/ghid-comunicare", async route => {
-    if (route.request().method() === "POST") { posts++; await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Eroare simulată de salvare." }) }); }
-    else await route.continue();
-  });
+  const transactionRead = "**/*:batchGet*";
+  await page.route(transactionRead, route => route.fulfill({
+    status: 403, json: { error: { code: 403, status: "PERMISSION_DENIED", message: "Test" } },
+  }));
   await page.getByRole("button", { name: "Salvează", exact: true }).click();
-  await expect(page.getByRole("alert").filter({ hasText: "Eroare simulată de salvare." })).toHaveText("Eroare simulată de salvare.");
+  await expect(page.getByRole("alert").filter({ hasText: "Contul nu are acces" })).toBeVisible();
   await expect(page.getByLabel("Ce poți răspunde?", { exact: true })).toHaveValue("Răspuns scris pe telefon.");
-  expect(posts).toBe(1);
-  await page.unroute("**/api/ghid-comunicare");
+  await page.unroute(transactionRead);
   await page.getByRole("button", { name: "Salvează", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Întrebarea fără rezultat unic", exact: true })).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").pop();
-  expect((await (await api(request, 0, `/${id}`)).json()).followUps).toEqual([]);
+  expect((await clients[0].guide!.get(id!)).followUps).toEqual([]);
   await page.getByRole("link", { name: "Editează", exact: true }).click();
   await page.getByRole("button", { name: "Adaugă o întrebare suplimentară" }).click();
   await page.getByLabel("Întrebarea suplimentară 1", { exact: true }).fill("Dar mai departe?");
@@ -237,10 +263,10 @@ test("mobile: empty search prefill, error retains text, minimal form and follow-
   await expect(page.locator("summary", { hasText: "Dar mai departe?" })).toBeVisible();
 });
 
-test("mobile: clipboard failure and withdrawal retain colleagues' contributions", async ({ page, request }) => {
-  const item = await create(request, 0, "Situație pentru retragere", "Text care va fi retras");
+test("mobile: clipboard failure and withdrawal retain colleagues' contributions", async ({ page }) => {
+  const item = await create(0, "Situație pentru retragere", "Text care va fi retras");
   const completionId = randomUUID();
-  await api(request, 1, `/${item.id}/completari`, "POST", { id: completionId, text: "Completare păstrată după retragere." });
+  await clients[1].guide!.createCompletion(item.id, { id: completionId, text: "Completare păstrată după retragere." });
   await login(page);
   await page.goto(`/ghid-comunicare/${item.id}`);
   await page.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: () => Promise.reject(new Error("denied")) } }); });
