@@ -7,6 +7,7 @@ import { connectAuthEmulator, getAuth as getClientAuth, signInWithEmailAndPasswo
 import { connectFirestoreEmulator, doc, getDocFromServer, getFirestore as getClientFirestore, setDoc, terminate, updateDoc, writeBatch, type Firestore } from "firebase/firestore";
 import { GuideService } from "../../lib/ghid-comunicare/service";
 import { randomUUID } from "node:crypto";
+import { UNCATEGORIZED } from "../../lib/ghid-comunicare/types";
 import { searchText } from "../../lib/ghid-comunicare/validation";
 
 const PROJECT = "demo-irp-guide";
@@ -48,7 +49,8 @@ async function login(page: Page, index = 0) {
 }
 
 test.beforeAll(async () => {
-  await db.recursiveDelete(db.collection("GhidComunicare"));
+  await Promise.all(["GhidComunicare", "GhidComunicareCategorii", "GhidComunicareFavorite"]
+    .map(name => db.recursiveDelete(db.collection(name))));
   for (const user of users) {
     await auth.deleteUser(user.uid).catch(() => {});
     await auth.createUser({ uid: user.uid, email: user.email, password, ...(user.displayName ? { displayName: user.displayName } : {}) });
@@ -190,6 +192,97 @@ test("Firestore rules: direct access follows profile and ownership and keeps the
   await expect(setDoc(doc(author, "GuideRulesProbe", "probe"), {})).resolves.toBeUndefined();
 });
 
+test("SDK: shared categories, private favorites and composed filters", async () => {
+  const author = clients[0].guide!;
+  const colleague = clients[1].guide!;
+  const [category, duplicate] = await Promise.all([
+    author.createCategory("  Comunicare   Operativă "),
+    colleague.createCategory("comunicare operativa"),
+  ]);
+  expect(duplicate).toEqual(category);
+  const other = await colleague.createCategory("Informare locală");
+  const id = randomUUID();
+  const draft = { id, question: "Întrebare încadrată", answer: "Răspuns comun", followUps: [], categoryIds: [category.id, other.id] };
+  const saved = await author.create(draft);
+  expect(saved.categoryIds).toEqual(draft.categoryIds);
+  expect((await colleague.list("încadrată", null, undefined, other.id)).items.map(item => item.id)).toEqual([id]);
+  expect((await colleague.list("încadrată", null, undefined, UNCATEGORIZED)).items).toEqual([]);
+  expect((await colleague.get(seededIds[0])).categoryIds).toEqual([]);
+
+  const categoryRef = doc(clients[0].db, "GhidComunicareCategorii", category.id);
+  await expect(updateDoc(categoryRef, { name: "Redenumire" })).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(getDocFromServer(doc(clients[3].db, categoryRef.path))).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(author.update(id, { ...draft, categoryIds: ["0".repeat(64)] })).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(updateDoc(doc(clients[1].db, "GhidComunicare", id), { categoryIds: [] })).rejects.toMatchObject({ code: "permission-denied" });
+  const extra = await Promise.all(["Convocări", "Evenimente", "Anunțuri"].map(name => author.createCategory(name)));
+  const allIds = [...draft.categoryIds, ...extra.map(item => item.id)];
+  const largestDraft = { ...draft, categoryIds: allIds, followUps: Array.from({ length: 30 }, () => ({ question: "Întrebare", answer: "Răspuns" })) };
+  await expect(author.create({ ...largestDraft, id: randomUUID() })).resolves.toMatchObject({ categoryIds: allIds });
+  await expect(author.update(id, { ...largestDraft, categoryIds: [other.id] })).resolves.toMatchObject({ categoryIds: [other.id] });
+
+  await Promise.all([author.setFavorite(id, true), author.setFavorite(id, true)]);
+  const privatePath = `GhidComunicareFavorite/${users[0].uid}/Situatii/${id}`;
+  expect((await getDocFromServer(doc(clients[0].db, privatePath))).exists()).toBe(true);
+  await expect(getDocFromServer(doc(clients[1].db, privatePath))).rejects.toMatchObject({ code: "permission-denied" });
+  await expect(setDoc(doc(clients[1].db, privatePath), {})).rejects.toMatchObject({ code: "permission-denied" });
+  expect((await author.listFavorites([id], "încadrată", other.id, null)).items.map(item => item.id)).toEqual([id]);
+  await author.setFavorite(id, false);
+  expect((await getDocFromServer(doc(clients[0].db, privatePath))).exists()).toBe(false);
+});
+
+test("desktop: split view, complete clipboard, category filters and account favorite sync", async ({ page, context, browser }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const author = clients[0].guide!;
+  const category = await author.createCategory("Mesaje publice");
+  const answer = "Răspuns confirmat. ".repeat(45).trim();
+  const record = await author.create({
+    id: randomUUID(), question: "Mesaj pentru presă", answer, categoryIds: [category.id],
+    followUps: [{ question: "Ce urmează mâine?", answer: "Așteptăm confirmarea." }],
+  });
+  await login(page);
+  await page.getByLabel("Filtrează după categorie").selectOption(category.id);
+  const search = page.getByRole("searchbox", { name: "Ce te-a întrebat?" });
+  await search.fill("urmează mâine");
+  const card = page.getByRole("article").filter({ has: page.getByRole("link", { name: /Mesaj pentru presă/ }) });
+  await expect(card.getByText(/Întrebare suplimentară.*Ce urmează mâine/)).toBeVisible();
+  await card.getByRole("button", { name: "Copiază răspunsul" }).click();
+  await expect(card.getByRole("button", { name: "Copiat", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(answer);
+  await card.getByRole("link", { name: /Mesaj pentru presă/ }).click();
+  await expect(page.getByLabel("Situația selectată")).toBeVisible();
+  await expect(search).toHaveValue("urmează mâine");
+  expect(new URL(page.url()).pathname).toBe("/ghid-comunicare");
+  expect(new URL(page.url()).searchParams.get("situatie")).toBe(record.id);
+  await expect(page.getByRole("button", { name: /Vezi completările/ })).toHaveCount(0);
+
+  const otherContext = await browser.newContext({ baseURL: new URL(page.url()).origin, viewport: { width: 390, height: 844 } });
+  try {
+    const otherPage = await otherContext.newPage();
+    await login(otherPage);
+    await otherPage.getByRole("button", { name: "Favoritele mele" }).click();
+    await expect(otherPage.getByText("Nu ai încă situații favorite.")).toBeVisible();
+    await card.getByRole("button", { name: "Adaugă la favorite" }).click();
+    await expect(otherPage.getByRole("link", { name: /Mesaj pentru presă/ })).toBeVisible();
+    await page.getByRole("button", { name: "Favoritele mele" }).click();
+    await expect(card).toBeVisible();
+    await page.getByLabel("Filtrează după categorie").selectOption(UNCATEGORIZED);
+    await expect(page.getByRole("button", { name: "Favoritele mele" })).toHaveAttribute("aria-pressed", "true");
+    await expect(card).toHaveCount(0);
+    await page.getByLabel("Filtrează după categorie").selectOption(category.id);
+    await expect(card).toBeVisible();
+    await otherPage.getByRole("button", { name: "Scoate din favorite" }).click();
+    await expect(card).toHaveCount(0);
+  } finally {
+    await otherContext.close();
+  }
+
+  await page.getByRole("button", { name: "Toate situațiile" }).click();
+  await card.getByRole("link", { name: /Mesaj pentru presă/ }).click();
+  await expect(page.getByLabel("Situația selectată").getByText("Ce urmează mâine?")).toBeVisible();
+  await page.screenshot({ path: "test-results/guide-desktop.png", fullPage: true });
+});
+
 test("mobile: menu, search beyond first page, main and follow-up copy, colleague contribution", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await login(page, 1);
@@ -201,7 +294,7 @@ test("mobile: menu, search beyond first page, main and follow-up copy, colleague
   await input.fill("INTARZIERE");
   await page.getByRole("link", { name: /Situație mobilă 124/ }).click();
   await expect(page.getByText("Informații confirmate despre intervenția întârziată.", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Editează", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Opțiuni situație" })).toHaveCount(0);
   await page.getByRole("button", { name: "Copiază răspunsul", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Răspuns copiat");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("Informații confirmate despre intervenția întârziată.");
@@ -241,22 +334,41 @@ test("mobile: empty search prefill, error retains text, minimal form and follow-
   await page.getByRole("searchbox").fill("Întrebarea fără rezultat unic");
   await expect(page.getByText("Nu am găsit această situație.")).toBeVisible();
   await page.getByRole("link", { name: "Adaugă o situație", exact: true }).last().click();
-  await expect(page.getByLabel("Ce te poate întreba?", { exact: true })).toHaveValue("Întrebarea fără rezultat unic");
-  await page.getByLabel("Ce poți răspunde?", { exact: true }).fill("Răspuns scris pe telefon.");
+  await expect(page.getByLabel("Întrebarea", { exact: true })).toHaveValue("Întrebarea fără rezultat unic");
+  const answerField = page.getByLabel("Răspunsul propus", { exact: true });
+  const initialHeight = await answerField.evaluate(input => input.clientHeight);
+  await answerField.fill("Răspuns scris pe telefon.\n".repeat(8));
+  await expect.poll(() => answerField.evaluate(input => input.clientHeight)).toBeGreaterThan(initialHeight);
+  await answerField.fill("Răspuns scris pe telefon.");
+  await page.locator("summary", { hasText: "Categorii" }).click();
+  const categories = page.getByRole("searchbox", { name: "Caută sau creează o categorie" });
+  await categories.fill("Mesaje operative");
+  await page.getByRole("button", { name: /Creează „Mesaje operative”/ }).click();
+  await expect(page.getByRole("checkbox", { name: "Mesaje operative" })).toBeChecked();
+  await categories.fill("Informare preventivă");
+  await page.getByRole("button", { name: /Creează „Informare preventivă”/ }).click();
+  await expect(page.getByRole("checkbox", { name: "Informare preventivă" })).toBeChecked();
   const transactionRead = "**/*:batchGet*";
   await page.route(transactionRead, route => route.fulfill({
     status: 403, json: { error: { code: 403, status: "PERMISSION_DENIED", message: "Test" } },
   }));
   await page.getByRole("button", { name: "Salvează", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Contul nu are acces" })).toBeVisible();
-  await expect(page.getByLabel("Ce poți răspunde?", { exact: true })).toHaveValue("Răspuns scris pe telefon.");
+  await expect(page.getByLabel("Răspunsul propus", { exact: true })).toHaveValue("Răspuns scris pe telefon.");
+  await expect(page.getByRole("button", { name: "Elimină categoria Mesaje operative" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Elimină categoria Informare preventivă" })).toBeVisible();
   await page.unroute(transactionRead);
   await page.getByRole("button", { name: "Salvează", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Întrebarea fără rezultat unic", exact: true })).toBeVisible();
   const id = new URL(page.url()).pathname.split("/").pop();
-  expect((await clients[0].guide!.get(id!)).followUps).toEqual([]);
-  await page.getByRole("link", { name: "Editează", exact: true }).click();
+  const saved = await clients[0].guide!.get(id!);
+  expect(saved.followUps).toEqual([]);
+  expect(saved.categoryIds).toHaveLength(2);
+  await page.getByRole("button", { name: "Opțiuni situație" }).click();
+  await page.getByRole("button", { name: "Editează", exact: true }).click();
   await page.getByRole("button", { name: "Adaugă o întrebare suplimentară" }).click();
+  await expect(page.getByLabel("Întrebarea suplimentară 1", { exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Salvează", exact: true })).toBeInViewport();
   await page.getByLabel("Întrebarea suplimentară 1", { exact: true }).fill("Dar mai departe?");
   await page.getByLabel("Răspunsul suplimentar 1", { exact: true }).fill("Continuarea răspunsului.");
   await page.getByRole("button", { name: "Salvează", exact: true }).click();
@@ -273,8 +385,9 @@ test("mobile: clipboard failure and withdrawal retain colleagues' contributions"
   await page.getByRole("button", { name: "Copiază răspunsul", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Nu am putut copia răspunsul.");
   expect(await page.getByText("Text care va fi retras", { exact: true }).evaluate(element => getComputedStyle(element).userSelect)).toBe("text");
+  await page.getByRole("button", { name: "Opțiuni situație" }).click();
   page.once("dialog", dialog => dialog.accept());
-  await page.getByRole("button", { name: "Șterge", exact: true }).click();
+  await page.getByRole("button", { name: "Retrage situația", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Situație retrasă de autor", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Adaugă o completare" })).toHaveCount(0);
   await page.getByRole("button", { name: "Vezi completările (1)", exact: true }).click();

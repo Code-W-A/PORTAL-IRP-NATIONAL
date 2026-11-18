@@ -2,14 +2,16 @@ import { FirebaseError } from "firebase/app";
 import type { User } from "firebase/auth";
 import {
   collection, doc, documentId, getDocFromServer, getDocsFromServer, increment, limit, orderBy, query,
-  runTransaction, startAfter, type DocumentData, type DocumentReference, type Firestore,
+  deleteDoc, onSnapshot, runTransaction, serverTimestamp, startAfter, type DocumentData, type DocumentReference, type Firestore,
 } from "firebase/firestore";
-import type { Completion, GuideAuthor, GuidePage, Situation, SituationDraft, SituationSummary } from "./types";
-import { WITHDRAWN_TITLE } from "./types";
-import { GuideError, matchesSearch, normalizeSearch, searchText, validateCompletion, validateCreationId, validateId, validateSituation } from "./validation";
+import type { Completion, GuideAuthor, GuideCategory, GuidePage, Situation, SituationDraft, SituationSummary } from "./types";
+import { UNCATEGORIZED, WITHDRAWN_TITLE } from "./types";
+import { categoryName, GuideError, matchesSearch, normalizeSearch, searchText, validateCompletion, validateCreationId, validateId, validateSituation } from "./validation";
 
 export const GUIDE_COLLECTION = "GhidComunicare";
 const PAGE_SIZE = 20;
+const CATEGORY_COLLECTION = "GhidComunicareCategorii";
+const FAVORITES_COLLECTION = "GhidComunicareFavorite";
 type Cursor = { date: string; id: string };
 function encodeCursor(item: { id: string; updatedAt: string }) {
   return JSON.stringify({ date: item.updatedAt, id: item.id });
@@ -27,8 +29,23 @@ function decodeCursor(raw: string | null): Cursor | null {
 function situation(id: string, data: DocumentData): Situation {
   return { id, question: data.question, answer: data.answer, followUps: data.followUps,
     author: data.author, status: data.status, completionCount: data.completionCount,
-    createdAt: data.createdAt, updatedAt: data.updatedAt };
+    createdAt: data.createdAt, updatedAt: data.updatedAt, categoryIds: Array.isArray(data.categoryIds) ? data.categoryIds : [] };
 }
+function summarize(item: Situation, search: string, category: string): SituationSummary | null {
+  if (item.status === "withdrawn" && item.completionCount === 0) return null;
+  if (category === UNCATEGORIZED ? item.categoryIds.length > 0 : category && !item.categoryIds.includes(category)) {
+    return null;
+  }
+  const { followUps, ...summary } = item;
+  if (!search.trim()) return summary;
+  if (item.status === "withdrawn") return matchesSearch(normalizeSearch(WITHDRAWN_TITLE), search) ? summary : null;
+  const main = normalizeSearch(`${item.question} ${item.answer}`);
+  if (matchesSearch(main, search)) return summary;
+  if (!matchesSearch(searchText(item), search)) return null;
+  const match = followUps.find(pair => matchesSearch(normalizeSearch(`${pair.question} ${pair.answer}`), search));
+  return match ? { ...summary, matchingQuestion: match.question } : summary;
+}
+
 function situationContent(input: SituationDraft) {
   const draft = validateSituation(input);
   const content = { ...draft, searchText: searchText(draft) };
@@ -76,13 +93,87 @@ export class GuideService {
   }
   private ref(id: string) { return doc(this.db, GUIDE_COLLECTION, validateId(id)); }
 
-  async list(search: string, rawCursor: string | null, signal?: AbortSignal): Promise<GuidePage<SituationSummary>> {
+  watchCategories(onChange: (items: GuideCategory[]) => void, onError: (error: Error) => void) {
+    return onSnapshot(collection(this.db, CATEGORY_COLLECTION), snapshot => {
+      const items = snapshot.docs.map(item => ({ id: item.id, name: item.data().name as string }));
+      onChange(items.sort((left, right) => left.name.localeCompare(right.name, "ro")));
+    }, onError);
+  }
+
+  async createCategory(value: string): Promise<GuideCategory> {
+    const { name, normalized } = categoryName(value);
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(normalized));
+    const id = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, "0")).join("");
+    const ref = doc(this.db, CATEGORY_COLLECTION, id);
+    try {
+      return await runTransaction(this.db, async tx => {
+        const existing = await tx.get(ref);
+        if (existing.exists()) return { id, name: existing.data().name as string };
+        tx.set(ref, { name, createdBy: this.user.uid });
+        return { id, name };
+      });
+    } catch (error) {
+      if (!isPermissionDenied(error)) throw error;
+      const existing = await getDocFromServer(ref);
+      if (!existing.exists()) throw error;
+      return { id, name: existing.data().name as string };
+    }
+  }
+
+  private favorites() {
+    return collection(this.db, FAVORITES_COLLECTION, this.user.uid, "Situatii");
+  }
+
+  watchFavorites(onChange: (ids: string[]) => void, onError: (error: Error) => void) {
+    return onSnapshot(query(this.favorites(), orderBy("savedAt", "desc")), snapshot => {
+      onChange(snapshot.docs.map(item => item.id));
+    }, onError);
+  }
+
+  async setFavorite(id: string, favorite: boolean) {
+    const ref = doc(this.favorites(), validateId(id));
+    if (!favorite) {
+      await deleteDoc(ref);
+      return;
+    }
+    try {
+      await runTransaction(this.db, async tx => {
+        if (!(await tx.get(ref)).exists()) tx.set(ref, { savedAt: serverTimestamp() });
+      });
+    } catch (error) {
+      if (!isPermissionDenied(error) || !(await getDocFromServer(ref)).exists()) throw error;
+    }
+  }
+
+  async listFavorites(ids: readonly string[], search: string, category: string, rawCursor: string | null, signal?: AbortSignal): Promise<GuidePage<SituationSummary>> {
+    if (search.length > 1000) throw new GuideError(400, "Căutarea este prea lungă.");
+    const items: SituationSummary[] = [];
+    let offset = rawCursor === null ? 0 : Number(rawCursor);
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset > ids.length) {
+      throw new GuideError(400, "Pagina solicitată nu este validă. Reîncarcă lista.");
+    }
+    while (offset < ids.length && items.length < PAGE_SIZE) {
+      signal?.throwIfAborted();
+      const snapshots = await Promise.all(
+        ids.slice(offset, offset + PAGE_SIZE - items.length).map(id => getDocFromServer(this.ref(id))),
+      );
+      signal?.throwIfAborted();
+      offset += snapshots.length;
+      for (const snap of snapshots) {
+        if (!snap.exists()) continue;
+        const item = summarize(situation(snap.id, snap.data()), search, category);
+        if (item) items.push(item);
+      }
+    }
+    return { items, nextCursor: offset < ids.length ? String(offset) : null };
+  }
+
+  async list(search: string, rawCursor: string | null, signal?: AbortSignal, category = ""): Promise<GuidePage<SituationSummary>> {
     if (search.length > 1000) throw new GuideError(400, "Căutarea este prea lungă.");
     let cursor = decodeCursor(rawCursor);
     const items: SituationSummary[] = [];
     const situations = collection(this.db, GUIDE_COLLECTION);
-    const hasSearch = search.trim().length > 0;
-    const batchSize = hasSearch ? 100 : PAGE_SIZE + 1;
+    const batchSize = search.trim() || category ? 100 : PAGE_SIZE + 1;
     while (items.length <= PAGE_SIZE) {
       signal?.throwIfAborted();
       const batch = await getDocsFromServer(query(situations,
@@ -90,15 +181,8 @@ export class GuideService {
         ...(cursor ? [startAfter(cursor.date, cursor.id)] : [])));
       signal?.throwIfAborted();
       for (const doc of batch.docs) {
-        const data = doc.data();
-        if (data.status === "withdrawn" && data.completionCount === 0) continue;
-        const item = situation(doc.id, data);
-        if (hasSearch) {
-          const text = item.status === "withdrawn" ? normalizeSearch(WITHDRAWN_TITLE) : searchText(item);
-          if (!matchesSearch(text, search)) continue;
-        }
-        const { followUps: _followUps, ...summary } = item;
-        items.push({ ...summary, answer: summary.answer.slice(0, 500) });
+        const item = summarize(situation(doc.id, doc.data()), search, category);
+        if (item) items.push(item);
         if (items.length > PAGE_SIZE) break;
       }
       if (items.length > PAGE_SIZE || batch.size < batchSize) break;
@@ -133,14 +217,18 @@ export class GuideService {
   }
 
   async update(id: string, input: SituationDraft) {
-    const content = situationContent(input);
+    const { categoryIds, ...content } = situationContent(input);
     const ref = this.ref(id);
     await runTransaction(this.db, async tx => {
       const existing = await tx.get(ref);
       if (!existing.exists()) throw new GuideError(404, "Situația nu a fost găsită.");
       assertAuthor(existing.data()!, this.user.uid);
       assertActive(existing.data()!);
-      tx.update(ref, { ...content, updatedAt: new Date().toISOString() });
+      tx.update(ref, {
+        ...content,
+        ...(input.categoryIds === undefined ? {} : { categoryIds }),
+        updatedAt: new Date().toISOString(),
+      });
     });
     return this.get(id);
   }

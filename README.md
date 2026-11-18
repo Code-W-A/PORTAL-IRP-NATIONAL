@@ -62,20 +62,21 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 Pagina `/ghid-comunicare`, disponibilă în meniul tuturor conturilor IRP autentificate,
 este comună între județe și structuri. Include situații, răspunsuri suplimentare și
-completări. Drepturile de autor se aplică UID-ului contului Firebase; conturile
-comune unei structuri au aceeași identitate de autor.
+completări, categorii comune și favorite sincronizate pe cont. Drepturile de autor se aplică UID-ului contului Firebase; conturile
+comune unei structuri au aceeași identitate de autor și aceeași listă de favorite.
 
 Datele sunt în colecția globală `GhidComunicare/{id}` și subcolecția
 `Completari/{id}`. Ghidul folosește SDK-ul Firebase din browser și sesiunea
 Firebase a utilizatorului. Regulile Firestore verifică profilul IRP, autorul
 conținutului și actualizarea contorului în aceeași tranzacție cu publicarea
-sau ștergerea unei completări. Documentele existente pot fi folosite direct.
+sau ștergerea unei completări. O situație poate avea până la cinci categorii.
+Documentele existente apar la „Fără categorie” până când autorul le încadrează.
 
 ### Reguli Firestore înainte de lansare
 
 Integrează regulile dedicate ghidului din `firestore.rules` în regulile active
-înainte de a publica aplicația. Exclude `GhidComunicare` din regulile generale
-permisive, inclusiv pentru completări, deoarece o regulă mai largă poate acorda
+înainte de a publica aplicația. Exclude `GhidComunicare`, `GhidComunicareCategorii` și
+`GhidComunicareFavorite` din regulile generale permisive, inclusiv pentru subcolecții, deoarece o regulă mai largă poate acorda
 acces independent de regulile dedicate.
 
 ### Verificare locală izolată
@@ -89,8 +90,8 @@ npx tsc --noEmit
 ```
 
 Suita pornește Auth (9098), Firestore (8088) și Next.js (3017), exclusiv pentru
-proiectul `demo-irp-guide`. Verifică API-urile reale, regulile, concurența și
-interfața mobilă de 360 px; datele de test sunt create numai în emulator.
+proiectul `demo-irp-guide`. Verifică SDK-ul client, regulile, concurența și
+interfața pe desktop și la 360 px; datele de test sunt create numai în emulator.
 Variabila `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true` este destinată exclusiv
 acestor teste și necesită un proiect cu prefixul `demo-`.
 

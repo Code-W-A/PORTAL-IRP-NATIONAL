@@ -3,8 +3,47 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Keep the existing portal policy outside the guide.
     match /{collection}/{document=**} {
-      allow read: if collection != 'GhidComunicare';
-      allow write: if collection != 'GhidComunicare' && request.auth != null;
+      allow read: if !guideCollection(collection);
+      allow write: if !guideCollection(collection) && request.auth != null;
+    }
+
+    function guideCollection(collection) {
+      return collection in ['GhidComunicare', 'GhidComunicareCategorii', 'GhidComunicareFavorite'];
+    }
+
+    function validCategoryId(id) {
+      return id is string && id.matches('^[a-f0-9]{64}$');
+    }
+
+    function categoryExists(ids, index) {
+      return ids.size() <= index || (validCategoryId(ids[index])
+        && exists(/databases/$(database)/documents/GhidComunicareCategorii/$(ids[index])));
+    }
+
+    function validCategories(data) {
+      let ids = data.get('categoryIds', []);
+      return ids is list && ids.size() <= 5 && ids.toSet().size() == ids.size()
+        && categoryExists(ids, 0) && categoryExists(ids, 1) && categoryExists(ids, 2)
+        && categoryExists(ids, 3) && categoryExists(ids, 4);
+    }
+
+    match /GhidComunicareCategorii/{categoryId} {
+      allow read: if hasIrpProfile();
+      allow create: if hasIrpProfile() && validCategoryId(categoryId)
+        && request.resource.data.keys().hasOnly(['name', 'createdBy'])
+        && text(request.resource.data.name, 60) && request.resource.data.createdBy == request.auth.uid;
+    }
+
+    match /GhidComunicareFavorite/{uid}/Situatii/{situationId} {
+      function ownsFavorites() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      allow read, delete: if ownsFavorites();
+      allow create: if ownsFavorites() && hasIrpProfile() && validId(situationId)
+        && request.resource.data.keys().hasOnly(['savedAt'])
+        && request.resource.data.savedAt == request.time
+        && get(/databases/$(database)/documents/GhidComunicare/$(situationId)).data.status == 'active';
     }
 
     function validId(value) {
@@ -47,41 +86,27 @@ service cloud.firestore {
     }
 
     function validFollowUps(pairs) {
-      return pairs is list && pairs.size() <= 30 && validFollowUpEntries(pairs, pairs.size());
+      return pairs is list && pairs.size() <= 30 && (pairs.size() == 0 || validFollowUpEntries(pairs));
     }
 
-    function validFollowUpEntries(pairs, count) {
-      // Rules have no iteration over lists. Check each supported position.
-      return (count <= 0 || validFollowUp(pairs[0])) &&
-        (count <= 1 || validFollowUp(pairs[1])) &&
-        (count <= 2 || validFollowUp(pairs[2])) &&
-        (count <= 3 || validFollowUp(pairs[3])) &&
-        (count <= 4 || validFollowUp(pairs[4])) &&
-        (count <= 5 || validFollowUp(pairs[5])) &&
-        (count <= 6 || validFollowUp(pairs[6])) &&
-        (count <= 7 || validFollowUp(pairs[7])) &&
-        (count <= 8 || validFollowUp(pairs[8])) &&
-        (count <= 9 || validFollowUp(pairs[9])) &&
-        (count <= 10 || validFollowUp(pairs[10])) &&
-        (count <= 11 || validFollowUp(pairs[11])) &&
-        (count <= 12 || validFollowUp(pairs[12])) &&
-        (count <= 13 || validFollowUp(pairs[13])) &&
-        (count <= 14 || validFollowUp(pairs[14])) &&
-        (count <= 15 || validFollowUp(pairs[15])) &&
-        (count <= 16 || validFollowUp(pairs[16])) &&
-        (count <= 17 || validFollowUp(pairs[17])) &&
-        (count <= 18 || validFollowUp(pairs[18])) &&
-        (count <= 19 || validFollowUp(pairs[19])) &&
-        (count <= 20 || validFollowUp(pairs[20])) &&
-        (count <= 21 || validFollowUp(pairs[21])) &&
-        (count <= 22 || validFollowUp(pairs[22])) &&
-        (count <= 23 || validFollowUp(pairs[23])) &&
-        (count <= 24 || validFollowUp(pairs[24])) &&
-        (count <= 25 || validFollowUp(pairs[25])) &&
-        (count <= 26 || validFollowUp(pairs[26])) &&
-        (count <= 27 || validFollowUp(pairs[27])) &&
-        (count <= 28 || validFollowUp(pairs[28])) &&
-        (count <= 29 || validFollowUp(pairs[29]));
+    function validFollowUpEntries(pairs) {
+      // Pad the list so the checks fit the rule expression limit even at 30 entries.
+      let empty = [{'question': '', 'answer': ''}];
+      let two = empty.concat(empty);
+      let four = two.concat(two);
+      let eight = four.concat(four);
+      let sixteen = eight.concat(eight);
+      let entries = pairs.concat(sixteen).concat(sixteen);
+      return validFollowUp(entries[0]) && validFollowUp(entries[1]) && validFollowUp(entries[2])
+        && validFollowUp(entries[3]) && validFollowUp(entries[4]) && validFollowUp(entries[5])
+        && validFollowUp(entries[6]) && validFollowUp(entries[7]) && validFollowUp(entries[8])
+        && validFollowUp(entries[9]) && validFollowUp(entries[10]) && validFollowUp(entries[11])
+        && validFollowUp(entries[12]) && validFollowUp(entries[13]) && validFollowUp(entries[14])
+        && validFollowUp(entries[15]) && validFollowUp(entries[16]) && validFollowUp(entries[17])
+        && validFollowUp(entries[18]) && validFollowUp(entries[19]) && validFollowUp(entries[20])
+        && validFollowUp(entries[21]) && validFollowUp(entries[22]) && validFollowUp(entries[23])
+        && validFollowUp(entries[24]) && validFollowUp(entries[25]) && validFollowUp(entries[26])
+        && validFollowUp(entries[27]) && validFollowUp(entries[28]) && validFollowUp(entries[29]);
     }
 
     function validSituation(data) {
@@ -107,9 +132,12 @@ service cloud.firestore {
         let data = request.resource.data;
         return owns(resource.data) && resource.data.status == 'active'
           && data.diff(resource.data).affectedKeys().hasOnly(
-            ['question', 'answer', 'followUps', 'searchText', 'status', 'updatedAt']
+            ['question', 'answer', 'followUps', 'searchText', 'status', 'updatedAt', 'categoryIds']
           )
-          && isoDate(data.updatedAt) && (validSituation(data) || withdrawnSituation(data));
+          && isoDate(data.updatedAt)
+          && (data.diff(resource.data).affectedKeys().hasAny(['categoryIds'])
+            ? data.status == 'active' && validCategories(data) : true)
+          && (validSituation(data) || withdrawnSituation(data));
       }
 
       function updatesCompletionCount() {
@@ -137,9 +165,9 @@ service cloud.firestore {
       allow read: if hasIrpProfile();
       allow create: if hasIrpProfile() && validCreationId(situationId)
         && request.resource.data.keys().hasOnly(
-          ['question', 'answer', 'followUps', 'searchText', 'status', 'author', 'createdAt', 'updatedAt', 'completionCount']
+          ['question', 'answer', 'followUps', 'searchText', 'status', 'author', 'createdAt', 'updatedAt', 'completionCount', 'categoryIds']
         )
-        && validAuthor(request.resource.data) && validSituation(request.resource.data)
+        && validAuthor(request.resource.data) && validCategories(request.resource.data) && validSituation(request.resource.data)
         && request.resource.data.completionCount is int && request.resource.data.completionCount == 0
         && isoDate(request.resource.data.createdAt)
         && request.resource.data.createdAt == request.resource.data.updatedAt;

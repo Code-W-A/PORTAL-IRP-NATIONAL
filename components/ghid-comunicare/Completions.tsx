@@ -78,8 +78,8 @@ export default function Completions({ id, count, withdrawn, refreshSituation }: 
     } catch (e) { setFormError(errorMessage(e)); }
     finally { saveLock.current = false; setSaving(false); }
   }
-  return <section className="space-y-4 border-t border-gray-200 pt-6" aria-labelledby="completions-title">
-    <h2 id="completions-title" className="text-xl font-semibold">Completările colegilor ({count})</h2>
+  return <section className="space-y-4 border-t border-gray-200 pt-6" aria-label="Completările colegilor">
+    {count > 0 ? <h3 className="text-xl font-semibold">Completările colegilor ({count})</h3> : null}
     {!withdrawn ? <Button type="button" size="lg" className="w-full sm:w-auto" variant="outline" onClick={() => setFormOpen(true)}>Adaugă o completare</Button> : null}
     {formOpen && !withdrawn ? <form onSubmit={publish} className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/30 p-4">
       <label htmlFor="new-completion" className="block font-medium">Ce ai adăuga?</label>
@@ -88,9 +88,9 @@ export default function Completions({ id, count, withdrawn, refreshSituation }: 
       <div className="flex flex-wrap gap-2"><Button type="submit" size="lg" disabled={saving}>{saving ? "Se publică…" : "Publică completarea"}</Button>
         <Button type="button" size="lg" variant="outline" disabled={saving} onClick={() => setFormOpen(false)}>Anulează</Button></div>
     </form> : null}
-    <Button type="button" variant="ghost" size="lg" className="h-auto min-h-11 whitespace-normal px-0 text-left" aria-expanded={open} aria-controls="completions-list"
-      onClick={() => { setOpen(previous => !previous); if (!loaded && !open) void load(); }}>{open ? "Ascunde completările" : "Vezi completările"} ({count})</Button>
-    {open ? <div id="completions-list" className="space-y-3" aria-busy={loading}>
+    {count > 0 ? <Button type="button" variant="ghost" size="lg" className="ml-2 h-auto min-h-11 whitespace-normal text-left" aria-expanded={open} aria-controls="completions-list"
+      onClick={() => { setOpen(previous => !previous); if (!loaded && !open) void load(); }}>{open ? "Ascunde completările" : "Vezi completările"} ({count})</Button> : null}
+    {open && count > 0 ? <div id="completions-list" className="space-y-3" aria-busy={loading}>
       {error ? <div className="space-y-2"><ErrorNotice>{error}</ErrorNotice><Button size="lg" variant="outline" onClick={() => void load()}>Încearcă din nou</Button></div> : null}
       <ul className="space-y-3">{items.map(item => <CompletionItem key={item.id} item={item} situationId={id} onChange={refresh} />)}</ul>
       {loading ? <p role="status">Se încarcă completările…</p> : null}

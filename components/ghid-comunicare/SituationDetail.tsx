@@ -1,16 +1,24 @@
 "use client";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Ellipsis } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/app/(admin-irp)/providers/AuthProvider";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Situation } from "@/lib/ghid-comunicare/types";
 import { WITHDRAWN_TITLE } from "@/lib/ghid-comunicare/types";
-import { AuthorLine, BackLink, CopyAnswer, ErrorNotice, errorMessage, guideUrl, useGuide } from "./shared";
+import { AuthorLine, BackLink, CopyAnswer, ErrorNotice, errorMessage, guideLocation, guideUrl, useGuide } from "./shared";
 import Completions from "./Completions";
+import { FavoriteButton } from "./FavoriteButton";
+import { useGuidePreferences } from "./GuidePreferences";
 
-export default function SituationDetail({ id }: { id: string }) {
-  const query = useSearchParams().get("q") || "";
+export default function SituationDetail({ id, embedded = false, onWithdraw }: {
+  id: string; embedded?: boolean; onWithdraw?: (item: Situation) => void;
+}) {
+  const router = useRouter();
+  const location = guideLocation(useSearchParams());
+  const { categories } = useGuidePreferences();
+  const Title = embedded ? "h2" : "h1";
   const { user } = useAuth();
   const guide = useGuide();
   const [item, setItem] = useState<Situation | null>(null);
@@ -32,21 +40,49 @@ export default function SituationDetail({ id }: { id: string }) {
   async function withdraw() {
     if (!guide || lock.current || !window.confirm("Ștergi această situație? Întrebarea, răspunsul și continuările tale vor fi retrase. Completările colegilor vor fi păstrate.")) return;
     lock.current = true; setDeleting(true); setError("");
-    try { await guide.withdraw(id); await refresh(); }
+    try {
+      await guide.withdraw(id);
+      const withdrawn = await guide.get(id);
+      setItem(withdrawn);
+      onWithdraw?.(withdrawn);
+    }
     catch (e) { setError(errorMessage(e)); }
     finally { lock.current = false; setDeleting(false); }
   }
-  return <article className="mx-auto flex max-w-3xl flex-col gap-5 pb-8">
-    <BackLink href={guideUrl(query)} />
+  return <article aria-label={embedded ? "Situația selectată" : undefined}
+    className={`mx-auto flex max-w-3xl flex-col gap-5 ${embedded ? "p-5 sm:p-6" : "pb-8"}`}>
+    <div className={embedded ? "lg:hidden" : ""}>
+      <BackLink href={guideUrl({ ...location, selected: undefined })} />
+    </div>
     {loading ? <p role="status">Se încarcă situația…</p> : null}
     {error ? <div className="space-y-3"><ErrorNotice>{error}</ErrorNotice>{!item ? <Button variant="outline" size="lg" onClick={() => setRetry(value => value + 1)}>Încearcă din nou</Button> : null}</div> : null}
     {item ? <>
-      <h1 className="break-words text-2xl font-semibold leading-snug text-gray-900">{item.status === "withdrawn" ? WITHDRAWN_TITLE : item.question}</h1>
+      <div className="flex items-start justify-between gap-2">
+        <Title className="min-w-0 grow break-words pt-1 text-2xl font-semibold leading-snug text-slate-900">
+          {item.status === "withdrawn" ? WITHDRAWN_TITLE : item.question}
+        </Title>
+        <FavoriteButton id={id} active={item.status === "active"} />
+        {item.status === "active" && item.author.uid === user?.uid ? <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="icon" aria-label="Opțiuni situație" disabled={deleting} className="size-11">
+              <Ellipsis aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent portal className="min-w-44">
+            <DropdownMenuItem onClick={() => router.push(guideUrl(location, `/${id}/editeaza`))}>Editează</DropdownMenuItem>
+            <DropdownMenuItem className="text-red-700" onClick={() => void withdraw()}>Retrage situația</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu> : null}
+      </div>
       {item.status === "active" ? <>
         <div className="space-y-4 rounded-xl border border-blue-100 bg-blue-50/50 p-4 sm:p-6">
           <p className="select-text whitespace-pre-wrap break-words text-xl leading-relaxed text-gray-950">{item.answer}</p>
           <CopyAnswer text={item.answer} />
         </div>
+        {item.categoryIds.length ? <div className="flex flex-wrap gap-2" aria-label="Categorii">
+          {categories.filter(category => item.categoryIds.includes(category.id)).map(category =>
+            <span key={category.id} className="break-all rounded-md bg-slate-100 px-2 py-1 text-sm text-slate-700">{category.name}</span>)}
+        </div> : null}
         <AuthorLine author={item.author} date={item.updatedAt} proposed />
         {item.followUps.length ? <section className="space-y-3" aria-labelledby="followups-title">
           <h2 id="followups-title" className="text-xl font-semibold">Dacă întreabă și…</h2>
@@ -55,10 +91,6 @@ export default function SituationDetail({ id }: { id: string }) {
             <div className="space-y-4 border-t border-gray-100 p-4"><p className="select-text whitespace-pre-wrap break-words text-lg leading-relaxed">{pair.answer}</p><CopyAnswer text={pair.answer} /></div>
           </details>)}
         </section> : null}
-        {item.author.uid === user?.uid ? <div className="flex flex-wrap gap-3">
-          <Button asChild size="lg" variant="outline"><Link href={guideUrl(query, `/${id}/editeaza`)}>Editează</Link></Button>
-          <Button type="button" variant="ghost" size="lg" className="text-red-700" disabled={deleting} onClick={() => void withdraw()}>{deleting ? "Se șterge…" : "Șterge"}</Button>
-        </div> : null}
       </> : <p className="text-gray-600">Conținutul autorului a fost retras. Completările colegilor sunt păstrate mai jos.</p>}
       <Completions key={id} id={id} count={item.completionCount} withdrawn={item.status === "withdrawn"} refreshSituation={refresh} />
     </> : null}
