@@ -115,6 +115,25 @@ function getHeaderLines(s: BicpPdfSettings) {
   ];
 }
 
+// paddingTop 210 fits 5 header rows + logo + tricolor (layout-ul actual, fără rândul ROMÂNIA).
+const HEADER_PADDING_TOP = 210;
+const HEADER_BASE_ROWS = 5;
+const HEADER_ROW_STEP = 18;
+const HEADER_CHARS_PER_ROW = 68;
+
+function headerRowCount(lines: string[]) {
+  return lines.reduce((sum, line) => {
+    const len = String(line || "").trim().length;
+    return sum + Math.max(1, Math.ceil(Math.max(len, 1) / HEADER_CHARS_PER_ROW));
+  }, 0);
+}
+
+export function getBicpContentPaddingTop(settings?: BicpPdfSettings) {
+  const rows = headerRowCount(getHeaderLines(settings || {}));
+  const extra = Math.max(0, rows - HEADER_BASE_ROWS) * HEADER_ROW_STEP;
+  return HEADER_PADDING_TOP + extra;
+}
+
 export function getBicpFooterMeta(s?: BicpPdfSettings) {
   const footerLines = Array.isArray(s?.footerLines) ? s!.footerLines! : [];
   const footerLinesCount = footerLines.length;
@@ -289,7 +308,7 @@ export function createBicpPage({
   const isRaduSignature = (data.purtatorSemnaturaUrl || "").toUpperCase().includes("RADU.PNG");
   const pageStyle = compactLetterhead
     ? [styles.page, { fontFamily: "NotoSerif", paddingTop: 72 }]
-    : [styles.page, { fontFamily: "NotoSerif" }];
+    : [styles.page, { fontFamily: "NotoSerif", paddingTop: getBicpContentPaddingTop(s) }];
   return (
     <Page size="A4" style={pageStyle}>
       {!compactLetterhead && (

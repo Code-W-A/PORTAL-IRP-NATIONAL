@@ -1,7 +1,7 @@
 import React from "react";
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-import { BicpPdfFooter, BicpPdfHeader, getBicpFooterMeta, registerNoto } from "@/app/(admin-irp)/components/pdf/BicpPdf";
+import { BicpPdfFooter, BicpPdfHeader, getBicpContentPaddingTop, getBicpFooterMeta, registerNoto } from "@/app/(admin-irp)/components/pdf/BicpPdf";
 import { getOrderedColumns, widthWeight } from "@/app/(admin-irp)/dashboard/raportari/_core/export";
 import { getSignaturesFromSettings } from "@/app/(admin-irp)/dashboard/raportari/_core/settings";
 import {
@@ -74,6 +74,7 @@ export function DynamicReportPdfDoc({
   registerNoto(settings?.assetBaseUrl);
   const { tricolorBottom } = getBicpFooterMeta(settings || undefined);
   const paddingBottom = Math.max(110, tricolorBottom + 26);
+  const paddingTop = getBicpContentPaddingTop(settings || undefined);
   const { aprobat, intocmit } = getSignaturesFromSettings(settings);
   const orderedColumns = getOrderedColumns(data.columns);
   const widths = widthPercentages(orderedColumns);
@@ -83,7 +84,7 @@ export function DynamicReportPdfDoc({
 
   return (
     <Document>
-      <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif", paddingBottom }]}> 
+      <Page size="A4" style={[styles.page, { fontFamily: "NotoSerif", paddingBottom, paddingTop }]}> 
         <BicpPdfHeader
           settings={settings || undefined}
           data={{

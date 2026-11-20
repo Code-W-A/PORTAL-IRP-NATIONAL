@@ -4,6 +4,7 @@ import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import {
   BicpPdfFooter,
   BicpPdfHeader,
+  getBicpContentPaddingTop,
   registerNoto,
   styles as bicpStyles,
   type BicpPdfSettings,
@@ -135,7 +136,7 @@ export function DailyActivityPdfDoc({
 
   return (
     <Document>
-      <Page size="A4" style={[bicpStyles.page, styles.pageFont]}>
+      <Page size="A4" style={[bicpStyles.page, styles.pageFont, { paddingTop: getBicpContentPaddingTop(safeSettings) }]}>
         <BicpPdfHeader
           settings={safeSettings}
           data={{
