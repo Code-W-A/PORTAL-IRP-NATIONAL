@@ -1446,7 +1446,7 @@ function TableView({
     }
   };
 
-  const headerClass = "px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B]";
+  const headerClass = "sticky top-14 z-20 bg-[#F8FAFC] px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] shadow-[inset_0_-1px_0_#E5E7EB]";
 
   const SortableHeader = ({ column, children, className }: { column: string; children: React.ReactNode; className?: string }) => (
     <th
@@ -1463,13 +1463,12 @@ function TableView({
   );
 
   return (
-    <div className={`overflow-hidden rounded-lg mb-4 ${surface} ${subtleShadow}`}>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead className="bg-[#F8FAFC] border-b border-[#E5E7EB]">
-            <tr>
-              <th className={`${headerClass} w-10`}>
-                {selectMode && (
+    <div className={`mb-4 rounded-lg ${surface} ${subtleShadow}`}>
+      <table className="w-full min-w-[1100px]">
+        <thead>
+          <tr>
+            <th className={`${headerClass} w-10`}>
+              {selectMode && (
                   <input
                     type="checkbox"
                     checked={allPageSelected}
@@ -1642,7 +1641,6 @@ function TableView({
             })}
           </tbody>
         </table>
-      </div>
     </div>
   );
 }
