@@ -5,6 +5,7 @@ import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { BarChart3, CalendarDays, TrendingUp, FileText, Grid3x3, PieChart, Copy, Check } from "lucide-react";
 import { JUDETE } from "@/lib/judete";
+import { addPublishedMedia, emptyPublishedMedia, type PublishedMediaCounts } from "@/lib/bicp/mediaChannels";
 
 type MonthCount = { month: number; count: number };
 type TypeCounts = Record<string, number>;
@@ -101,8 +102,8 @@ export default function StatisticiBicpPage() {
   const [months, setMonths] = useState<MonthCount[]>(Array.from({ length: 12 }, (_, i) => ({ month: i, count: 0 })));
   const [yearTypeCounts, setYearTypeCounts] = useState<TypeCounts>({});
   const [monthlyTypeCounts, setMonthlyTypeCounts] = useState<Record<number, TypeCounts>>({});
-  const [yearDsuCount, setYearDsuCount] = useState(0);
-  const [monthlyDsuCounts, setMonthlyDsuCounts] = useState<Record<number, number>>({});
+  const [yearPublished, setYearPublished] = useState<PublishedMediaCounts>(emptyPublishedMedia);
+  const [monthlyPublished, setMonthlyPublished] = useState<Record<number, PublishedMediaCounts>>({});
   const [activeTab, setActiveTab] = useState<TabType>("lunar");
   const [selectedMonth, setSelectedMonth] = useState<number | "all">(now.getMonth());
   const [copied, setCopied] = useState(false);
@@ -124,30 +125,24 @@ export default function StatisticiBicpPage() {
     () => selectedMonth === "all" ? yearTotal : (months.find((m) => m.month === selectedMonth)?.count || 0),
     [months, selectedMonth, yearTotal]
   );
-  const selectedDsuCount = selectedMonth === "all" ? yearDsuCount : (monthlyDsuCounts[selectedMonth] || 0);
+  const selectedPublished = selectedMonth === "all" ? yearPublished : (monthlyPublished[selectedMonth] || emptyPublishedMedia());
 
   const reportCells = useMemo(() => {
-    const count = (type: string) => selectedMonthCounts[type] || 0;
     return [
-      { key: "mai-comunicate", label: "Comunicate", value: count("Comunicat de Presă") },
-      { key: "mai-buletine", label: "Buletine informative", value: count("Buletin Informativ") },
-      { key: "mai-stiri", label: "Știri", value: count("Știre") },
-      { key: "mai-conferinte", label: "Conferință de presă", value: count("Conferință de presă") },
-      { key: "mai-declaratii", label: "Declarații de presă", value: count("Declarație de presă") },
-      { key: "mai-invitatii", label: "Invitații de presă", value: count("Invitație") },
-      { key: "mai-evaluari", label: "Evaluare conferință", value: count("Evaluare conferință de presă") },
-      {
-        key: "mai-alte",
-        label: "Alte",
-        value: ["Interviu", "Anunț", "Eveniment de presă", "Drept la replică", "Informare de presă", "Punct de vedere"]
-          .reduce((total, type) => total + count(type), 0),
-      },
-      { key: "site-buletine-comunicate", label: "Buletine informative / comunicate de presă", value: count("Buletin Informativ") + count("Comunicat de Presă") },
-      { key: "site-stiri", label: "Știri locale", value: count("Știre") },
-      { key: "site-conferinte", label: "Conferință de presă pe site", value: count("Conferință de presă") },
-      { key: "dsu-total", label: "Numărul materialelor postate în aplicația DSU", value: selectedDsuCount },
+      { key: "mai-comunicate", label: "Comunicate", value: selectedPublished.maiComunicate },
+      { key: "mai-buletine", label: "Buletine informative", value: selectedPublished.maiBuletine },
+      { key: "mai-stiri", label: "Știri", value: selectedPublished.maiStiri },
+      { key: "mai-conferinte", label: "Conferință de presă", value: selectedPublished.maiConferinte },
+      { key: "mai-declaratii", label: "Declarații de presă", value: selectedPublished.maiDeclaratii },
+      { key: "mai-invitatii", label: "Invitații de presă", value: selectedPublished.maiInvitatii },
+      { key: "mai-evaluari", label: "Evaluare conferință", value: selectedPublished.maiEvaluari },
+      { key: "mai-alte", label: "Alte", value: selectedPublished.maiAlte },
+      { key: "site-buletine-comunicate", label: "Buletine informative / comunicate de presă", value: selectedPublished.siteComunicateBuletine },
+      { key: "site-stiri", label: "Știri locale", value: selectedPublished.siteStiri },
+      { key: "site-conferinte", label: "Conferință de presă pe site", value: selectedPublished.siteConferinte },
+      { key: "dsu-total", label: "Numărul materialelor postate în aplicația DSU", value: selectedPublished.dsu },
     ];
-  }, [selectedMonthCounts, selectedDsuCount]);
+  }, [selectedPublished]);
 
   const yearsOptions = useMemo(() => {
     const current = now.getFullYear();
@@ -215,8 +210,8 @@ export default function StatisticiBicpPage() {
     (async () => {
       setLoading(true);
       setError(null);
-      setYearDsuCount(0);
-      setMonthlyDsuCounts({});
+      setYearPublished(emptyPublishedMedia());
+      setMonthlyPublished({});
       try {
         const { judetId, structuraId } = getTenantContext();
         const base = collection(doc(db, `Judete/${judetId}/Structuri/${structuraId}`), "Comunicate");
@@ -242,10 +237,10 @@ export default function StatisticiBicpPage() {
         const docsSnap = await getDocs(qYear);
         const byTypeYear: TypeCounts = {};
         const byTypeMonthly: Record<number, TypeCounts> = {};
-        const byDsuMonthly: Record<number, number> = {};
-        let byDsuYear = 0;
+        const publishedYear = emptyPublishedMedia();
+        const publishedMonthly: Record<number, PublishedMediaCounts> = {};
         for (let i = 0; i < 12; i += 1) byTypeMonthly[i] = {};
-        for (let i = 0; i < 12; i += 1) byDsuMonthly[i] = 0;
+        for (let i = 0; i < 12; i += 1) publishedMonthly[i] = emptyPublishedMedia();
 
         docsSnap.docs.forEach((d) => {
           const data: any = d.data();
@@ -253,10 +248,8 @@ export default function StatisticiBicpPage() {
           let dt: Date | null = null;
           try { dt = ts?.toDate ? ts.toDate() : (ts ? new Date(ts) : null); } catch { dt = null; }
           const monthIdx = dt ? dt.getMonth() : 0;
-          if (data?.incarcatDSU === true) {
-            byDsuYear += 1;
-            byDsuMonthly[monthIdx] = (byDsuMonthly[monthIdx] || 0) + 1;
-          }
+          addPublishedMedia(publishedYear, data);
+          addPublishedMedia(publishedMonthly[monthIdx], data);
           const typeLabel: string = normalizeTypeLabel(data);
           byTypeYear[typeLabel] = (byTypeYear[typeLabel] || 0) + 1;
           const monthMap = byTypeMonthly[monthIdx] || (byTypeMonthly[monthIdx] = {});
@@ -264,8 +257,8 @@ export default function StatisticiBicpPage() {
         });
         setYearTypeCounts(byTypeYear);
         setMonthlyTypeCounts(byTypeMonthly);
-        setYearDsuCount(byDsuYear);
-        setMonthlyDsuCounts(byDsuMonthly);
+        setYearPublished(publishedYear);
+        setMonthlyPublished(publishedMonthly);
       } catch (e) {
         setError("Eroare la încărcarea statisticilor");
       } finally {
@@ -759,7 +752,7 @@ export default function StatisticiBicpPage() {
             <div>
               <h2 className="text-lg font-semibold text-slate-900">Centralizator activitate media</h2>
               <p className="mt-1 text-sm text-slate-600">
-                {selectedMonth === "all" ? `Anul ${year}` : `${monthLabelsFull[selectedMonth]} ${year}`} · valorile disponibile sunt calculate din documentele BICP salvate în Firebase.
+                {selectedMonth === "all" ? `Anul ${year}` : `${monthLabelsFull[selectedMonth]} ${year}`} · Platforma MAI, site-ul și aplicația DSU numără doar documentele bifate pe lista BICP.
               </p>
             </div>
             <span className="text-xs text-slate-500">Unitate: {structDisplay}</span>
@@ -821,7 +814,7 @@ export default function StatisticiBicpPage() {
           </div>
           <div className="mt-3 flex flex-wrap items-start justify-between gap-2 text-xs text-slate-500">
             <p>„Alte” nu repetă invitațiile, care sunt numărate în coloana dedicată. Apasă pe un număr pentru a-l copia.</p>
-            <p>„—” indică faptul că Firebase nu salvează publicarea în aplicația DSU.</p>
+            <p>Un document intră în MAI, pe site sau în DSU doar dacă bifa corespunzătoare este pusă. Documentele vechi, nebifate, rămân 0 până le marchezi.</p>
           </div>
           {reportCopyFeedback && (
             <p role="status" aria-live="polite" className={`mt-2 text-sm ${reportCopyFeedback.success ? "text-green-700" : "text-red-700"}`}>

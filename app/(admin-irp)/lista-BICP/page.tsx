@@ -7,7 +7,8 @@ import { getTenantContext } from "@/lib/tenant";
 import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, Download, Mail, MoreVertical } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AdvancedFiltersPanel } from "./components/AdvancedFiltersPanel";
+import { AdvancedFiltersSheet } from "./components/AdvancedFiltersSheet";
+import { countAdvancedBicpFilters } from "./filters";
 import {
   BICP_VIEW_MODE_KEY,
   type BicpViewMode,
@@ -30,6 +31,43 @@ import { BULK_PDF_MAX_IDS, BULK_ZIP_CONCURRENCY } from "@/lib/bicp/bulkLimits";
 import { SendPublicPdfEmailDialog } from "./SendPublicPdfEmailDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Filters } from "./hooks/useBicpData";
+
+type PublishField = "incarcatDSU" | "incarcatHubMai" | "incarcatSite";
+
+const PUBLISH_FIELDS: PublishField[] = ["incarcatDSU", "incarcatHubMai", "incarcatSite"];
+
+function PublishAllCheckbox({
+  checked,
+  indeterminate,
+  disabled,
+  ariaLabel,
+  title,
+  onChange,
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  disabled: boolean;
+  ariaLabel: string;
+  title: string;
+  onChange: (checked: boolean) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = indeterminate;
+  }, [indeterminate]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={checked}
+      disabled={disabled}
+      onChange={(e) => onChange(e.currentTarget.checked)}
+      className="h-4 w-4 cursor-pointer rounded border-[#CBD5E1] text-[#1D4ED8] focus:ring-[#1D4ED8] disabled:cursor-wait disabled:opacity-50"
+      aria-label={ariaLabel}
+      title={title}
+    />
+  );
+}
 import { BICP_DOCX_VARIANTS, type BicpDocxVariant } from "@/lib/bicp/docxVariants";
 import { downloadBicpDocx } from "@/lib/bicp/downloadDocx";
 
@@ -84,7 +122,7 @@ export default function ListaBicpPage() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [view, setView] = useState<BicpViewMode>(() => getDefaultViewMode());
-  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const [filtersSheetOpen, setFiltersSheetOpen] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printingId, setPrintingId] = useState<string | null>(null);
   const [downloadingZipType, setDownloadingZipType] = useState<"signed" | "public" | null>(null);
@@ -98,8 +136,8 @@ export default function ListaBicpPage() {
   const [sendDialogOpen, setSendDialogOpen] = useState(false);
   const [sendDialogDoc, setSendDialogDoc] = useState<Bicp | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
-  const [savingDsuIds, setSavingDsuIds] = useState<Record<string, boolean>>({});
-  const [dsuStatusOverrides, setDsuStatusOverrides] = useState<Record<string, boolean>>({});
+  const [savingPublishKeys, setSavingPublishKeys] = useState<Record<string, boolean>>({});
+  const [publishOverrides, setPublishOverrides] = useState<Record<string, Partial<Record<PublishField, boolean>>>>({});
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deniedHandledRef = useRef(false);
 
@@ -116,6 +154,7 @@ export default function ListaBicpPage() {
     ? (filters as any).year
     : new Date().getFullYear();
   const currentYear = new Date().getFullYear();
+  const advancedFilterCount = useMemo(() => countAdvancedBicpFilters(filters), [filters]);
 
   function showToast(message: string, type: ToastType = "info", durationMs = 3200) {
     setToast({ type, message });
@@ -123,22 +162,60 @@ export default function ListaBicpPage() {
     toastTimerRef.current = setTimeout(() => setToast(null), durationMs);
   }
 
-  async function updateDsuStatus(item: Bicp, checked: boolean) {
-    setSavingDsuIds((current) => ({ ...current, [item.id]: true }));
+  async function updatePublishStatus(item: Bicp, field: PublishField, checked: boolean) {
+    const key = `${item.id}:${field}`;
+    setSavingPublishKeys((current) => ({ ...current, [key]: true }));
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      await updateDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${item.id}`), {
+        [field]: checked,
+        updatedAt: serverTimestamp(),
+      });
+      setPublishOverrides((current) => ({
+        ...current,
+        [item.id]: { ...current[item.id], [field]: checked },
+      }));
+      const channel = field === "incarcatHubMai" ? "HUB MAI" : field === "incarcatSite" ? "site" : "DSU";
+      showToast(
+        checked ? `Document marcat ca publicat pe ${channel}.` : `Document marcat ca nepublicat pe ${channel}.`,
+        "success"
+      );
+    } catch {
+      showToast("Nu s-a putut salva bifa de publicare. Încearcă din nou.", "error");
+    } finally {
+      setSavingPublishKeys((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  async function updateAllPublishStatus(item: Bicp, checked: boolean) {
+    const key = `${item.id}:all`;
+    setSavingPublishKeys((current) => ({ ...current, [key]: true }));
     try {
       const { judetId, structuraId } = getTenantContext();
       await updateDoc(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${item.id}`), {
         incarcatDSU: checked,
+        incarcatHubMai: checked,
+        incarcatSite: checked,
         updatedAt: serverTimestamp(),
       });
-      setDsuStatusOverrides((current) => ({ ...current, [item.id]: checked }));
-      showToast(checked ? "Document marcat ca încărcat în DSU." : "Document marcat ca neîncărcat în DSU.", "success");
+      setPublishOverrides((current) => ({
+        ...current,
+        [item.id]: { incarcatDSU: checked, incarcatHubMai: checked, incarcatSite: checked },
+      }));
+      showToast(
+        checked ? "Document marcat pe DSU, HUB MAI și site." : "Document scos de pe DSU, HUB MAI și site.",
+        "success"
+      );
     } catch {
-      showToast("Nu s-a putut salva starea Încărcat DSU. Încearcă din nou.", "error");
+      showToast("Nu s-a putut salva bifa Toate. Încearcă din nou.", "error");
     } finally {
-      setSavingDsuIds((current) => {
+      setSavingPublishKeys((current) => {
         const next = { ...current };
-        delete next[item.id];
+        delete next[key];
         return next;
       });
     }
@@ -817,22 +894,25 @@ export default function ListaBicpPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setAdvancedFiltersOpen((open) => !open)}
+                onClick={() => setFiltersSheetOpen(true)}
                 className={`${btnSecondary} w-full sm:w-auto`}
-                aria-expanded={advancedFiltersOpen}
+                aria-haspopup="dialog"
               >
                 <Filter size={16} /> Filtre avansate
-                {advancedFiltersOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                {advancedFilterCount > 0 ? (
+                  <span className="ml-1 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-[#1D4ED8] px-1.5 py-0.5 text-xs font-semibold text-white">
+                    {advancedFilterCount}
+                  </span>
+                ) : null}
               </button>
             </div>
 
-            {advancedFiltersOpen && (
-              <AdvancedFiltersPanel
-                filters={filters}
-                setFilters={setFilters}
-                onApplied={() => setAdvancedFiltersOpen(false)}
-              />
-            )}
+            <AdvancedFiltersSheet
+              open={filtersSheetOpen}
+              onOpenChange={setFiltersSheetOpen}
+              filters={filters}
+              setFilters={setFilters}
+            />
 
             {(() => {
               const chips: { key: string; label: string; onClear: () => void }[] = [];
@@ -910,9 +990,10 @@ export default function ListaBicpPage() {
           ) : (
             <TableView
               items={items}
-              dsuStatusOverrides={dsuStatusOverrides}
-              savingDsuIds={savingDsuIds}
-              onToggleDsu={updateDsuStatus}
+              publishOverrides={publishOverrides}
+              savingPublishKeys={savingPublishKeys}
+              onTogglePublish={updatePublishStatus}
+              onToggleAllPublish={updateAllPublishStatus}
               selectMode={selectMode}
               selected={selected}
               setSelected={setSelected}
@@ -1171,7 +1252,10 @@ function TableSkeletons() {
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B]">Document</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-32">Tip</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-28">Data</th>
-              <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-[#64748B] w-36">Încărcat DSU</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-[#64748B] w-20">Toate</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-[#64748B] w-20">DSU</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-[#64748B] w-24">HUB MAI</th>
+              <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-[#64748B] w-20">SITE</th>
               <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-[#64748B] w-40">Acțiuni</th>
             </tr>
           </thead>
@@ -1189,6 +1273,9 @@ function TableSkeletons() {
                 <td className="px-3 py-3"><div className="h-5 w-24 rounded bg-[#E5E7EB] animate-pulse" /></td>
                 <td className="px-3 py-3"><div className="h-4 w-20 rounded bg-[#E5E7EB] animate-pulse" /></td>
                 <td className="px-3 py-3"><div className="mx-auto h-4 w-4 rounded bg-[#E5E7EB] animate-pulse" /></td>
+                <td className="px-3 py-3"><div className="mx-auto h-4 w-4 rounded bg-[#E5E7EB] animate-pulse" /></td>
+                <td className="px-3 py-3"><div className="mx-auto h-4 w-4 rounded bg-[#E5E7EB] animate-pulse" /></td>
+                <td className="px-3 py-3"><div className="mx-auto h-4 w-4 rounded bg-[#E5E7EB] animate-pulse" /></td>
                 <td className="px-3 py-3"><div className="h-8 w-24 rounded bg-[#E5E7EB] animate-pulse" /></td>
               </tr>
             ))}
@@ -1201,9 +1288,10 @@ function TableSkeletons() {
 
 function TableView({
   items,
-  dsuStatusOverrides,
-  savingDsuIds,
-  onToggleDsu,
+  publishOverrides,
+  savingPublishKeys,
+  onTogglePublish,
+  onToggleAllPublish,
   selectMode,
   selected,
   setSelected,
@@ -1219,9 +1307,10 @@ function TableView({
   showToast,
 }: {
   items: Bicp[];
-  dsuStatusOverrides: Record<string, boolean>;
-  savingDsuIds: Record<string, boolean>;
-  onToggleDsu: (item: Bicp, checked: boolean) => void;
+  publishOverrides: Record<string, Partial<Record<PublishField, boolean>>>;
+  savingPublishKeys: Record<string, boolean>;
+  onTogglePublish: (item: Bicp, field: PublishField, checked: boolean) => void;
+  onToggleAllPublish: (item: Bicp, checked: boolean) => void;
   selectMode: boolean;
   selected: Record<string, boolean>;
   setSelected: (m: Record<string, boolean>) => void;
@@ -1289,7 +1378,10 @@ function TableView({
               <SortableHeader column="titlu">Document</SortableHeader>
               <SortableHeader column="nume" className="w-36">Tip</SortableHeader>
               <SortableHeader column="data" className="w-28">Data</SortableHeader>
-              <th className={`${headerClass} w-36 text-center`}>Încărcat DSU</th>
+              <th className={`${headerClass} w-20 text-center`}>Toate</th>
+              <th className={`${headerClass} w-20 text-center`}>DSU</th>
+              <th className={`${headerClass} w-24 text-center`}>HUB MAI</th>
+              <th className={`${headerClass} w-20 text-center`}>SITE</th>
               <th className={`${headerClass} w-44`}>Acțiuni</th>
             </tr>
           </thead>
@@ -1338,17 +1430,43 @@ function TableView({
                   <td className="px-3 py-3 w-28 align-middle text-[13px] text-[#64748B] whitespace-nowrap">
                     {formatDate(x)}
                   </td>
-                  <td className="px-3 py-3 w-36 align-middle text-center" onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={dsuStatusOverrides[x.id] ?? x.incarcatDSU === true}
-                      disabled={!!savingDsuIds[x.id]}
-                      onChange={(e) => onToggleDsu(x, e.currentTarget.checked)}
-                      className="h-4 w-4 cursor-pointer rounded border-[#CBD5E1] text-[#1D4ED8] focus:ring-[#1D4ED8] disabled:cursor-wait disabled:opacity-50"
-                      aria-label={`Încărcat DSU pentru document ${x.numarComunicat ?? x.numar}`}
-                      title={savingDsuIds[x.id] ? "Se salvează…" : "Marchează dacă documentul este încărcat în DSU"}
-                    />
-                  </td>
+                  {(() => {
+                    const flags = PUBLISH_FIELDS.map((field) => publishOverrides[x.id]?.[field] ?? x[field] === true);
+                    const allOn = flags.every(Boolean);
+                    const someOn = flags.some(Boolean);
+                    const savingAll = !!savingPublishKeys[`${x.id}:all`];
+                    const savingAny = savingAll || PUBLISH_FIELDS.some((field) => savingPublishKeys[`${x.id}:${field}`]);
+                    return (
+                      <td className="px-3 py-3 w-20 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+                        <PublishAllCheckbox
+                          checked={allOn}
+                          indeterminate={!allOn && someOn}
+                          disabled={savingAny}
+                          ariaLabel={`Toate canalele pentru document ${x.numarComunicat ?? x.numar}`}
+                          title={savingAny ? "Se salvează…" : "Bifează DSU, HUB MAI și SITE"}
+                          onChange={(checked) => onToggleAllPublish(x, checked)}
+                        />
+                      </td>
+                    );
+                  })()}
+                  {PUBLISH_FIELDS.map((field) => {
+                    const saving = !!savingPublishKeys[`${x.id}:${field}`] || !!savingPublishKeys[`${x.id}:all`];
+                    const checked = publishOverrides[x.id]?.[field] ?? x[field] === true;
+                    const label = field === "incarcatHubMai" ? "HUB MAI" : field === "incarcatSite" ? "SITE" : "DSU";
+                    return (
+                      <td key={field} className="px-3 py-3 w-20 align-middle text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={saving}
+                          onChange={(e) => onTogglePublish(x, field, e.currentTarget.checked)}
+                          className="h-4 w-4 cursor-pointer rounded border-[#CBD5E1] text-[#1D4ED8] focus:ring-[#1D4ED8] disabled:cursor-wait disabled:opacity-50"
+                          aria-label={`${label} pentru document ${x.numarComunicat ?? x.numar}`}
+                          title={saving ? "Se salvează…" : `Marchează dacă documentul este publicat pe ${label}`}
+                        />
+                      </td>
+                    );
+                  })}
                   <td className="px-3 py-3 align-middle w-44" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-1">
                       <div className="hidden md:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

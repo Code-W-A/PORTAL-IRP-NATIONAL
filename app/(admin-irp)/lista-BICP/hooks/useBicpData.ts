@@ -30,6 +30,8 @@ export type Bicp = {
   wordLink?: string;
   categorie?: string; // categoria incidentului/evenimentului
   incarcatDSU?: boolean;
+  incarcatHubMai?: boolean;
+  incarcatSite?: boolean;
 };
 
 export type Filters = {

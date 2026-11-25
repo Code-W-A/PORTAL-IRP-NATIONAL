@@ -1,3 +1,5 @@
+import { addPublishedMedia, emptyPublishedMedia } from "@/lib/bicp/mediaChannels";
+
 export type ReportingExport = {
   meta: {
     generatedAt: string;
@@ -21,22 +23,22 @@ export type ReportingExport = {
       activitatiPublice: null;
     };
     platformaMai: {
-      comunicate: null;
-      buletine: null;
-      stiri: null;
-      conferinte: null;
-      declaratii: null;
-      invitatiiPresa: null;
-      evaluariConferinte: null;
-      alteMateriale: null;
+      comunicate: number;
+      buletine: number;
+      stiri: number;
+      conferinte: number;
+      declaratii: number;
+      invitatiiPresa: number;
+      evaluariConferinte: number;
+      alteMateriale: number;
     };
     siteOficial: {
-      comunicateBuletine: null;
-      stiriLocale: null;
-      conferinte: null;
+      comunicateBuletine: number;
+      stiriLocale: number;
+      conferinte: number;
     };
     aplicatiaDsu: {
-      materialePublicate: null;
+      materialePublicate: number;
     };
   };
   dataQuality: {
@@ -59,25 +61,13 @@ const MISSING_FIELDS = [
   "activitateIrp.briefinguri",
   "activitateIrp.totalConferinteBriefinguri",
   "activitateIrp.activitatiPublice",
-  "platformaMai.comunicate",
-  "platformaMai.buletine",
-  "platformaMai.stiri",
-  "platformaMai.conferinte",
-  "platformaMai.declaratii",
-  "platformaMai.invitatiiPresa",
-  "platformaMai.evaluariConferinte",
-  "platformaMai.alteMateriale",
-  "siteOficial.comunicateBuletine",
-  "siteOficial.stiriLocale",
-  "siteOficial.conferinte",
-  "aplicatiaDsu.materialePublicate",
 ] as const;
 
 const QUALITY_NOTES = [
   "0 la comunicate, buletine, conferințe și 544 înseamnă „numărat pe interval, zero înregistrări”, nu lipsă de schemă.",
   "briefinguri / totalConferinteBriefinguri: nu există tip BICP „Briefing”.",
   "activitatiPublice: activityEvents nu are estePublica.",
-  "platformaMai, siteOficial, aplicatiaDsu: nu există canale de publicare pe Comunicate.",
+  "platformaMai, siteOficial și aplicatiaDsu numără doar documentele bifate pe lista BICP. Nebifat înseamnă 0.",
 ];
 
 export function asIsoDate(value: unknown): string | null {
@@ -127,6 +117,7 @@ export function buildReportingExport(input: ReportingExportInput): ReportingExpo
   let comunicateCount = 0;
   let buletineCount = 0;
   let conferinteCount = 0;
+  const published = emptyPublishedMedia();
 
   for (const item of input.comunicate) {
     const date = comunicatDate(item);
@@ -135,6 +126,7 @@ export function buildReportingExport(input: ReportingExportInput): ReportingExpo
     if (tip === "Buletin Informativ") buletineCount += 1;
     else if (tip === "Comunicat de Presă") comunicateCount += 1;
     if (tip === "Conferință de presă") conferinteCount += 1;
+    addPublishedMedia(published, item);
   }
 
   let written544 = 0;
@@ -169,22 +161,22 @@ export function buildReportingExport(input: ReportingExportInput): ReportingExpo
         activitatiPublice: null,
       },
       platformaMai: {
-        comunicate: null,
-        buletine: null,
-        stiri: null,
-        conferinte: null,
-        declaratii: null,
-        invitatiiPresa: null,
-        evaluariConferinte: null,
-        alteMateriale: null,
+        comunicate: published.maiComunicate,
+        buletine: published.maiBuletine,
+        stiri: published.maiStiri,
+        conferinte: published.maiConferinte,
+        declaratii: published.maiDeclaratii,
+        invitatiiPresa: published.maiInvitatii,
+        evaluariConferinte: published.maiEvaluari,
+        alteMateriale: published.maiAlte,
       },
       siteOficial: {
-        comunicateBuletine: null,
-        stiriLocale: null,
-        conferinte: null,
+        comunicateBuletine: published.siteComunicateBuletine,
+        stiriLocale: published.siteStiri,
+        conferinte: published.siteConferinte,
       },
       aplicatiaDsu: {
-        materialePublicate: null,
+        materialePublicate: published.dsu,
       },
     },
     dataQuality: {
