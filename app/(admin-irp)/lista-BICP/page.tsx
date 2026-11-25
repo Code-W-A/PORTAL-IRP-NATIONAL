@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBicpData, type Bicp } from "@/app/(admin-irp)/lista-BICP/hooks/useBicpData";
-import { deleteDoc, doc, collection, serverTimestamp, updateDoc } from "firebase/firestore";
+import { deleteDoc, doc, collection, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
 import { initFirebase } from "@/lib/firebase";
 import { getTenantContext } from "@/lib/tenant";
 import { Grid2X2, Rows2, RefreshCw, Search, FileText, FileDown, Copy as CopyIcon, Trash2, Filter, ChevronUp, ChevronDown, X, Pencil, Printer, Loader2, FilePlus2, CheckSquare, Download, Mail, MoreVertical } from "lucide-react";
@@ -66,6 +66,40 @@ function PublishAllCheckbox({
       aria-label={ariaLabel}
       title={title}
     />
+  );
+}
+
+function PublishPageHeader({
+  label,
+  className,
+  widthClass,
+  state,
+  disabled,
+  title,
+  onChange,
+}: {
+  label: string;
+  className: string;
+  widthClass: string;
+  state: { checked: boolean; indeterminate: boolean };
+  disabled: boolean;
+  title: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <th className={`${className} ${widthClass} text-center`}>
+      <div className="flex flex-col items-center gap-1">
+        <span>{label}</span>
+        <PublishAllCheckbox
+          checked={state.checked}
+          indeterminate={state.indeterminate}
+          disabled={disabled}
+          ariaLabel={`${label} pentru pagina vizibilă`}
+          title={title}
+          onChange={onChange}
+        />
+      </div>
+    </th>
   );
 }
 import { BICP_DOCX_VARIANTS, type BicpDocxVariant } from "@/lib/bicp/docxVariants";
@@ -212,6 +246,55 @@ export default function ListaBicpPage() {
       );
     } catch {
       showToast("Nu s-a putut salva bifa Toate. Încearcă din nou.", "error");
+    } finally {
+      setSavingPublishKeys((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    }
+  }
+
+  async function updatePublishPage(pageItems: Bicp[], mode: PublishField | "all", checked: boolean) {
+    if (!pageItems.length) return;
+    const key = `page:${mode}`;
+    setSavingPublishKeys((current) => ({ ...current, [key]: true }));
+    try {
+      const { judetId, structuraId } = getTenantContext();
+      const batch = writeBatch(db);
+      const patch =
+        mode === "all"
+          ? {
+              incarcatDSU: checked,
+              incarcatHubMai: checked,
+              incarcatSite: checked,
+              updatedAt: serverTimestamp(),
+            }
+          : { [mode]: checked, updatedAt: serverTimestamp() };
+      for (const item of pageItems) {
+        batch.update(doc(db, `Judete/${judetId}/Structuri/${structuraId}/Comunicate/${item.id}`), patch);
+      }
+      await batch.commit();
+      setPublishOverrides((current) => {
+        const next = { ...current };
+        for (const item of pageItems) {
+          next[item.id] =
+            mode === "all"
+              ? { incarcatDSU: checked, incarcatHubMai: checked, incarcatSite: checked }
+              : { ...next[item.id], [mode]: checked };
+        }
+        return next;
+      });
+      const label =
+        mode === "all" ? "toate canalele" : mode === "incarcatHubMai" ? "HUB MAI" : mode === "incarcatSite" ? "SITE" : "DSU";
+      showToast(
+        checked
+          ? `${pageItems.length} documente de pe pagină marcate pe ${label}.`
+          : `${pageItems.length} documente de pe pagină scoase de pe ${label}.`,
+        "success"
+      );
+    } catch {
+      showToast("Nu s-au putut salva bifările de pe pagină. Încearcă din nou.", "error");
     } finally {
       setSavingPublishKeys((current) => {
         const next = { ...current };
@@ -994,6 +1077,7 @@ export default function ListaBicpPage() {
               savingPublishKeys={savingPublishKeys}
               onTogglePublish={updatePublishStatus}
               onToggleAllPublish={updateAllPublishStatus}
+              onTogglePublishPage={updatePublishPage}
               selectMode={selectMode}
               selected={selected}
               setSelected={setSelected}
@@ -1292,6 +1376,7 @@ function TableView({
   savingPublishKeys,
   onTogglePublish,
   onToggleAllPublish,
+  onTogglePublishPage,
   selectMode,
   selected,
   setSelected,
@@ -1311,6 +1396,7 @@ function TableView({
   savingPublishKeys: Record<string, boolean>;
   onTogglePublish: (item: Bicp, field: PublishField, checked: boolean) => void;
   onToggleAllPublish: (item: Bicp, checked: boolean) => void;
+  onTogglePublishPage: (pageItems: Bicp[], mode: PublishField | "all", checked: boolean) => void;
   selectMode: boolean;
   selected: Record<string, boolean>;
   setSelected: (m: Record<string, boolean>) => void;
@@ -1332,6 +1418,25 @@ function TableView({
     currentPageIds.forEach((id) => (m[id] = val));
     setSelected(m);
   };
+
+  function flagOn(item: Bicp, field: PublishField) {
+    return publishOverrides[item.id]?.[field] ?? item[field] === true;
+  }
+
+  function pageFieldState(field: PublishField) {
+    if (!items.length) return { checked: false, indeterminate: false };
+    const values = items.map((item) => flagOn(item, field));
+    const checked = values.every(Boolean);
+    return { checked, indeterminate: !checked && values.some(Boolean) };
+  }
+
+  const pageAllState = (() => {
+    if (!items.length) return { checked: false, indeterminate: false };
+    const fullyOn = items.map((item) => PUBLISH_FIELDS.every((field) => flagOn(item, field)));
+    const checked = fullyOn.every(Boolean);
+    const anyOn = items.some((item) => PUBLISH_FIELDS.some((field) => flagOn(item, field)));
+    return { checked, indeterminate: !checked && anyOn };
+  })();
 
   const handleSort = (column: string) => {
     if (filters.sortBy === column) {
@@ -1378,10 +1483,30 @@ function TableView({
               <SortableHeader column="titlu">Document</SortableHeader>
               <SortableHeader column="nume" className="w-36">Tip</SortableHeader>
               <SortableHeader column="data" className="w-28">Data</SortableHeader>
-              <th className={`${headerClass} w-20 text-center`}>Toate</th>
-              <th className={`${headerClass} w-20 text-center`}>DSU</th>
-              <th className={`${headerClass} w-24 text-center`}>HUB MAI</th>
-              <th className={`${headerClass} w-20 text-center`}>SITE</th>
+              <PublishPageHeader
+                label="Toate"
+                className={headerClass}
+                widthClass="w-20"
+                state={pageAllState}
+                disabled={!items.length || !!savingPublishKeys["page:all"]}
+                title="Bifează sau debifează DSU, HUB MAI și SITE pentru documentele de pe pagina asta"
+                onChange={(checked) => onTogglePublishPage(items, "all", checked)}
+              />
+              {PUBLISH_FIELDS.map((field) => {
+                const label = field === "incarcatHubMai" ? "HUB MAI" : field === "incarcatSite" ? "SITE" : "DSU";
+                return (
+                  <PublishPageHeader
+                    key={field}
+                    label={label}
+                    className={headerClass}
+                    widthClass={field === "incarcatHubMai" ? "w-24" : "w-20"}
+                    state={pageFieldState(field)}
+                    disabled={!items.length || !!savingPublishKeys[`page:${field}`]}
+                    title={`Bifează sau debifează ${label} pentru documentele de pe pagina asta`}
+                    onChange={(checked) => onTogglePublishPage(items, field, checked)}
+                  />
+                );
+              })}
               <th className={`${headerClass} w-44`}>Acțiuni</th>
             </tr>
           </thead>
@@ -1434,8 +1559,12 @@ function TableView({
                     const flags = PUBLISH_FIELDS.map((field) => publishOverrides[x.id]?.[field] ?? x[field] === true);
                     const allOn = flags.every(Boolean);
                     const someOn = flags.some(Boolean);
-                    const savingAll = !!savingPublishKeys[`${x.id}:all`];
-                    const savingAny = savingAll || PUBLISH_FIELDS.some((field) => savingPublishKeys[`${x.id}:${field}`]);
+                    const savingAll = !!savingPublishKeys[`${x.id}:all`] || !!savingPublishKeys["page:all"];
+                    const savingAny =
+                      savingAll ||
+                      PUBLISH_FIELDS.some(
+                        (field) => savingPublishKeys[`${x.id}:${field}`] || savingPublishKeys[`page:${field}`]
+                      );
                     return (
                       <td className="px-3 py-3 w-20 align-middle text-center" onClick={(e) => e.stopPropagation()}>
                         <PublishAllCheckbox
@@ -1450,7 +1579,11 @@ function TableView({
                     );
                   })()}
                   {PUBLISH_FIELDS.map((field) => {
-                    const saving = !!savingPublishKeys[`${x.id}:${field}`] || !!savingPublishKeys[`${x.id}:all`];
+                    const saving =
+                      !!savingPublishKeys[`${x.id}:${field}`] ||
+                      !!savingPublishKeys[`${x.id}:all`] ||
+                      !!savingPublishKeys["page:all"] ||
+                      !!savingPublishKeys[`page:${field}`];
                     const checked = publishOverrides[x.id]?.[field] ?? x[field] === true;
                     const label = field === "incarcatHubMai" ? "HUB MAI" : field === "incarcatSite" ? "SITE" : "DSU";
                     return (
